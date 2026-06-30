@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-BOOTSTRAP_KEY = "sibyl_dev_example"
+BOOTSTRAP_KEY = "strata_dev_example"
 
 
 def _auth_headers() -> dict[str, str]:
@@ -25,13 +25,13 @@ def test_whoami_bootstrap(client: TestClient) -> None:
 
 
 def test_unknown_token_rejected(client: TestClient) -> None:
-    response = client.get("/v1/whoami", headers={"Authorization": "Bearer sibyl_dev_unknown"})
+    response = client.get("/v1/whoami", headers={"Authorization": "Bearer strata_dev_unknown"})
     assert response.status_code == 401
 
 
 def test_create_and_search_memory_event(client: TestClient) -> None:
     payload = {
-        "project_slug": "cxl-sibyl",
+        "project_slug": "cxl-strata",
         "event_type": "implementation_note",
         "title": "Postgres rollout",
         "summary": "Wired API to PostgreSQL with Alembic migrations.",
@@ -53,7 +53,7 @@ def test_create_and_search_memory_event(client: TestClient) -> None:
 
 def test_secret_payload_rejected(client: TestClient) -> None:
     payload = {
-        "project_slug": "cxl-sibyl",
+        "project_slug": "cxl-strata",
         "event_type": "general_note",
         "title": "bad",
         "summary": "password=supersecret123",
@@ -65,7 +65,7 @@ def test_secret_payload_rejected(client: TestClient) -> None:
 def test_hashed_api_key_flow(client: TestClient) -> None:
     create_key = client.post(
         "/v1/api-keys",
-        json={"name": "test-key", "prefix": "sibyl_dev_"},
+        json={"name": "test-key", "prefix": "strata_dev_"},
         headers=_auth_headers(),
     )
     assert create_key.status_code == 200

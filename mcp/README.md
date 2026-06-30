@@ -1,12 +1,12 @@
-# SIBYL MCP server
+# STRATA MCP server
 
-Stdio MCP server that calls the SIBYL HTTP API for AI context retrieval.
+Stdio MCP server that calls the STRATA HTTP API for AI context retrieval.
 
 ## Environment
 
 ```bash
-export SIBYL_API_URL=http://127.0.0.1:8015
-export SIBYL_API_KEY=sibyl_dev_...
+export STRATA_API_URL=http://127.0.0.1:8015
+export STRATA_API_KEY=strata_dev_...
 ```
 
 ## Install
@@ -21,12 +21,12 @@ pip install -e .
 ```json
 {
   "mcpServers": {
-    "sibyl": {
+    "strata": {
       "command": "python",
-      "args": ["-m", "sibyl_mcp.server"],
+      "args": ["-m", "strata_mcp.server"],
       "env": {
-        "SIBYL_API_URL": "http://127.0.0.1:8015",
-        "SIBYL_API_KEY": "sibyl_dev_your_token"
+        "STRATA_API_URL": "http://127.0.0.1:8015",
+        "STRATA_API_KEY": "strata_dev_your_token"
       }
     }
   }
@@ -37,7 +37,7 @@ pip install -e .
 
 | Tool | Description |
 |------|-------------|
-| `sibyl_search` | Full-text search across memory events |
-| `sibyl_recent` | Recent events for a project (optional days filter) |
-| `sibyl_get` | Fetch one memory event by id |
-| `sibyl_context` | Project summary bundle for agent prompts |
+| `strata_search` | Full-text search across memory events |
+| `strata_recent` | Recent events for a project (optional days filter) |
+| `strata_get` | Fetch one memory event by id |
+| `strata_context` | Project summary bundle for agent prompts |

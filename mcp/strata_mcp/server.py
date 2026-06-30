@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP stdio server for SIBYL project memory retrieval."""
+"""MCP stdio server for STRATA project memory retrieval."""
 
 from __future__ import annotations
 
@@ -12,17 +12,17 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-server = Server("sibyl")
+server = Server("strata")
 
 
 def _api_base() -> str:
-    return os.environ.get("SIBYL_API_URL", "http://127.0.0.1:8015").rstrip("/")
+    return os.environ.get("STRATA_API_URL", "http://127.0.0.1:8015").rstrip("/")
 
 
 def _api_key() -> str:
-    key = os.environ.get("SIBYL_API_KEY", "").strip()
+    key = os.environ.get("STRATA_API_KEY", "").strip()
     if not key:
-        raise RuntimeError("SIBYL_API_KEY is required for the MCP server")
+        raise RuntimeError("STRATA_API_KEY is required for the MCP server")
     return key
 
 
@@ -46,8 +46,8 @@ def _get(path: str, *, params: dict[str, Any] | None = None) -> dict[str, Any]:
 async def list_tools() -> list[Tool]:
     return [
         Tool(
-            name="sibyl_search",
-            description="Search SIBYL memory events by keyword across title, summary, tags, and metadata.",
+            name="strata_search",
+            description="Search STRATA memory events by keyword across title, summary, tags, and metadata.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -59,8 +59,8 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="sibyl_recent",
-            description="Recent SIBYL memory events for a project within the last N days.",
+            name="strata_recent",
+            description="Recent STRATA memory events for a project within the last N days.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -71,8 +71,8 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="sibyl_get",
-            description="Fetch a single SIBYL memory event by id.",
+            name="strata_get",
+            description="Fetch a single STRATA memory event by id.",
             inputSchema={
                 "type": "object",
                 "properties": {"event_id": {"type": "string"}},
@@ -80,7 +80,7 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
-            name="sibyl_context",
+            name="strata_context",
             description="Project context bundle: recent events and counts for agent prompts.",
             inputSchema={
                 "type": "object",
@@ -96,7 +96,7 @@ async def list_tools() -> list[Tool]:
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    if name == "sibyl_search":
+    if name == "strata_search":
         return _text(
             _get(
                 "/v1/search",
@@ -107,7 +107,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
                 },
             )
         )
-    if name == "sibyl_recent":
+    if name == "strata_recent":
         params: dict[str, Any] = {
             "days": arguments.get("days", 7),
             "limit": arguments.get("limit", 20),
@@ -115,9 +115,9 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if arguments.get("project"):
             params["project"] = arguments["project"]
         return _text(_get("/v1/memory-events", params=params))
-    if name == "sibyl_get":
+    if name == "strata_get":
         return _text(_get(f"/v1/memory-events/{arguments['event_id']}"))
-    if name == "sibyl_context":
+    if name == "strata_context":
         project = arguments["project"]
         return _text(
             _get(

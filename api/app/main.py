@@ -1,4 +1,4 @@
-"""SIBYL central memory API."""
+"""STRATA central memory API."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatc
 from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
-app = FastAPI(title="SIBYL", version="0.2.0", description="Shared project memory API")
+app = FastAPI(title="STRATA", version="0.2.0", description="Shared project memory API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,7 +27,7 @@ app.add_middleware(
 @app.get("/health")
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
     _ = db  # ensures DB connectivity when configured
-    return {"status": "ok", "service": "sibyl-api", "storage": "postgres"}
+    return {"status": "ok", "service": "strata-api", "storage": "postgres"}
 
 
 @app.get("/v1/whoami")
@@ -37,7 +37,7 @@ def whoami(auth: AuthContext = Depends(require_auth)) -> dict:
         "organization": auth.organization_slug,
         "organization_id": auth.organization_id,
         "scopes": list(auth.scopes),
-        "api": "sibyl",
+        "api": "strata",
         "bootstrap": auth.bootstrap,
     }
 

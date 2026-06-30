@@ -1,19 +1,19 @@
-# SIBYL
+# STRATA
 
-**SIBYL** is an open-source shared project memory system for technical teams.
+**STRATA** is an open-source shared project memory system for technical teams.
 
-Developers capture durable notes, handoffs, and daily summaries from local workspaces. A central API stores that memory so the whole team can search it later. SIBYL is designed to preserve **what changed, why, and how it was fixed** — not raw chat logs or terminal surveillance.
+Developers capture durable notes, handoffs, and daily summaries from local workspaces. A central API stores that memory so the whole team can search it later. STRATA is designed to preserve **what changed, why, and how it was fixed** — not raw chat logs or terminal surveillance.
 
 ```text
 Developer machine (Cursor, Claude, Codex, or terminal)
     |
-    |  sibyl add | sibyl summary | /sibyl add | /sibyl summary
+    |  strata add | strata summary | /strata add | /strata summary
     v
-Local .sibyl/ queue (JSONL)
+Local .strata/ queue (JSONL)
     |
     |  HTTPS + Bearer access token
     v
-Central SIBYL API (FastAPI + Uvicorn)
+Central STRATA API (FastAPI + Uvicorn)
     |
     v
 PostgreSQL (production target; v0 scaffold may use in-memory store)
@@ -26,16 +26,16 @@ Search, recent history, future MCP retrieval
 |---|---|
 | **Stack** | FastAPI, PostgreSQL, Python CLI (Typer) |
 | **Local API** | `http://127.0.0.1:8015` |
-| **CLI command** | `sibyl` |
+| **CLI command** | `strata` |
 | **License** | [MIT](LICENSE) |
 
-> **v0 status:** This repository is an early OSS scaffold. The API, CLI, and capture flow work end-to-end for local development. Production Postgres migrations and hashed per-user API keys are the next milestones. See [Roadmap](#roadmap) below.
+> **Status:** v0.2 — Postgres, Alembic, hashed API keys, and MCP retrieval are implemented. See [Roadmap](#roadmap).
 
 ---
 
 ## Table of contents
 
-1. [Why SIBYL exists](#why-sibyl-exists)
+1. [Why STRATA exists](#why-strata-exists)
 2. [Quickstart (local)](#quickstart-local)
 3. [API deployment (central server)](#api-deployment-central-server)
 4. [Client integration (Cursor, Claude, Codex)](#client-integration-cursor-claude-codex)
@@ -47,9 +47,9 @@ Search, recent history, future MCP retrieval
 
 ---
 
-## Why SIBYL exists
+## Why STRATA exists
 
-Teams lose context between sessions. SIBYL captures durable project knowledge:
+Teams lose context between sessions. STRATA captures durable project knowledge:
 
 - What changed and why
 - Debugging discoveries and fixes
@@ -57,9 +57,9 @@ Teams lose context between sessions. SIBYL captures durable project knowledge:
 - Architecture decisions
 - Client assumptions and planning warnings
 
-Each developer uses their own **access token** (`sibyl_live_...` or `sibyl_dev_...`). Tokens authenticate to the central API. Secrets stay in `SIBYL_API_KEY` or `.sibyl/secrets.json` — never in git.
+Each developer uses their own **access token** (`strata_live_...` or `strata_dev_...`). Tokens authenticate to the central API. Secrets stay in `STRATA_API_KEY` or `.strata/secrets.json` — never in git.
 
-**SIBYL is not:** a task manager, a chat-log dump, a secret store, or a replacement for Linear/GitHub Issues.
+**STRATA is not:** a task manager, a chat-log dump, a secret store, or a replacement for Linear/GitHub Issues.
 
 ---
 
@@ -74,17 +74,17 @@ Each developer uses their own **access token** (`sibyl_live_...` or `sibyl_dev_.
 ### 1. Run the API locally
 
 ```bash
-git clone https://github.com/YOUR_ORG/cxl-sibyl.git
-cd cxl-sibyl/api
+git clone https://github.com/YOUR_ORG/cxl-strata.git
+cd cxl-strata/api
 
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env — set DATABASE_URL, API_KEY_PEPPER, and SIBYL_API_KEYS for bootstrap dev auth
+# Edit .env — set DATABASE_URL, API_KEY_PEPPER, and STRATA_API_KEYS for bootstrap dev auth
 
 # Create database (once), then apply schema:
-# createdb sibyl   # or use your Postgres admin flow
+# createdb strata   # or use your Postgres admin flow
 alembic upgrade head
 python scripts/seed_key.py       # optional — creates hashed per-user key (shown once)
 
@@ -95,7 +95,7 @@ Verify:
 
 ```bash
 curl http://127.0.0.1:8015/health
-# {"status":"ok","service":"sibyl-api","storage":"postgres"}
+# {"status":"ok","service":"strata-api","storage":"postgres"}
 ```
 
 ### 2. Install the CLI
@@ -104,7 +104,7 @@ curl http://127.0.0.1:8015/health
 cd ../cli
 pip install -e .
 
-export SIBYL_API_KEY="sibyl_dev_example"   # must match a key in SIBYL_API_KEYS on the server
+export STRATA_API_KEY="strata_dev_example"   # must match a key in STRATA_API_KEYS on the server
 ```
 
 ### 3. Initialize a repo
@@ -112,22 +112,22 @@ export SIBYL_API_KEY="sibyl_dev_example"   # must match a key in SIBYL_API_KEYS 
 From any project directory:
 
 ```bash
-sibyl init \
+strata init \
   --api http://127.0.0.1:8015 \
   --org my-org \
   --project my-project \
   --repo my-repo
 
-sibyl whoami
+strata whoami
 ```
 
-This creates `.sibyl/config.json` and empty JSONL queue files. Add `.sibyl/secrets.json` or keep using `SIBYL_API_KEY` in your shell profile.
+This creates `.strata/config.json` and empty JSONL queue files. Add `.strata/secrets.json` or keep using `STRATA_API_KEY` in your shell profile.
 
 ### 4. Capture and sync memory
 
 ```bash
 # Structured note
-sibyl add \
+strata add \
   --type debug_discovery \
   --title "OAuth redirect used stale domain" \
   --summary "Redirect issue was caused by stale runtime env configuration." \
@@ -135,22 +135,22 @@ sibyl add \
   --tags oauth,env,redirect
 
 # End-of-day summary
-sibyl summary --text "Shipped auth fix; verified staging redirect URIs."
+strata summary --text "Shipped auth fix; verified staging redirect URIs."
 
 # Push local queue to central API
-sibyl sync
+strata sync
 
 # Search central memory
-sibyl search "oauth redirect"
-sibyl recent --days 7
+strata search "oauth redirect"
+strata recent --days 7
 ```
 
 ### Repository layout
 
 ```text
-cxl-sibyl/
+cxl-strata/
   api/              FastAPI central memory API
-  cli/              sibyl Typer CLI (pip install -e cli)
+  cli/              strata Typer CLI (pip install -e cli)
   cursor-rules/     Agent command docs for Cursor and other AI clients
   docs/             Architecture and security notes
   LICENSE
@@ -161,7 +161,7 @@ cxl-sibyl/
 
 ## API deployment (central server)
 
-SIBYL runs as a **FastAPI app behind a reverse proxy**. The API binds to localhost; Apache or Nginx terminates TLS and proxies to Uvicorn.
+STRATA runs as a **FastAPI app behind a reverse proxy**. The API binds to localhost; Apache or Nginx terminates TLS and proxies to Uvicorn.
 
 **Recommended production layout:**
 
@@ -178,7 +178,7 @@ Apache or Nginx (TLS, port 443)
 PostgreSQL
 ```
 
-Replace `sibyl.example.com`, paths, and token values with your own.
+Replace `strata.example.com`, paths, and token values with your own.
 
 ### Server prerequisites
 
@@ -190,59 +190,59 @@ sudo apt install -y python3-venv python3-pip postgresql nginx   # or apache2
 Create a dedicated user and app directory:
 
 ```bash
-sudo useradd --system --home /opt/cxl-sibyl --shell /usr/sbin/nologin sibyl || true
-sudo mkdir -p /opt/cxl-sibyl
-sudo chown sibyl:sibyl /opt/cxl-sibyl
+sudo useradd --system --home /opt/cxl-strata --shell /usr/sbin/nologin strata || true
+sudo mkdir -p /opt/cxl-strata
+sudo chown strata:strata /opt/cxl-strata
 ```
 
 ### Deploy application code
 
 ```bash
-sudo -u sibyl git clone https://github.com/YOUR_ORG/cxl-sibyl.git /opt/cxl-sibyl
-cd /opt/cxl-sibyl/api
+sudo -u strata git clone https://github.com/YOUR_ORG/cxl-strata.git /opt/cxl-strata
+cd /opt/cxl-strata/api
 
-sudo -u sibyl python3 -m venv .venv
-sudo -u sibyl .venv/bin/pip install -r requirements.txt
-sudo -u sibyl cp .env.example .env
+sudo -u strata python3 -m venv .venv
+sudo -u strata .venv/bin/pip install -r requirements.txt
+sudo -u strata cp .env.example .env
 ```
 
-Edit `/opt/cxl-sibyl/api/.env`:
+Edit `/opt/cxl-strata/api/.env`:
 
 ```env
-SIBYL_ENV=production
-SIBYL_API_BASE_URL=https://sibyl.example.com
-DATABASE_URL=postgresql+psycopg://sibyl:STRONG_PASSWORD@127.0.0.1:5432/sibyl
+STRATA_ENV=production
+STRATA_API_BASE_URL=https://strata.example.com
+DATABASE_URL=postgresql+psycopg://strata:STRONG_PASSWORD@127.0.0.1:5432/strata
 API_KEY_PEPPER=generate-a-long-random-string
-SIBYL_API_KEYS=sibyl_live_team_key_one,sibyl_live_team_key_two
+STRATA_API_KEYS=strata_live_team_key_one,strata_live_team_key_two
 ```
 
-> **v0 note:** Set `SIBYL_API_KEYS` to comma-separated tokens your team will use. Only listed tokens are accepted. Hashed per-user keys in Postgres are planned for a later release.
+> **v0 note:** Set `STRATA_API_KEYS` to comma-separated tokens your team will use. Only listed tokens are accepted. Hashed per-user keys in Postgres are planned for a later release.
 
 Create the database (when Postgres migrations are available):
 
 ```bash
-sudo -u postgres createuser sibyl
-sudo -u postgres createdb -O sibyl sibyl
-# Future: cd /opt/cxl-sibyl/api && .venv/bin/alembic upgrade head
-cd /opt/cxl-sibyl/api && .venv/bin/alembic upgrade head
+sudo -u postgres createuser strata
+sudo -u postgres createdb -O strata strata
+# Future: cd /opt/cxl-strata/api && .venv/bin/alembic upgrade head
+cd /opt/cxl-strata/api && .venv/bin/alembic upgrade head
 python scripts/seed_key.py
 ```
 
 ### systemd service
 
-Create `/etc/systemd/system/cxl-sibyl-api.service`:
+Create `/etc/systemd/system/cxl-strata-api.service`:
 
 ```ini
 [Unit]
-Description=SIBYL central memory API
+Description=STRATA central memory API
 After=network.target postgresql.service
 
 [Service]
-User=sibyl
-Group=sibyl
-WorkingDirectory=/opt/cxl-sibyl/api
-EnvironmentFile=/opt/cxl-sibyl/api/.env
-ExecStart=/opt/cxl-sibyl/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8015
+User=strata
+Group=strata
+WorkingDirectory=/opt/cxl-strata/api
+EnvironmentFile=/opt/cxl-strata/api/.env
+ExecStart=/opt/cxl-strata/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8015
 Restart=on-failure
 RestartSec=5
 
@@ -254,29 +254,29 @@ Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable cxl-sibyl-api
-sudo systemctl start cxl-sibyl-api
-sudo systemctl status cxl-sibyl-api
+sudo systemctl enable cxl-strata-api
+sudo systemctl start cxl-strata-api
+sudo systemctl status cxl-strata-api
 curl http://127.0.0.1:8015/health
 ```
 
 ### Option A: Nginx reverse proxy
 
-Create `/etc/nginx/sites-available/sibyl`:
+Create `/etc/nginx/sites-available/strata`:
 
 ```nginx
 server {
     listen 80;
-    server_name sibyl.example.com;
+    server_name strata.example.com;
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name sibyl.example.com;
+    server_name strata.example.com;
 
-    ssl_certificate     /etc/letsencrypt/live/sibyl.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/sibyl.example.com/privkey.pem;
+    ssl_certificate     /etc/letsencrypt/live/strata.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/strata.example.com/privkey.pem;
 
     client_max_body_size 2m;
 
@@ -294,16 +294,16 @@ server {
 Enable and reload:
 
 ```bash
-sudo ln -sf /etc/nginx/sites-available/sibyl /etc/nginx/sites-enabled/sibyl
+sudo ln -sf /etc/nginx/sites-available/strata /etc/nginx/sites-enabled/strata
 sudo nginx -t
 sudo systemctl reload nginx
-curl -fsS https://sibyl.example.com/health
+curl -fsS https://strata.example.com/health
 ```
 
 Obtain TLS certificates with Certbot if needed:
 
 ```bash
-sudo certbot --nginx -d sibyl.example.com
+sudo certbot --nginx -d strata.example.com
 ```
 
 ### Option B: Apache reverse proxy
@@ -314,20 +314,20 @@ Enable modules:
 sudo a2enmod proxy proxy_http ssl headers rewrite
 ```
 
-Create `/etc/apache2/sites-available/sibyl.conf`:
+Create `/etc/apache2/sites-available/strata.conf`:
 
 ```apache
 <VirtualHost *:80>
-    ServerName sibyl.example.com
-    Redirect permanent / https://sibyl.example.com/
+    ServerName strata.example.com
+    Redirect permanent / https://strata.example.com/
 </VirtualHost>
 
 <VirtualHost *:443>
-    ServerName sibyl.example.com
+    ServerName strata.example.com
 
     SSLEngine on
-    SSLCertificateFile      /etc/letsencrypt/live/sibyl.example.com/fullchain.pem
-    SSLCertificateKeyFile   /etc/letsencrypt/live/sibyl.example.com/privkey.pem
+    SSLCertificateFile      /etc/letsencrypt/live/strata.example.com/fullchain.pem
+    SSLCertificateKeyFile   /etc/letsencrypt/live/strata.example.com/privkey.pem
 
     ProxyPreserveHost On
     RequestHeader set X-Forwarded-Proto "https"
@@ -335,30 +335,30 @@ Create `/etc/apache2/sites-available/sibyl.conf`:
     ProxyPass        / http://127.0.0.1:8015/
     ProxyPassReverse / http://127.0.0.1:8015/
 
-    ErrorLog ${APACHE_LOG_DIR}/sibyl-error.log
-    CustomLog ${APACHE_LOG_DIR}/sibyl-access.log combined
+    ErrorLog ${APACHE_LOG_DIR}/strata-error.log
+    CustomLog ${APACHE_LOG_DIR}/strata-access.log combined
 </VirtualHost>
 ```
 
 Enable and reload:
 
 ```bash
-sudo a2ensite sibyl
+sudo a2ensite strata
 sudo apache2ctl configtest
 sudo systemctl reload apache2
-curl -fsS https://sibyl.example.com/health
+curl -fsS https://strata.example.com/health
 ```
 
 ### Deploy updates
 
 ```bash
-cd /opt/cxl-sibyl
-sudo -u sibyl git pull
+cd /opt/cxl-strata
+sudo -u strata git pull
 cd api
-sudo -u sibyl .venv/bin/pip install -r requirements.txt
+sudo -u strata .venv/bin/pip install -r requirements.txt
 alembic upgrade head
 python scripts/seed_key.py
-sudo systemctl restart cxl-sibyl-api
+sudo systemctl restart cxl-strata-api
 ```
 
 ### API endpoints (v1)
@@ -376,31 +376,31 @@ sudo systemctl restart cxl-sibyl-api
 All authenticated requests use:
 
 ```http
-Authorization: Bearer sibyl_live_your_token_here
+Authorization: Bearer strata_live_your_token_here
 ```
 
 ---
 
 ## Client integration (Cursor, Claude, Codex)
 
-SIBYL has two integration layers:
+STRATA has two integration layers:
 
-1. **CLI** — works from any terminal (`sibyl add`, `sibyl summary`, `sibyl sync`)
+1. **CLI** — works from any terminal (`strata add`, `strata summary`, `strata sync`)
 2. **Agent rules** — tell AI assistants when and how to capture memory
 
-Copy [cursor-rules/sibyl-commands.md](cursor-rules/sibyl-commands.md) into your project or IDE config.
+Copy [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) into your project or IDE config.
 
 ### Per-developer setup (all clients)
 
-In each repo that should report to SIBYL:
+In each repo that should report to STRATA:
 
 ```bash
-pip install -e /path/to/cxl-sibyl/cli   # or: pip install cxl-sibyl when published
+pip install -e /path/to/cxl-strata/cli   # or: pip install cxl-strata when published
 
-export SIBYL_API_KEY="sibyl_live_your_personal_token"
+export STRATA_API_KEY="strata_live_your_personal_token"
 
-sibyl init \
-  --api https://sibyl.example.com \
+strata init \
+  --api https://strata.example.com \
   --org your-org \
   --project your-project \
   --repo your-repo-name \
@@ -411,17 +411,17 @@ sibyl init \
 Add to the repo `.gitignore`:
 
 ```gitignore
-.sibyl/secrets.json
-.sibyl/events.jsonl
-.sibyl/synced.jsonl
-.sibyl/failed.jsonl
+.strata/secrets.json
+.strata/events.jsonl
+.strata/synced.jsonl
+.strata/failed.jsonl
 ```
 
-Optional: store the token in `.sibyl/secrets.json` (gitignored):
+Optional: store the token in `.strata/secrets.json` (gitignored):
 
 ```json
 {
-  "api_key": "sibyl_live_your_personal_token"
+  "api_key": "strata_live_your_personal_token"
 }
 ```
 
@@ -431,32 +431,32 @@ Optional: store the token in `.sibyl/secrets.json` (gitignored):
 
 | Command | What it does |
 |---------|----------------|
-| `/sibyl add` | Capture durable memory or upload an existing handoff markdown file |
-| `/sibyl summary` | Upload an end-of-day or end-of-flow summary for the current project |
+| `/strata add` | Capture durable memory or upload an existing handoff markdown file |
+| `/strata summary` | Upload an end-of-day or end-of-flow summary for the current project |
 
 **Install the rule:**
 
-Copy the contents of [cursor-rules/sibyl-commands.md](cursor-rules/sibyl-commands.md) into one of:
+Copy the contents of [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) into one of:
 
-- `.cursor/rules/sibyl-memory-capture.mdc` (project rule), or
+- `.cursor/rules/strata-memory-capture.mdc` (project rule), or
 - Your user-level Cursor rules
 
 The rule instructs the agent to:
 
-1. Read `.sibyl/config.json` for project/repo context
-2. Distill the session into a concise `sibyl add` command (no secrets, no raw chat dump)
-3. Queue locally, then run `sibyl sync` when you confirm
+1. Read `.strata/config.json` for project/repo context
+2. Distill the session into a concise `strata add` command (no secrets, no raw chat dump)
+3. Queue locally, then run `strata sync` when you confirm
 
 **Example prompts:**
 
 ```text
-/sibyl add — we fixed OAuth redirect by aligning APP_URL with Google console settings
-/sibyl summary — shipped staging deploy fix and verified Apache proxy headers
+/strata add — we fixed OAuth redirect by aligning APP_URL with Google console settings
+/strata summary — shipped staging deploy fix and verified Apache proxy headers
 ```
 
 ### MCP (AI context retrieval)
 
-The MCP server exposes SIBYL memory to Cursor, Claude Desktop, and other MCP clients.
+The MCP server exposes STRATA memory to Cursor, Claude Desktop, and other MCP clients.
 
 **Install:**
 
@@ -470,51 +470,51 @@ pip install -e .
 ```json
 {
   "mcpServers": {
-    "sibyl": {
+    "strata": {
       "command": "python",
-      "args": ["-m", "sibyl_mcp.server"],
+      "args": ["-m", "strata_mcp.server"],
       "env": {
-        "SIBYL_API_URL": "http://127.0.0.1:8015",
-        "SIBYL_API_KEY": "sibyl_dev_your_token"
+        "STRATA_API_URL": "http://127.0.0.1:8015",
+        "STRATA_API_KEY": "strata_dev_your_token"
       }
     }
   }
 }
 ```
 
-**Tools:** `sibyl_search`, `sibyl_recent`, `sibyl_get`, `sibyl_context`
+**Tools:** `strata_search`, `strata_recent`, `strata_get`, `strata_context`
 
 See [mcp/README.md](mcp/README.md) for full tool schemas and troubleshooting.
 
 ### Claude (Claude Code / Claude Desktop with project files)
 
-Claude does not have native slash commands for SIBYL. Use the CLI plus a project instruction file.
+Claude does not have native slash commands for STRATA. Use the CLI plus a project instruction file.
 
 **1. Add project instructions**
 
 Create or extend `CLAUDE.md` in the repo root:
 
 ```markdown
-## SIBYL project memory
+## STRATA project memory
 
 When durable project knowledge is discovered (bug root cause, deploy fix, architecture
-decision, client assumption), propose capturing it with the SIBYL CLI.
+decision, client assumption), propose capturing it with the STRATA CLI.
 
 Never include secrets, API keys, or raw .env values.
 
 Example:
-  sibyl add --type debug_discovery --title "..." --summary "..." --tags tag1,tag2
-  sibyl sync
+  strata add --type debug_discovery --title "..." --summary "..." --tags tag1,tag2
+  strata sync
 
 For end-of-session summaries:
-  sibyl summary --text "..." --sync
+  strata summary --text "..." --sync
 ```
 
-**2. Ensure `.sibyl/config.json` exists** (from `sibyl init`).
+**2. Ensure `.strata/config.json` exists** (from `strata init`).
 
-**3. Set `SIBYL_API_KEY`** in your shell or `.sibyl/secrets.json` before asking Claude to run capture commands.
+**3. Set `STRATA_API_KEY`** in your shell or `.strata/secrets.json` before asking Claude to run capture commands.
 
-Claude Code can run terminal commands directly; Desktop users can copy the proposed `sibyl` commands from chat.
+Claude Code can run terminal commands directly; Desktop users can copy the proposed `strata` commands from chat.
 
 ### Codex (OpenAI Codex CLI / agent environments)
 
@@ -523,12 +523,12 @@ Same pattern as Claude: CLI + instructions file.
 **1. Add `AGENTS.md` or extend existing agent instructions:**
 
 ```markdown
-## SIBYL memory capture
+## STRATA memory capture
 
 After meaningful work (fixes, deploy changes, decisions), suggest:
 
-  sibyl add --type <event_type> --title "..." --summary "..."
-  sibyl sync
+  strata add --type <event_type> --title "..." --summary "..."
+  strata sync
 
 Event types: debug_discovery, implementation_note, ops_change, deployment_note,
 architecture_decision, client_assumption, planning_warning, qa_finding, general_note.
@@ -536,9 +536,9 @@ architecture_decision, client_assumption, planning_warning, qa_finding, general_
 Do not capture secrets or full chat logs.
 ```
 
-**2. Initialize SIBYL in the repo** (`sibyl init`).
+**2. Initialize STRATA in the repo** (`strata init`).
 
-**3. Export `SIBYL_API_KEY`** in the environment where Codex runs commands.
+**3. Export `STRATA_API_KEY`** in the environment where Codex runs commands.
 
 ### Event types reference
 
@@ -553,7 +553,7 @@ Do not capture secrets or full chat logs.
 | `planning_warning` | Prior work suggests future estimates should change |
 | `qa_finding` | Durable QA/regression pattern |
 | `general_note` | Nothing else fits |
-| `daily_summary` | End-of-day or end-of-flow summary (`sibyl summary`) |
+| `daily_summary` | End-of-day or end-of-flow summary (`strata summary`) |
 | `handoff_upload` | Existing handoff markdown uploaded via `--handoff-path` |
 
 ---
@@ -562,71 +562,71 @@ Do not capture secrets or full chat logs.
 
 ### `401 Unauthorized` or `Unknown access token`
 
-- Confirm `SIBYL_API_KEY` on the client matches a token listed in server `SIBYL_API_KEYS`
-- Token must start with `sibyl_live_` or `sibyl_dev_`
+- Confirm `STRATA_API_KEY` on the client matches a token listed in server `STRATA_API_KEYS`
+- Token must start with `strata_live_` or `strata_dev_`
 - Check for trailing whitespace in `.env` or shell export
-- Test: `curl -H "Authorization: Bearer YOUR_TOKEN" https://sibyl.example.com/v1/whoami`
+- Test: `curl -H "Authorization: Bearer YOUR_TOKEN" https://strata.example.com/v1/whoami`
 
-### `Missing .sibyl/config.json`
+### `Missing .strata/config.json`
 
-Run `sibyl init` from the repo root:
+Run `strata init` from the repo root:
 
 ```bash
-sibyl init --api https://sibyl.example.com --org ORG --project PROJECT --repo REPO
+strata init --api https://strata.example.com --org ORG --project PROJECT --repo REPO
 ```
 
-### `sibyl sync` reports failures or nothing syncs
+### `strata sync` reports failures or nothing syncs
 
-- Verify API is reachable: `curl https://sibyl.example.com/health`
-- Check pending queue: `cat .sibyl/events.jsonl`
-- Inspect failures: `cat .sibyl/failed.jsonl`
+- Verify API is reachable: `curl https://strata.example.com/health`
+- Check pending queue: `cat .strata/events.jsonl`
+- Inspect failures: `cat .strata/failed.jsonl`
 - Secret-like content is rejected by design; redact credentials and retry
-- After a successful sync, synced rows move to `.sibyl/synced.jsonl` and leave the pending queue
+- After a successful sync, synced rows move to `.strata/synced.jsonl` and leave the pending queue
 
 ### `422` — payload appears to contain secrets
 
-SIBYL rejects obvious secret patterns (private keys, `API_KEY=...`, Stripe-style keys, AWS access key IDs). Describe the **setting** without recording the value:
+STRATA rejects obvious secret patterns (private keys, `API_KEY=...`, Stripe-style keys, AWS access key IDs). Describe the **setting** without recording the value:
 
 ```text
 Good:  OAuth depends on GOOGLE_CLIENT_ID and APP_URL alignment.
 Bad:   GOOGLE_CLIENT_SECRET=actual-secret-value
 ```
 
-### `sibyl` command not found after pip install
+### `strata` command not found after pip install
 
-- Ensure the install venv/bin directory is on `PATH`, or run: `python -m cxl_sibyl.cli --help`
+- Ensure the install venv/bin directory is on `PATH`, or run: `python -m cxl_strata.cli --help`
 - Reinstall: `pip install -e cli` from the repo
 
 ### API health OK but search returns nothing
 
-- Confirm events were synced: `sibyl sync` then `sibyl search "your terms"`
+- Confirm events were synced: `strata sync` then `strata search "your terms"`
 - v0 search is substring match over title, summary, details, tags, environment, event_type, project, and repo
 - **v0 in-memory store:** restarting the API process clears memory until Postgres persistence lands
 
 ### Reverse proxy returns 502 Bad Gateway
 
-- Check Uvicorn is running: `systemctl status cxl-sibyl-api`
+- Check Uvicorn is running: `systemctl status cxl-strata-api`
 - Confirm bind address: API must listen on `127.0.0.1:8015` (or update proxy target)
-- Check logs: `journalctl -u cxl-sibyl-api -n 50`
+- Check logs: `journalctl -u cxl-strata-api -n 50`
 - Nginx: `sudo nginx -t` — Apache: `sudo apache2ctl configtest`
 
 ### SSL / certificate errors from CLI
 
-- Use `https://` in `sibyl init --api` and in `.sibyl/config.json`
+- Use `https://` in `strata init --api` and in `.strata/config.json`
 - Ensure the certificate covers the hostname clients use
 - For local dev only, use `http://127.0.0.1:8015` without TLS
 
 ### Windows-specific notes
 
 - Activate venv: `.venv\Scripts\activate`
-- Prefer `python -m cxl_sibyl.cli` if the `sibyl.exe` shim is not on PATH
-- Use `set SIBYL_API_KEY=...` in cmd or `$env:SIBYL_API_KEY="..."` in PowerShell
+- Prefer `python -m cxl_strata.cli` if the `strata.exe` shim is not on PATH
+- Use `set STRATA_API_KEY=...` in cmd or `$env:STRATA_API_KEY="..."` in PowerShell
 
 ---
 
 ## License
 
-SIBYL is released under the [MIT License](LICENSE).
+STRATA is released under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Craft & Logic
 
@@ -636,7 +636,7 @@ You may use, copy, modify, merge, publish, distribute, sublicense, and/or sell c
 
 ## Contributing
 
-Contributions are welcome. SIBYL is early-stage; focused PRs are easier to review than large rewrites.
+Contributions are welcome. STRATA is early-stage; focused PRs are easier to review than large rewrites.
 
 ### How to contribute
 
@@ -646,7 +646,7 @@ Contributions are welcome. SIBYL is early-stage; focused PRs are easier to revie
 4. **Test locally:**
    ```bash
    cd api && pip install -r requirements.txt && python -m pytest -q
-   cd ../cli && pip install -e . && python -m cxl_sibyl.cli --help
+   cd ../cli && pip install -e . && python -m cxl_strata.cli --help
    cd ../mcp && pip install -e .
    ```
 5. **Open a pull request** with:
@@ -663,7 +663,7 @@ Contributions are welcome. SIBYL is early-stage; focused PRs are easier to revie
 
 ### Code guidelines
 
-- Keep SIBYL **small and boring** — capture less, but capture better
+- Keep STRATA **small and boring** — capture less, but capture better
 - Never add features that store secrets or raw chat logs by default
 - Match existing Python style (type hints, minimal dependencies)
 - OSS defaults stay generic; org-specific hosts belong in private deploy config
@@ -704,7 +704,7 @@ Open a GitHub Discussion or Issue for design questions, deployment help, or inte
 
 ## Related docs
 
-- [cursor-rules/sibyl-commands.md](cursor-rules/sibyl-commands.md) — agent behavior for `/sibyl add` and `/sibyl summary`
+- [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) — agent behavior for `/strata add` and `/strata summary`
 - [docs/architecture.md](docs/architecture.md) — system overview
 - [docs/security.md](docs/security.md) — token and content safety rules
 - [mcp/README.md](mcp/README.md) — MCP server for AI context retrieval

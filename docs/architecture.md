@@ -2,11 +2,11 @@
 
 ```text
 Developer / Cursor
-  /sibyl add | /sibyl summary | sibyl CLI
+  /strata add | /strata summary | strata CLI
         ↓
-  .sibyl/events.jsonl  (local queue)
+  .strata/events.jsonl  (local queue)
         ↓  Bearer access token
-  SIBYL API (FastAPI)
+  STRATA API (FastAPI)
         ↓
   PostgreSQL (production) | in-memory (v0 dev scaffold)
         ↓
@@ -25,4 +25,4 @@ Organization-specific hosts, deploy paths, and service names belong in private d
 
 ## Workspace bridge
 
-The local workspace explorer (`scripts/workspace_explorer.py`) is a **prototype search UI** over the workspace SQLite index. Long term, SIBYL central memory feeds the same UX from the configured central API host.
+The local workspace explorer (`scripts/workspace_explorer.py`) is a **prototype search UI** over the workspace SQLite index. Long term, STRATA central memory feeds the same UX from the configured central API host.

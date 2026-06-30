@@ -1,30 +1,30 @@
-# SIBYL Cursor commands
+# STRATA Cursor commands
 
-When the user types **`/sibyl add`** or **`/sibyl summary`**, treat it as a capture request for the **current repo's** SIBYL project memory.
+When the user types **`/strata add`** or **`/strata summary`**, treat it as a capture request for the **current repo's** STRATA project memory.
 
 ## Prerequisites
 
-- Repo has `.sibyl/config.json` (from `sibyl init`) or infer project from repo folder / blueprint
-- Access token in `SIBYL_API_KEY` or `.sibyl/secrets.json` (never commit)
-- Central API URL in `.sibyl/config.json`
+- Repo has `.strata/config.json` (from `strata init`) or infer project from repo folder / blueprint
+- Access token in `STRATA_API_KEY` or `.strata/secrets.json` (never commit)
+- Central API URL in `.strata/config.json`
 
-## `/sibyl add`
+## `/strata add`
 
 **Purpose:** Capture durable project knowledge or upload an existing handoff.
 
 **Agent behavior:**
 
-1. Identify `project_slug` and `repo_name` from `.sibyl/config.json` or repo folder name.
+1. Identify `project_slug` and `repo_name` from `.strata/config.json` or repo folder name.
 2. If the user points at a handoff file (e.g. `.md/handoff/<project>/*.md`), queue it:
 
 ```bash
-sibyl add --handoff-path .md/handoff/<project>/<timestamp>.md
+strata add --handoff-path .md/handoff/<project>/<timestamp>.md
 ```
 
 3. Otherwise, distill the session into a concise memory note - **no secrets, no raw chat dump**:
 
 ```bash
-sibyl add \
+strata add \
   --type "<event_type>" \
   --title "<short title>" \
   --summary "<1-2 sentence durable summary>" \
@@ -35,11 +35,11 @@ sibyl add \
   --confidence observed
 ```
 
-4. Offer to run `sibyl sync` or run it if the user confirms.
+4. Offer to run `strata sync` or run it if the user confirms.
 
 **Event types:** `debug_discovery`, `implementation_note`, `ops_change`, `deployment_note`, `architecture_decision`, `client_assumption`, `planning_warning`, `qa_finding`, `general_note`, `handoff_upload`.
 
-## `/sibyl summary`
+## `/strata summary`
 
 **Purpose:** End-of-day or end-of-flow summary for the current project.
 
@@ -49,7 +49,7 @@ sibyl add \
 2. Queue via CLI:
 
 ```bash
-sibyl summary \
+strata summary \
   --project "<project_slug>" \
   --text "<concise summary of work done>" \
   --sync
@@ -66,6 +66,6 @@ sibyl summary \
 ## After capture
 
 ```bash
-sibyl sync          # push queue to central API
-sibyl search "..."  # verify on central store
+strata sync          # push queue to central API
+strata search "..."  # verify on central store
 ```

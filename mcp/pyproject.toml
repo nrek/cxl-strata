@@ -1,7 +1,7 @@
 [project]
-name = "sibyl-mcp"
+name = "strata-mcp"
 version = "0.1.0"
-description = "MCP server for SIBYL project memory retrieval"
+description = "MCP server for STRATA project memory retrieval"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sibyl-mcp = "sibyl_mcp.server:main"
+strata-mcp = "strata_mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -18,4 +18,4 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["sibyl_mcp*"]
+include = ["strata_mcp*"]

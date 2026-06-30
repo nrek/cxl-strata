@@ -1,4 +1,4 @@
-"""Initial SIBYL schema.
+"""Initial STRATA schema.
 
 Revision ID: 001_initial
 Revises:

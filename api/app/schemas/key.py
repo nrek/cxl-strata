@@ -7,7 +7,7 @@ class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     actor_id: str | None = None
     scopes: list[str] = Field(default_factory=lambda: ["memory:read", "memory:write", "memory:sync"])
-    prefix: str = "sibyl_dev_"
+    prefix: str = "strata_dev_"
 
 
 class ApiKeyOut(BaseModel):

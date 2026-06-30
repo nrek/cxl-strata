@@ -1,4 +1,4 @@
-"""HTTP client for central SIBYL API."""
+"""HTTP client for central STRATA API."""
 
 from __future__ import annotations
 

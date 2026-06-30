@@ -1,4 +1,4 @@
-"""Local .sibyl config and JSONL queue."""
+"""Local .strata config and JSONL queue."""
 
 from __future__ import annotations
 
@@ -8,30 +8,30 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-SIBYL_DIR = Path(".sibyl")
-CONFIG_FILE = SIBYL_DIR / "config.json"
-SECRETS_FILE = SIBYL_DIR / "secrets.json"
-EVENTS_FILE = SIBYL_DIR / "events.jsonl"
-SYNCED_FILE = SIBYL_DIR / "synced.jsonl"
-FAILED_FILE = SIBYL_DIR / "failed.jsonl"
+STRATA_DIR = Path(".strata")
+CONFIG_FILE = STRATA_DIR / "config.json"
+SECRETS_FILE = STRATA_DIR / "secrets.json"
+EVENTS_FILE = STRATA_DIR / "events.jsonl"
+SYNCED_FILE = STRATA_DIR / "synced.jsonl"
+FAILED_FILE = STRATA_DIR / "failed.jsonl"
 
 
 def ensure_layout() -> None:
-    SIBYL_DIR.mkdir(exist_ok=True)
+    STRATA_DIR.mkdir(exist_ok=True)
     for fp in (EVENTS_FILE, SYNCED_FILE, FAILED_FILE):
         fp.touch(exist_ok=True)
 
 
 def load_config() -> dict[str, Any]:
     if not CONFIG_FILE.is_file():
-        raise FileNotFoundError("Missing .sibyl/config.json - run: sibyl init")
+        raise FileNotFoundError("Missing .strata/config.json - run: strata init")
     return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
 
 
 def load_api_key() -> str:
     import os
 
-    env = os.environ.get("SIBYL_API_KEY", "").strip()
+    env = os.environ.get("STRATA_API_KEY", "").strip()
     if env:
         return env
     if SECRETS_FILE.is_file():
@@ -39,7 +39,7 @@ def load_api_key() -> str:
         key = str(data.get("api_key", "")).strip()
         if key:
             return key
-    raise RuntimeError("Set SIBYL_API_KEY or create .sibyl/secrets.json with api_key")
+    raise RuntimeError("Set STRATA_API_KEY or create .strata/secrets.json with api_key")
 
 
 def append_event(event: dict[str, Any]) -> str:

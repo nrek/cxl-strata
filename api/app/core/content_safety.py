@@ -1,4 +1,4 @@
-"""Simple payload checks to keep SIBYL from becoming a secret sink."""
+"""Simple payload checks to keep STRATA from becoming a secret sink."""
 
 from __future__ import annotations
 

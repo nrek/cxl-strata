@@ -1,1 +1,1 @@
-"""SIBYL central memory API."""
+"""STRATA central memory API."""

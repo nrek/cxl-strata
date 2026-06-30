@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create organization, actor, and hashed API key for SIBYL."""
+"""Create organization, actor, and hashed API key for STRATA."""
 
 from __future__ import annotations
 
@@ -17,13 +17,13 @@ from app.services.key_service import KeyService  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Seed SIBYL org/actor and API key")
+    parser = argparse.ArgumentParser(description="Seed STRATA org/actor and API key")
     parser.add_argument("--org-slug", default=settings.bootstrap_org_slug)
     parser.add_argument("--org-name", default=settings.bootstrap_org_name)
     parser.add_argument("--actor-name", default="admin")
     parser.add_argument("--actor-email", default=None)
     parser.add_argument("--key-name", default="bootstrap-admin")
-    parser.add_argument("--prefix", default="sibyl_dev_", choices=["sibyl_dev_", "sibyl_live_"])
+    parser.add_argument("--prefix", default="strata_dev_", choices=["strata_dev_", "strata_live_"])
     args = parser.parse_args()
 
     db = SessionLocal()
@@ -51,7 +51,7 @@ def main() -> int:
     finally:
         db.close()
 
-    print("SIBYL seed complete")
+    print("STRATA seed complete")
     print(f"  organization: {org.slug} ({org.id})")
     print(f"  actor:        {actor.name} ({actor.id})")
     print(f"  api_key_id:   {row.id}")

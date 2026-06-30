@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cxl-sibyl"
+name = "cxl-strata"
 version = "0.1.0"
-description = "SIBYL - shared project memory CLI"
+description = "STRATA - shared project memory CLI"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,8 +16,8 @@ dependencies = [
 ]
 
 [project.scripts]
-sibyl = "cxl_sibyl.cli:app"
+strata = "cxl_strata.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cxl_sibyl*"]
+include = ["cxl_strata*"]

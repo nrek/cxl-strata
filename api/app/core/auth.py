@@ -23,7 +23,7 @@ async def require_auth(
             detail="Missing Bearer access token",
         )
     token = creds.credentials.strip()
-    if not token.startswith(("sibyl_live_", "sibyl_dev_")):
+    if not token.startswith(("strata_live_", "strata_dev_")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid access token prefix",

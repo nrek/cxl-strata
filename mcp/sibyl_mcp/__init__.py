@@ -1,1 +1,0 @@
-"""SIBYL MCP server package."""

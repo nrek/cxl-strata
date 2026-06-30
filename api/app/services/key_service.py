@@ -66,7 +66,7 @@ class KeyService:
         name: str,
         actor_id: str | None = None,
         scopes: list[str] | None = None,
-        prefix: str = "sibyl_dev_",
+        prefix: str = "strata_dev_",
     ) -> tuple[ApiKey, str]:
         raw_key, key_prefix, key_hash = generate_api_key(prefix=prefix, pepper=settings.api_key_pepper)
         row = ApiKey(

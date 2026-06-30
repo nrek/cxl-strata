@@ -1,4 +1,4 @@
-"""SIBYL CLI - local capture and central sync."""
+"""STRATA CLI - local capture and central sync."""
 
 from __future__ import annotations
 
@@ -15,8 +15,8 @@ from . import api_client, local_store
 from .content_safety import find_secret_markers
 
 app = typer.Typer(
-    name="sibyl",
-    help="SIBYL - shared project memory (local capture + central API sync)",
+    name="strata",
+    help="STRATA - shared project memory (local capture + central API sync)",
     no_args_is_help=True,
 )
 
@@ -31,7 +31,7 @@ def init_cmd(
     actor_name: Optional[str] = typer.Option(None, "--actor-name"),
     actor_email: Optional[str] = typer.Option(None, "--actor-email"),
 ) -> None:
-    """Create .sibyl/ config and JSONL queue files."""
+    """Create .strata/ config and JSONL queue files."""
     local_store.ensure_layout()
     cfg = {
         "api_base_url": api.rstrip("/"),
@@ -43,8 +43,8 @@ def init_cmd(
         "actor_email": actor_email,
     }
     local_store.CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    rprint("[green]Initialized[/green] .sibyl/config.json")
-    rprint("Set access token: export SIBYL_API_KEY=sibyl_dev_...  or  .sibyl/secrets.json")
+    rprint("[green]Initialized[/green] .strata/config.json")
+    rprint("Set access token: export STRATA_API_KEY=strata_dev_...  or  .strata/secrets.json")
 
 
 @app.command("add")
@@ -103,7 +103,7 @@ def add_cmd(
 
     _reject_secrets(event)
     local_id = local_store.append_event(event)
-    rprint(f"[green]Queued[/green] {local_id} - run [bold]sibyl sync[/bold] to push to central API")
+    rprint(f"[green]Queued[/green] {local_id} - run [bold]strata sync[/bold] to push to central API")
 
 
 @app.command("summary")
@@ -225,7 +225,7 @@ def _first_paragraph(text: str) -> str:
 def _reject_secrets(value: object) -> None:
     if find_secret_markers(value):
         raise typer.BadParameter(
-            "Content appears to contain secrets. Redact credentials before queuing SIBYL memory."
+            "Content appears to contain secrets. Redact credentials before queuing STRATA memory."
         )
 
 

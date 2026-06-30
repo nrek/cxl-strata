@@ -1,0 +1,1 @@
+"""STRATA MCP server package."""

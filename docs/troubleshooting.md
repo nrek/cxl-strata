@@ -40,21 +40,120 @@ sudo systemctl reload nginx
 
 ## `strata` Command Not Found
 
-Use the module form:
+This usually means the CLI installed successfully, but Python's user scripts directory is not on PATH for the current terminal.
+
+First, prove the package is installed by using the module form:
 
 ```bash
 python -m cxl_strata.cli --help
 python -m cxl_strata.cli whoami
 ```
 
-Windows:
+macOS/Linux may use `python3`:
+
+```bash
+python3 -m cxl_strata.cli --help
+python3 -m cxl_strata.cli whoami
+```
+
+Windows PowerShell:
 
 ```powershell
 python -m cxl_strata.cli --help
 python -m cxl_strata.cli whoami
 ```
 
-Then reopen the terminal. The installer adds the Python user Scripts directory to PATH when possible.
+If the module form works, fix PATH.
+
+### Linux, macOS, WSL, Bash, Zsh
+
+Find Python's user bin directory:
+
+```bash
+python3 -m site --user-base
+```
+
+The `strata` command is usually in:
+
+```text
+$(python3 -m site --user-base)/bin
+```
+
+Add it for the current terminal:
+
+```bash
+export PATH="$(python3 -m site --user-base)/bin:$PATH"
+```
+
+Persist it:
+
+```bash
+printf '\n# STRATA pip user bin\nexport PATH="$(python3 -m site --user-base)/bin:$PATH"\n' >> ~/.profile
+```
+
+For zsh, use `~/.zshrc` instead:
+
+```bash
+printf '\n# STRATA pip user bin\nexport PATH="$(python3 -m site --user-base)/bin:$PATH"\n' >> ~/.zshrc
+```
+
+For bash, use `~/.bashrc` if your terminal reads it:
+
+```bash
+printf '\n# STRATA pip user bin\nexport PATH="$(python3 -m site --user-base)/bin:$PATH"\n' >> ~/.bashrc
+```
+
+Open a new terminal and verify:
+
+```bash
+which strata
+strata whoami
+```
+
+### Windows PowerShell
+
+Find Python's user Scripts directory:
+
+```powershell
+$scriptsDir = Join-Path (python -m site --user-base) "Scripts"
+$scriptsDir
+```
+
+Add it for the current PowerShell session:
+
+```powershell
+$env:Path = "$scriptsDir;$env:Path"
+```
+
+Persist it for future terminals:
+
+```powershell
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($userPath -split ';') -notcontains $scriptsDir) {
+  [Environment]::SetEnvironmentVariable("Path", "$scriptsDir;$userPath", "User")
+}
+```
+
+Also add it to your PowerShell profile:
+
+```powershell
+New-Item -ItemType Directory -Force -Path (Split-Path $PROFILE -Parent) | Out-Null
+Add-Content -Path $PROFILE -Value @"
+
+# STRATA pip user Scripts
+`$__strataScripts = Join-Path (python -m site --user-base 2>`$null) 'Scripts'
+if (`$__strataScripts -and (Test-Path `$__strataScripts)) { `$env:Path = "`$__strataScripts;" + `$env:Path }
+"@
+```
+
+Open a new PowerShell window and verify:
+
+```powershell
+Get-Command strata
+strata whoami
+```
+
+The installer tries to do these PATH updates automatically. If your terminal was already open before install, reopening it is often enough.
 
 Manual reinstall:
 

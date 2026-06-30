@@ -107,23 +107,45 @@ else
   echo "==> Keeping existing $SECRETS_JSON"
 fi
 
-# Ensure user-local bin is on PATH for this session
+# Ensure user-local bin is on PATH for this session and future shells.
 USER_BASE="$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-export PATH="$USER_BASE/bin:$PATH"
+STRATA_BIN_DIR="$USER_BASE/bin"
+case ":$PATH:" in
+  *":$STRATA_BIN_DIR:"*) ;;
+  *) export PATH="$STRATA_BIN_DIR:$PATH" ;;
+esac
+
+PROFILE_FILE="${{HOME}}/.profile"
+case "$(basename "${{SHELL:-}}")" in
+  zsh) PROFILE_FILE="${{HOME}}/.zshrc" ;;
+  bash) PROFILE_FILE="${{HOME}}/.bashrc" ;;
+esac
+PATH_MARKER="# STRATA pip user bin"
+if [[ -n "$PROFILE_FILE" ]]; then
+  touch "$PROFILE_FILE" 2>/dev/null || true
+  if [[ -w "$PROFILE_FILE" ]] && ! grep -Fq "$PATH_MARKER" "$PROFILE_FILE" 2>/dev/null; then
+    cat >>"$PROFILE_FILE" <<EOF
+
+$PATH_MARKER
+export PATH="$STRATA_BIN_DIR:\\$PATH"
+EOF
+    echo "==> Added STRATA bin dir to $PROFILE_FILE"
+  fi
+fi
+
+STRATA_CMD=(strata)
+if ! command -v strata >/dev/null 2>&1; then
+  STRATA_CMD=(python3 -m cxl_strata.cli)
+fi
 
 if [[ "$DO_INIT" -eq 1 ]]; then
-  if ! command -v strata >/dev/null 2>&1; then
-    echo "strata CLI not on PATH. Add to your shell profile:" >&2
-    echo "  export PATH=\\"$(python3 -m site --user-base)/bin:\\$PATH\\"" >&2
-    exit 1
-  fi
   REPO="${{REPO:-$(basename "$(pwd)")}}"
   PROJECT="${{PROJECT:-$REPO}}"
   INIT_ARGS=(init --api "$STRATA_API_URL" --org "$STRATA_ORG" --project "$PROJECT" --repo "$REPO")
   [[ -n "$ACTOR_NAME" ]] && INIT_ARGS+=(--actor-name "$ACTOR_NAME")
   [[ -n "$ACTOR_EMAIL" ]] && INIT_ARGS+=(--actor-email "$ACTOR_EMAIL")
-  echo "==> Running strata ${{INIT_ARGS[*]}}"
-  strata "${{INIT_ARGS[@]}}"
+  echo "==> Running ${{STRATA_CMD[*]}} ${{INIT_ARGS[*]}}"
+  "${{STRATA_CMD[@]}}" "${{INIT_ARGS[@]}}"
 fi
 
 if [[ "$DO_CURSOR" -eq 1 ]]; then
@@ -158,6 +180,7 @@ Next steps:
   2. In each repo: curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
   3. Verify: strata whoami
+     If this shell was already open before install: python3 -m cxl_strata.cli whoami
   4. Index workspace knowledge: strata index
   5. Open local UI: strata app --open
   6. Optional autostart (never installed silently): strata app install-autostart
@@ -231,9 +254,23 @@ if (-not (Test-Path $SecretsJson)) {{
 $userBase = python -m site --user-base 2>$null
 $scriptsDir = if ($userBase) {{ Join-Path $userBase "Scripts" }} else {{ $null }}
 if ($scriptsDir -and (Test-Path $scriptsDir)) {{
-  $env:Path = "$scriptsDir;$env:Path"
+  $pathParts = @($env:Path -split ';' | Where-Object {{ $_ }})
+  if ($pathParts -notcontains $scriptsDir) {{
+    $env:Path = "$scriptsDir;$env:Path"
+  }}
+
+  $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+  $userPathParts = @($userPath -split ';' | Where-Object {{ $_ }})
+  if ($userPathParts -notcontains $scriptsDir) {{
+    $newUserPath = if ($userPath) {{ "$scriptsDir;$userPath" }} else {{ $scriptsDir }}
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+    Write-Host "==> Added STRATA Scripts dir to user PATH: $scriptsDir"
+  }}
+
   $profileMarker = "# STRATA pip user Scripts"
-  if ($PROFILE -and (Test-Path (Split-Path $PROFILE -Parent))) {{
+  if ($PROFILE) {{
+    $profileDir = Split-Path $PROFILE -Parent
+    New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
     $profileContent = if (Test-Path $PROFILE) {{ Get-Content $PROFILE -Raw }} else {{ "" }}
     if ($profileContent -notlike "*$profileMarker*") {{
       Add-Content -Path $PROFILE -Value @"

@@ -11,13 +11,19 @@ def test_install_sh_served(client: TestClient) -> None:
     assert "pip install" in body
     assert "/install.sh" in body
     assert "strata init" in body or "strata \"${INIT_ARGS[@]}\"" in body
+    assert "STRATA pip user bin" in body
+    assert "python3 -m cxl_strata.cli" in body
 
 
 def test_install_ps1_served(client: TestClient) -> None:
     response = client.get("/install.ps1")
     assert response.status_code == 200
-    assert "STRATA local client installer" in response.text
-    assert "pip install" in response.text
+    body = response.text
+    assert "STRATA local client installer" in body
+    assert "pip install" in body
+    assert "STRATA pip user Scripts" in body
+    assert "[Environment]::SetEnvironmentVariable" in body
+    assert "python -m cxl_strata.cli" in body
 
 
 def test_client_manifest(client: TestClient) -> None:

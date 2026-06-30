@@ -12,6 +12,8 @@ The central API is separate. It stores team memory in PostgreSQL and serves sear
 
 ## 1. Verify The API And Identity
 
+Open a new terminal after installing STRATA so your shell reloads PATH. Then run:
+
 ```bash
 strata whoami
 ```
@@ -23,6 +25,14 @@ If `strata` is not found:
 ```bash
 python -m cxl_strata.cli whoami
 ```
+
+On macOS/Linux systems where Python is named `python3`:
+
+```bash
+python3 -m cxl_strata.cli whoami
+```
+
+The module command proves STRATA is installed even if your shell has not picked up Python's user scripts directory yet. See [Client Installation](client-installation.md#about-path) for PATH details.
 
 ## 2. Initialize The Current Repo
 

@@ -19,6 +19,33 @@ It does not grant access by itself. Each user still needs a personal token from 
 - A STRATA API URL such as `https://strata.example.com`
 - A personal `strata_live_...` token
 
+## About PATH
+
+The `strata` command is installed by `pip install --user`. That puts the executable in Python's **user scripts** directory, which is not always on PATH by default.
+
+The installer now tries to make `strata` work automatically:
+
+- Linux, macOS, WSL, bash, zsh, xTerm: adds Python's user bin directory to the current session and writes a STRATA PATH block to `.bashrc`, `.zshrc`, or `.profile`.
+- Windows PowerShell: adds Python's user `Scripts` directory to the current session, the user PATH environment variable, and the PowerShell profile.
+
+After install, open a new terminal and run:
+
+```bash
+strata whoami
+```
+
+If `strata` still is not found, the CLI is usually installed correctly but the shell has not picked up PATH yet. Use the module fallback:
+
+```bash
+python -m cxl_strata.cli whoami
+```
+
+On macOS/Linux systems where Python is named `python3`:
+
+```bash
+python3 -m cxl_strata.cli whoami
+```
+
 ## Linux, macOS, WSL, xTerm, Bash, Zsh
 
 Use the Unix installer from any shell:
@@ -36,7 +63,7 @@ curl -fsSL https://strata.example.com/install.sh | bash -s -- \
   --project my-project
 ```
 
-If `strata` is not on PATH yet, open a new shell or use:
+The installer persists PATH for future shells. If this shell was already open before install and `strata` is not found yet, open a new shell or use:
 
 ```bash
 python3 -m cxl_strata.cli whoami
@@ -62,13 +89,13 @@ Ask for a Cursor MCP snippet:
 & ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Cursor
 ```
 
-If `strata` is not found immediately, reopen PowerShell or run:
+The installer persists PATH for future PowerShell sessions. If `strata` is not found immediately, reopen PowerShell or run:
 
 ```powershell
 python -m cxl_strata.cli whoami
 ```
 
-The installer adds the Python user Scripts directory to your PowerShell profile when possible.
+The installer adds the Python user Scripts directory to the current session, the user PATH environment variable, and your PowerShell profile when possible.
 
 ## Set The API Key
 
@@ -155,7 +182,7 @@ CLI and auth:
 strata whoami
 ```
 
-Fallback:
+No-PATH fallback:
 
 ```bash
 python -m cxl_strata.cli whoami

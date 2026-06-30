@@ -92,6 +92,8 @@ Install on Windows PowerShell:
 irm https://strata.example.com/install.ps1 | iex
 ```
 
+The installer tries to add `strata` to PATH automatically. Open a new terminal after install, then run `strata whoami`. If your shell still cannot find `strata`, use `python -m cxl_strata.cli whoami` (or `python3 -m cxl_strata.cli whoami`) and see [Client Installation](docs/client-installation.md#about-path).
+
 Add your token:
 
 ```json
@@ -235,6 +237,8 @@ curl -fsSL https://strata.example.com/install.sh | bash
 ```powershell
 irm https://strata.example.com/install.ps1 | iex
 ```
+
+Both installers persist Python's user scripts directory to PATH where possible so `strata` works in new terminals. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
 
 Repo initialization can be included during install:
 

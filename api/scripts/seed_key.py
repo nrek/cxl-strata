@@ -48,14 +48,17 @@ def main() -> int:
             ],
             prefix=args.prefix,
         )
+        org_slug, org_id = org.slug, org.id
+        actor_name, actor_id = actor.name, actor.id
+        key_id, key_prefix = row.id, row.key_prefix
     finally:
         db.close()
 
     print("STRATA seed complete")
-    print(f"  organization: {org.slug} ({org.id})")
-    print(f"  actor:        {actor.name} ({actor.id})")
-    print(f"  api_key_id:   {row.id}")
-    print(f"  key_prefix:   {row.key_prefix}")
+    print(f"  organization: {org_slug} ({org_id})")
+    print(f"  actor:        {actor_name} ({actor_id})")
+    print(f"  api_key_id:   {key_id}")
+    print(f"  key_prefix:   {key_prefix}")
     print("")
     print("Save this access token now (shown once):")
     print(raw_key)

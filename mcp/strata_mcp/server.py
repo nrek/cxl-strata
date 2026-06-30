@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -16,14 +17,31 @@ server = Server("strata")
 
 
 def _api_base() -> str:
-    return os.environ.get("STRATA_API_URL", "http://127.0.0.1:8015").rstrip("/")
+    env = os.environ.get("STRATA_API_URL", "").strip()
+    if env:
+        return env.rstrip("/")
+    global_file = Path.home() / ".strata" / "global.json"
+    if global_file.is_file():
+        data = json.loads(global_file.read_text(encoding="utf-8"))
+        url = str(data.get("api_base_url", "")).strip()
+        if url:
+            return url.rstrip("/")
+    return "http://127.0.0.1:8015"
 
 
 def _api_key() -> str:
     key = os.environ.get("STRATA_API_KEY", "").strip()
-    if not key:
-        raise RuntimeError("STRATA_API_KEY is required for the MCP server")
-    return key
+    if key:
+        return key
+    for secrets_path in (Path(".strata") / "secrets.json", Path.home() / ".strata" / "secrets.json"):
+        if secrets_path.is_file():
+            data = json.loads(secrets_path.read_text(encoding="utf-8"))
+            candidate = str(data.get("api_key", "")).strip()
+            if candidate and not candidate.startswith("REPLACE_WITH"):
+                return candidate
+    raise RuntimeError(
+        "STRATA_API_KEY is required (env, ~/.strata/secrets.json, or .strata/secrets.json)"
+    )
 
 
 def _headers() -> dict[str, str]:

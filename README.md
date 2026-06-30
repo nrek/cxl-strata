@@ -390,7 +390,50 @@ STRATA has two integration layers:
 
 Copy [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) into your project or IDE config.
 
-### Per-developer setup (all clients)
+### One-line install (recommended)
+
+Point at your team's central API. The server serves bootstrap scripts that install the CLI + MCP via pip (from git until PyPI publish).
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://strata.example.com/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://strata.example.com/install.ps1 | iex
+```
+
+**Initialize the current repo** (after install):
+
+```bash
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org your-org --init --project my-project
+```
+
+Then set your token once in `~/.strata/secrets.json`:
+
+```json
+{
+  "api_key": "strata_live_your_personal_token"
+}
+```
+
+Verify: `strata whoami`
+
+Optional: re-run with `--cursor` (bash) or `-Cursor` (PowerShell) for a Cursor MCP JSON snippet. Machine-readable install metadata: `GET /v1/client/manifest`.
+
+**Server env** (production `.env` on the central API):
+
+| Variable | Purpose |
+|----------|---------|
+| `STRATA_PUBLIC_URL` | Public base URL baked into install scripts |
+| `STRATA_CLIENT_GIT_URL` | Git remote for `pip install git+...#subdirectory=cli` |
+| `STRATA_CLIENT_GIT_REF` | Branch or tag (e.g. `main`) |
+| `STRATA_DEFAULT_ORG` | Default `--org` in install scripts |
+
+### Manual setup (all clients)
 
 In each repo that should report to STRATA:
 
@@ -698,6 +741,7 @@ Open a GitHub Discussion or Issue for design questions, deployment help, or inte
 | PostgreSQL + Alembic migrations | Done (v0.2) |
 | Hashed per-user API keys | Done (v0.2) |
 | MCP retrieval for AI context | Done (v0.2) |
+| Curl/PowerShell client bootstrap (`/install.sh`, `/install.ps1`) | Done (v0.3) |
 | GitHub release / PyPI publish | Planned |
 
 ---

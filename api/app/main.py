@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_auth, require_scopes
@@ -11,6 +12,7 @@ from app.core.db import get_db
 from app.core.types import AuthContext
 from app.schemas.key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatchIn, SyncBatchOut
+from app.services.client_install import client_manifest, render_install_ps1, render_install_sh
 from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
@@ -28,6 +30,29 @@ app.add_middleware(
 def health(db: Session = Depends(get_db)) -> dict[str, str]:
     _ = db  # ensures DB connectivity when configured
     return {"status": "ok", "service": "strata-api", "storage": "postgres"}
+
+
+@app.get("/install.sh", response_class=PlainTextResponse)
+def install_sh() -> PlainTextResponse:
+    return PlainTextResponse(
+        content=render_install_sh(),
+        media_type="text/x-sh",
+        headers={"Content-Disposition": "inline; filename=install.sh"},
+    )
+
+
+@app.get("/install.ps1", response_class=PlainTextResponse)
+def install_ps1() -> PlainTextResponse:
+    return PlainTextResponse(
+        content=render_install_ps1(),
+        media_type="text/plain",
+        headers={"Content-Disposition": "inline; filename=install.ps1"},
+    )
+
+
+@app.get("/v1/client/manifest")
+def get_client_manifest() -> dict:
+    return client_manifest()
 
 
 @app.get("/v1/whoami")

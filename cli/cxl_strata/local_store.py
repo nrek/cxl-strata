@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +16,10 @@ EVENTS_FILE = STRATA_DIR / "events.jsonl"
 SYNCED_FILE = STRATA_DIR / "synced.jsonl"
 FAILED_FILE = STRATA_DIR / "failed.jsonl"
 
+USER_STRATA_DIR = Path.home() / ".strata"
+USER_GLOBAL_FILE = USER_STRATA_DIR / "global.json"
+USER_SECRETS_FILE = USER_STRATA_DIR / "secrets.json"
+
 
 def ensure_layout() -> None:
     STRATA_DIR.mkdir(exist_ok=True)
@@ -22,24 +27,41 @@ def ensure_layout() -> None:
         fp.touch(exist_ok=True)
 
 
+def load_global_config() -> dict[str, Any]:
+    if USER_GLOBAL_FILE.is_file():
+        return json.loads(USER_GLOBAL_FILE.read_text(encoding="utf-8"))
+    return {}
+
+
 def load_config() -> dict[str, Any]:
-    if not CONFIG_FILE.is_file():
-        raise FileNotFoundError("Missing .strata/config.json - run: strata init")
-    return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    if CONFIG_FILE.is_file():
+        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    global_cfg = load_global_config()
+    if global_cfg:
+        return global_cfg
+    raise FileNotFoundError(
+        "Missing .strata/config.json — run: strata init "
+        "(or curl bootstrap: curl -fsSL YOUR_API/install.sh | bash -s -- --init)"
+    )
 
 
 def load_api_key() -> str:
-    import os
-
     env = os.environ.get("STRATA_API_KEY", "").strip()
     if env:
         return env
     if SECRETS_FILE.is_file():
         data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
         key = str(data.get("api_key", "")).strip()
-        if key:
+        if key and not key.startswith("REPLACE_WITH"):
             return key
-    raise RuntimeError("Set STRATA_API_KEY or create .strata/secrets.json with api_key")
+    if USER_SECRETS_FILE.is_file():
+        data = json.loads(USER_SECRETS_FILE.read_text(encoding="utf-8"))
+        key = str(data.get("api_key", "")).strip()
+        if key and not key.startswith("REPLACE_WITH"):
+            return key
+    raise RuntimeError(
+        "Set STRATA_API_KEY or create ~/.strata/secrets.json (or .strata/secrets.json) with api_key"
+    )
 
 
 def append_event(event: dict[str, Any]) -> str:

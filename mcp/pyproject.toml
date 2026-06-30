@@ -1,0 +1,21 @@
+[project]
+name = "sibyl-mcp"
+version = "0.1.0"
+description = "MCP server for SIBYL project memory retrieval"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+sibyl-mcp = "sibyl_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["sibyl_mcp*"]

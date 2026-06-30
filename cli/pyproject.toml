@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cxl-sibyl"
+version = "0.1.0"
+description = "SIBYL - shared project memory CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+  "typer>=0.12.0",
+  "httpx>=0.27.0",
+  "rich>=13.0.0",
+]
+
+[project.scripts]
+sibyl = "cxl_sibyl.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cxl_sibyl*"]

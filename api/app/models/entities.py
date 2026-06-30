@@ -115,3 +115,54 @@ class MemoryEvent(Base):
     project: Mapped["Project"] = relationship(back_populates="memory_events")
     repo: Mapped["Repo | None"] = relationship(back_populates="memory_events")
     actor: Mapped["Actor | None"] = relationship(back_populates="memory_events")
+
+
+class SharedDocument(Base):
+    __tablename__ = "shared_documents"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True, index=True)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("actors.id"), nullable=True, index=True)
+
+    project_slug: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    repo_name: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    path: Mapped[str] = mapped_column(Text, index=True)
+    body: Mapped[str] = mapped_column(Text)
+    body_hash: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(64), default="workspace_index")
+    storage_state: Mapped[str] = mapped_column(String(32), default="file")
+    visibility: Mapped[str] = mapped_column(String(32), default="internal")
+    plan_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    linear_task_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    author_name: Mapped[str] = mapped_column(String(255))
+    author_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    shared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    organization: Mapped["Organization"] = relationship()
+    project: Mapped["Project | None"] = relationship()
+    actor: Mapped["Actor | None"] = relationship()
+    sections: Mapped[list["SharedDocumentSection"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class SharedDocumentSection(Base):
+    __tablename__ = "shared_document_sections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(ForeignKey("shared_documents.id", ondelete="CASCADE"), index=True)
+    heading: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    section_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    ordinal: Mapped[int] = mapped_column(default=0)
+
+    document: Mapped["SharedDocument"] = relationship(back_populates="sections")

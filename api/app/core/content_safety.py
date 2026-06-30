@@ -18,6 +18,11 @@ def find_secret_markers(value: Any) -> list[str]:
     return [pattern.pattern for pattern in SECRET_PATTERNS if pattern.search(text)]
 
 
+def reject_if_secrets(value: Any) -> None:
+    if find_secret_markers(value):
+        raise ValueError("Content appears to contain secrets")
+
+
 def _flatten(value: Any) -> str:
     if value is None:
         return ""

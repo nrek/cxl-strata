@@ -1,0 +1,2 @@
+[console_scripts]
+strata = cxl_strata.cli:app

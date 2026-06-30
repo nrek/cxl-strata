@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>STRATA</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <!-- Home: centered search + project panels -->
+  <div id="view-home" class="view view-active">
+    <div class="home-shell">
+      <div class="home-center">
+        <div class="home-brand">
+          <div class="home-logo" aria-hidden="true">⌘</div>
+          <h1>STRATA</h1>
+          <p class="home-sub" id="stats-line">Loading index…</p>
+        </div>
+
+        <form id="home-search-form" class="search-bar search-bar-lg" role="search">
+          <input
+            id="home-q"
+            type="search"
+            placeholder='Search a project or try "last time I touched font awesome"'
+            autocomplete="off"
+            autofocus
+          />
+          <select id="home-source" aria-label="Source filter">
+            <option value="local">Local</option>
+            <option value="both">Both</option>
+            <option value="shared">Shared</option>
+          </select>
+          <button type="submit" aria-label="Search">→</button>
+        </form>
+
+        <div id="api-status" class="api-status hidden"></div>
+
+        <section id="sync-local-section" class="sync-section">
+          <div class="sync-head">
+            <h2>Sync Local</h2>
+            <div class="sync-controls">
+              <select id="sync-filter-kind" aria-label="Kind filter">
+                <option value="">All kinds</option>
+                <option value="handoff">handoff</option>
+                <option value="blueprint">blueprint</option>
+                <option value="plan">plan</option>
+                <option value="rule">rule</option>
+              </select>
+              <button type="button" id="sync-all-btn" class="ghost-btn">Sync All</button>
+              <button type="button" id="sync-refresh-btn" class="ghost-btn">Refresh</button>
+            </div>
+          </div>
+          <div id="sync-local-table" class="sync-table"></div>
+        </section>
+
+        <div class="home-panels">
+          <section class="home-panel">
+            <h2>Latest Projects</h2>
+            <ul id="latest-projects" class="project-rows"></ul>
+          </section>
+          <section class="home-panel">
+            <h2>Most Frequent Projects</h2>
+            <ul id="frequent-projects" class="project-rows"></ul>
+          </section>
+        </div>
+
+        <div class="home-hints" id="example-chips"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- App: sidebar browser + scoped search in content -->
+  <div id="view-app" class="view hidden">
+    <aside id="sidebar">
+      <div class="sidebar-top">
+        <button type="button" id="home-btn" class="ghost-btn">← Home</button>
+      </div>
+      <h2>Projects</h2>
+      <ul id="project-list" class="project-rows sidebar-rows"></ul>
+    </aside>
+
+    <section id="content">
+      <header class="content-header">
+        <div class="content-title">
+          <span class="content-label">Project</span>
+          <h1 id="active-project">—</h1>
+        </div>
+      </header>
+
+      <form id="scoped-search-form" class="search-bar" role="search">
+        <input
+          id="scoped-q"
+          type="search"
+          placeholder='Search within this project — e.g. "last time I touched font awesome"'
+          autocomplete="off"
+        />
+        <select id="scoped-source" aria-label="Source filter">
+          <option value="local">Local</option>
+          <option value="both">Both</option>
+          <option value="shared">Shared</option>
+        </select>
+        <button type="submit" aria-label="Search">Search</button>
+      </form>
+
+      <div id="meta" class="meta hidden"></div>
+      <div id="output"></div>
+    </section>
+  </div>
+
+  <dialog id="doc-modal">
+    <article>
+      <header>
+        <div class="doc-head-text">
+          <h2 id="doc-title"></h2>
+          <p id="doc-subtitle" class="doc-subtitle"></p>
+        </div>
+        <button type="button" id="doc-close" aria-label="Close">×</button>
+      </header>
+      <div id="doc-body" class="markdown-body"></div>
+    </article>
+  </dialog>
+
+  <script src="/static/marked.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

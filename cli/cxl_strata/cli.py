@@ -13,6 +13,7 @@ from rich.prompt import Prompt
 
 from . import api_client, local_store
 from .content_safety import find_secret_markers
+from .workspace_cmds import register as register_workspace_cmds
 
 app = typer.Typer(
     name="strata",
@@ -238,6 +239,9 @@ def _created_after(row: dict, cutoff: datetime) -> bool:
     except ValueError:
         return True
     return created >= cutoff
+
+
+register_workspace_cmds(app)
 
 
 if __name__ == "__main__":

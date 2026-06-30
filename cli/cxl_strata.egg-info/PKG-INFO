@@ -1,3 +1,14 @@
+Metadata-Version: 2.4
+Name: cxl-strata
+Version: 0.3.0
+Summary: STRATA - shared project memory CLI
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: typer>=0.12.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: rich>=13.0.0
+
 # STRATA CLI
 
 Local capture, workspace knowledge indexing, and central sync for STRATA project memory.

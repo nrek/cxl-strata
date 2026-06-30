@@ -158,7 +158,10 @@ Next steps:
   2. In each repo: curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
   3. Verify: strata whoami
-  4. Optional Cursor MCP: re-run with --cursor for JSON snippet
+  4. Index workspace knowledge: strata index
+  5. Open local UI: strata app --open
+  6. Optional autostart (never installed silently): strata app install-autostart
+  7. Optional Cursor MCP: re-run with --cursor for JSON snippet
 
 Manifest: {public_url}/v1/client/manifest
 EOF
@@ -294,7 +297,10 @@ Next steps:
      Or after opening a new terminal: strata whoami
   3. Init this repo (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
-  4. Optional MCP snippet:
+  4. Index workspace: strata index
+  5. Open UI: strata app --open
+  6. Optional autostart: strata app install-autostart
+  7. Optional MCP snippet:
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
 
 Quick test now: python -m cxl_strata.cli whoami
@@ -330,7 +336,7 @@ def client_manifest() -> dict:
     mcp_spec = f"git+{git_url}@{git_ref}#subdirectory=mcp"
     return {
         "api": "strata",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "public_url": base,
         "default_org": settings.strata_default_org,
         "install": {
@@ -361,5 +367,15 @@ def client_manifest() -> dict:
             "python_cli": ">=3.10",
             "python_mcp": ">=3.11",
             "git": "required for pip install from git until PyPI publish",
+        },
+        "workspace_knowledge": {
+            "index": "strata index",
+            "prune": "strata prune --archive-handoffs --execute",
+            "stash": "strata stash --project YOUR_PROJECT",
+            "pull": "strata pull --project YOUR_PROJECT",
+            "app": "strata app --open",
+            "autostart": "strata app install-autostart",
+            "local_db": ".md/workspace_index.sqlite",
+            "ui_port": 8765,
         },
     }

@@ -48,3 +48,45 @@ def search(q: str, project: str | None = None) -> dict[str, Any]:
         r = client.get("/v1/search", params=params)
         r.raise_for_status()
         return r.json()
+
+
+def list_documents(
+    *,
+    project: str | None = None,
+    kind: str | None = None,
+    author: str | None = None,
+    since: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    params: dict[str, str | int] = {"limit": limit}
+    if project:
+        params["project"] = project
+    if kind:
+        params["kind"] = kind
+    if author:
+        params["author"] = author
+    if since:
+        params["since"] = since
+    with _client() as client:
+        r = client.get("/v1/documents", params={**params, "include_body": True})
+        r.raise_for_status()
+        return r.json().get("results", [])
+
+
+def search_documents(
+    q: str, *, project: str | None = None, limit: int = 50
+) -> dict[str, Any]:
+    params: dict[str, str | int] = {"q": q, "limit": limit}
+    if project:
+        params["project"] = project
+    with _client() as client:
+        r = client.get("/v1/documents/search", params=params)
+        r.raise_for_status()
+        return r.json()
+
+
+def documents_import_batch(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    with _client() as client:
+        r = client.post("/v1/documents/import-batch", json={"documents": documents})
+        r.raise_for_status()
+        return r.json()

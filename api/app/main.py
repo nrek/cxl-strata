@@ -12,11 +12,18 @@ from app.core.db import get_db
 from app.core.types import AuthContext
 from app.schemas.key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatchIn, SyncBatchOut
+from app.schemas.shared_document import (
+    SharedDocumentCreate,
+    SharedDocumentImportBatchIn,
+    SharedDocumentImportBatchOut,
+    SharedDocumentOut,
+)
 from app.services.client_install import client_manifest, render_install_ps1, render_install_sh
+from app.services.document_service import DocumentService, document_to_dict
 from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
-app = FastAPI(title="STRATA", version="0.2.0", description="Shared project memory API")
+app = FastAPI(title="STRATA", version="0.3.0", description="Shared project memory API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -203,3 +210,81 @@ def revoke_api_key(
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
     return ApiKeyOut(**keys.key_to_dict(row))
+
+
+@app.post("/v1/documents", response_model=SharedDocumentOut)
+def create_document(
+    body: SharedDocumentCreate,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> SharedDocumentOut:
+    require_scopes(auth, "memory:write")
+    service = DocumentService(db, auth)
+    try:
+        row = service.upsert(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return SharedDocumentOut(**document_to_dict(row))
+
+
+@app.get("/v1/documents")
+def list_documents(
+    project: str | None = Query(None),
+    kind: str | None = Query(None),
+    author: str | None = Query(None),
+    since: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    include_body: bool = Query(False),
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    service = DocumentService(db, auth)
+    rows = service.list_documents(
+        project=project, kind=kind, author=author, since=since, limit=limit
+    )
+    return {
+        "results": [
+            document_to_dict(r, include_body=include_body) for r in rows
+        ]
+    }
+
+
+@app.get("/v1/documents/search")
+def search_documents(
+    q: str = Query(..., min_length=1),
+    project: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    service = DocumentService(db, auth)
+    rows = service.search(q, project=project, limit=limit)
+    return {"results": [document_to_dict(r, include_body=False) for r in rows]}
+
+
+@app.get("/v1/documents/{document_id}")
+def get_document(
+    document_id: str,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    service = DocumentService(db, auth)
+    row = service.get(document_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return document_to_dict(row)
+
+
+@app.post("/v1/documents/import-batch", response_model=SharedDocumentImportBatchOut)
+def import_documents_batch(
+    body: SharedDocumentImportBatchIn,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> SharedDocumentImportBatchOut:
+    require_scopes(auth, "memory:sync", "memory:write")
+    service = DocumentService(db, auth)
+    synced, failed = service.import_batch(body.documents)
+    return SharedDocumentImportBatchOut(synced=synced, failed=failed)

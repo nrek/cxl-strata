@@ -21,6 +21,11 @@ USER_GLOBAL_FILE = USER_STRATA_DIR / "global.json"
 USER_SECRETS_FILE = USER_STRATA_DIR / "secrets.json"
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    """Load JSON written by editors or PowerShell (utf-8-sig strips optional BOM)."""
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
 def ensure_layout() -> None:
     STRATA_DIR.mkdir(exist_ok=True)
     for fp in (EVENTS_FILE, SYNCED_FILE, FAILED_FILE):
@@ -29,13 +34,13 @@ def ensure_layout() -> None:
 
 def load_global_config() -> dict[str, Any]:
     if USER_GLOBAL_FILE.is_file():
-        return json.loads(USER_GLOBAL_FILE.read_text(encoding="utf-8"))
+        return _read_json(USER_GLOBAL_FILE)
     return {}
 
 
 def load_config() -> dict[str, Any]:
     if CONFIG_FILE.is_file():
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        return _read_json(CONFIG_FILE)
     global_cfg = load_global_config()
     if global_cfg:
         return global_cfg
@@ -50,12 +55,12 @@ def load_api_key() -> str:
     if env:
         return env
     if SECRETS_FILE.is_file():
-        data = json.loads(SECRETS_FILE.read_text(encoding="utf-8"))
+        data = _read_json(SECRETS_FILE)
         key = str(data.get("api_key", "")).strip()
         if key and not key.startswith("REPLACE_WITH"):
             return key
     if USER_SECRETS_FILE.is_file():
-        data = json.loads(USER_SECRETS_FILE.read_text(encoding="utf-8"))
+        data = _read_json(USER_SECRETS_FILE)
         key = str(data.get("api_key", "")).strip()
         if key and not key.startswith("REPLACE_WITH"):
             return key

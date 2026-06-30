@@ -183,6 +183,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function Write-Utf8NoBom([string]$Path, [string]$Content) {{
+  $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+  [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}}
+
 function Require-Command($Name) {{
   if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {{
     throw "$Name is required but not found on PATH."
@@ -205,8 +210,8 @@ New-Item -ItemType Directory -Force -Path $StrataHome | Out-Null
 
 $GlobalJson = Join-Path $StrataHome "global.json"
 if (-not (Test-Path $GlobalJson)) {{
-  @{{ api_base_url = $ApiUrl; organization_slug = $Org; installed_from = "{public_url}/install.ps1" }} |
-    ConvertTo-Json | Set-Content -Encoding utf8 $GlobalJson
+  $globalBody = (@{{ api_base_url = $ApiUrl; organization_slug = $Org; installed_from = "{public_url}/install.ps1" }} | ConvertTo-Json -Compress)
+  Write-Utf8NoBom $GlobalJson $globalBody
   Write-Host "==> Wrote $GlobalJson"
 }} else {{
   Write-Host "==> Keeping existing $GlobalJson"
@@ -214,7 +219,7 @@ if (-not (Test-Path $GlobalJson)) {{
 
 $SecretsJson = Join-Path $StrataHome "secrets.json"
 if (-not (Test-Path $SecretsJson)) {{
-  '{{"api_key":"REPLACE_WITH_strata_live_OR_strata_dev_TOKEN"}}' | Set-Content -Encoding utf8 $SecretsJson
+  Write-Utf8NoBom $SecretsJson '{{"api_key":"REPLACE_WITH_strata_live_OR_strata_dev_TOKEN"}}'
   Write-Host "==> Wrote $SecretsJson — edit api_key before syncing"
 }} else {{
   Write-Host "==> Keeping existing $SecretsJson"

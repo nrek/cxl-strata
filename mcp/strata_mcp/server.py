@@ -22,7 +22,7 @@ def _api_base() -> str:
         return env.rstrip("/")
     global_file = Path.home() / ".strata" / "global.json"
     if global_file.is_file():
-        data = json.loads(global_file.read_text(encoding="utf-8"))
+        data = json.loads(global_file.read_text(encoding="utf-8-sig"))
         url = str(data.get("api_base_url", "")).strip()
         if url:
             return url.rstrip("/")
@@ -35,7 +35,7 @@ def _api_key() -> str:
         return key
     for secrets_path in (Path(".strata") / "secrets.json", Path.home() / ".strata" / "secrets.json"):
         if secrets_path.is_file():
-            data = json.loads(secrets_path.read_text(encoding="utf-8"))
+            data = json.loads(secrets_path.read_text(encoding="utf-8-sig"))
             candidate = str(data.get("api_key", "")).strip()
             if candidate and not candidate.startswith("REPLACE_WITH"):
                 return candidate

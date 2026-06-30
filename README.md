@@ -4,94 +4,165 @@
   <img src="assets/strata-logo.png" alt="STRATA logo" width="240">
 </p>
 
-**STRATA** is an open-source shared project memory system for technical teams.
+**STRATA** is a shared project memory system for technical teams.
 
-Developers capture durable notes, handoffs, and daily summaries from local workspaces. A central API stores that memory so the whole team can search it later. STRATA is designed to preserve **what changed, why, and how it was fixed** — not raw chat logs or terminal surveillance.
+It helps developers capture the durable context teams usually lose: what changed, why it changed, what broke, how it was fixed, which decisions were made, and which environment details matter later.
+
+STRATA is intentionally small. It is not a task manager, chat-log archive, terminal recorder, secret store, or replacement for Linear/GitHub Issues.
+
+## Current Status
+
+| Area | Status |
+|------|--------|
+| FastAPI central API | Done |
+| PostgreSQL + Alembic | Done |
+| Hashed per-user API keys | Done |
+| Python CLI (`strata`) | Done |
+| Local JSONL capture queue | Done |
+| Shared document sync | Done |
+| Local SQLite workspace cache | Done |
+| Localhost browser app | Done |
+| MCP retrieval server | Done |
+| Curl/PowerShell installers | Done |
+| PyPI release | Planned |
+
+## How It Works
 
 ```text
-Developer machine (Cursor, Claude, Codex, or terminal)
-    |
-    |  strata add | strata summary | /strata add | /strata summary
-    v
-Local .strata/ queue (JSONL)
-    |
-    |  HTTPS + Bearer access token
-    v
-Central STRATA API (FastAPI + Uvicorn)
-    |
-    v
-PostgreSQL (production target; v0 scaffold may use in-memory store)
-    |
-    v
-Search, recent history, future MCP retrieval
+Developer workstation
+  Cursor, Claude, Codex, terminal, WSL, PowerShell, xTerm
+      |
+      | strata add / strata summary / agent rules
+      v
+Repo-local .strata/ queue
+      |
+      | strata sync over HTTPS with Bearer token
+      v
+Central STRATA API
+  FastAPI + Uvicorn on 127.0.0.1:8015
+      |
+      v
+PostgreSQL
+      |
+      v
+Team search, recent history, shared docs, MCP retrieval
 ```
 
-| | |
-|---|---|
-| **Stack** | FastAPI, PostgreSQL, Python CLI (Typer) |
-| **Local API** | `http://127.0.0.1:8015` |
-| **CLI command** | `strata` |
-| **License** | [MIT](LICENSE) |
+There is also a local workstation cache:
 
-> **Status:** v0.2 — Postgres, Alembic, hashed API keys, and MCP retrieval are implemented. See [Roadmap](#roadmap).
+```text
+Workspace markdown files + pulled shared docs
+      |
+      | strata index / strata pull
+      v
+.md/workspace_index.sqlite
+      |
+      | strata app --open
+      v
+http://127.0.0.1:8765
+```
 
----
+The central API stores shared team memory in PostgreSQL. The local SQLite database powers fast local browsing for Cursor, Claude, Codex, and terminal workflows.
 
-## Table of contents
+## Repository Layout
 
-1. [Why STRATA exists](#why-strata-exists)
-2. [Quickstart (local)](#quickstart-local)
-3. [API deployment (central server)](#api-deployment-central-server)
-4. [Client integration (Cursor, Claude, Codex)](#client-integration-cursor-claude-codex)
-5. [Troubleshooting](#troubleshooting)
-6. [License](#license)
-7. [Contributing](#contributing)
-8. [Security](#security)
-9. [Roadmap](#roadmap)
+```text
+cxl-strata/
+  api/              FastAPI central API, migrations, key provisioning
+  cli/              Typer CLI, local queue, local SQLite index, localhost app
+  mcp/              MCP stdio server for AI context retrieval
+  cursor-rules/     Cursor command/rule examples
+  docs/             Installation, provisioning, operations, security
+  assets/           STRATA logo and icons
+```
 
----
+## Quick Start
 
-## Why STRATA exists
+Use this when the central API already exists and you have a personal token.
 
-Teams lose context between sessions. STRATA captures durable project knowledge:
-
-- What changed and why
-- Debugging discoveries and fixes
-- Deployment and ops notes
-- Architecture decisions
-- Client assumptions and planning warnings
-
-Each developer uses their own **access token** (`strata_live_...` or `strata_dev_...`). Tokens authenticate to the central API. Secrets stay in `STRATA_API_KEY` or `.strata/secrets.json` — never in git.
-
-**STRATA is not:** a task manager, a chat-log dump, a secret store, or a replacement for Linear/GitHub Issues.
-
----
-
-## Quickstart (local)
-
-### Prerequisites
-
-- Python 3.10+
-- PostgreSQL 16+ (required for persistence; bootstrap env keys work without seeding hashed keys)
-- A Linux or macOS host for server deployment (Windows works for local CLI dev)
-
-### 1. Run the API locally
+Install on Linux, macOS, WSL, bash, zsh, or xTerm:
 
 ```bash
-git clone https://github.com/YOUR_ORG/cxl-strata.git
-cd cxl-strata/api
+curl -fsSL https://strata.example.com/install.sh | bash
+```
 
+Install on Windows PowerShell:
+
+```powershell
+irm https://strata.example.com/install.ps1 | iex
+```
+
+Add your token:
+
+```json
+{
+  "api_key": "strata_live_your_personal_token"
+}
+```
+
+Store it in `~/.strata/secrets.json` or `%USERPROFILE%\.strata\secrets.json`.
+
+Initialize a repo:
+
+```bash
+strata init \
+  --api https://strata.example.com \
+  --org example-org \
+  --project example-project \
+  --repo example-repo
+```
+
+Verify:
+
+```bash
+strata whoami
+```
+
+Capture and sync:
+
+```bash
+strata add \
+  --type debug_discovery \
+  --title "OAuth redirect used stale domain" \
+  --summary "The redirect issue was caused by stale runtime environment configuration." \
+  --environment staging \
+  --tags oauth,env,redirect
+
+strata sync
+strata search "oauth redirect"
+```
+
+Open the local browser app:
+
+```bash
+strata index
+strata pull --project example-project
+strata app --open
+```
+
+See [Quick Start](docs/quickstart.md) for the full local workflow.
+
+## Central Server/API Setup
+
+The central API runs behind a reverse proxy:
+
+```text
+Apache or Nginx on 443
+  -> Uvicorn on 127.0.0.1:8015
+  -> PostgreSQL
+```
+
+Local development:
+
+```bash
+cd api
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env — set DATABASE_URL, API_KEY_PEPPER, and STRATA_API_KEYS for bootstrap dev auth
-
-# Create database (once), then apply schema:
-# createdb strata   # or use your Postgres admin flow
+createdb strata
 alembic upgrade head
-python scripts/seed_key.py       # optional — creates hashed per-user key (shown once)
-
+python scripts/seed_key.py --org-slug example-org --prefix strata_dev_
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8015
 ```
 
@@ -99,429 +170,110 @@ Verify:
 
 ```bash
 curl http://127.0.0.1:8015/health
-# {"status":"ok","service":"strata-api","storage":"postgres"}
 ```
 
-### 2. Install the CLI
+Production setup includes:
+
+- Ubuntu host
+- PostgreSQL database
+- `.env` with API URL, database URL, key pepper, installer metadata, and default org
+- systemd service for `cxl-strata-api`
+- Apache or Nginx TLS reverse proxy
+- `alembic upgrade head`
+- first admin token from `api/scripts/seed_key.py`
+
+See [Server Setup](docs/server-setup.md).
+
+## Provisioning Users
+
+Each developer should have their own token. Install scripts are public bootstrap scripts; they do not grant access.
+
+Create the first admin key on the API host:
 
 ```bash
-cd ../cli
-pip install -e .
-
-export STRATA_API_KEY="strata_dev_example"   # must match a key in STRATA_API_KEYS on the server
+cd /var/www/cxl-strata/api
+source .venv/bin/activate
+set -a && source .env && set +a
+python scripts/seed_key.py \
+  --org-slug example-org \
+  --actor-name "Admin Name" \
+  --actor-email admin@example.com \
+  --key-name bootstrap-admin \
+  --prefix strata_live_
 ```
 
-### 3. Initialize a repo
+Create additional user keys through `POST /v1/api-keys` using an admin token with `keys:manage` and `admin`.
 
-From any project directory:
+Recommended onboarding:
 
-```bash
-strata init \
-  --api http://127.0.0.1:8015 \
-  --org my-org \
-  --project my-project \
-  --repo my-repo
+1. Send the public install command and org slug.
+2. Send the personal token separately through a secure channel.
+3. Ask the user to run `strata whoami`.
 
-strata whoami
-```
+See [Provisioning](docs/provisioning.md).
 
-This creates `.strata/config.json` and empty JSONL queue files. Add `.strata/secrets.json` or keep using `STRATA_API_KEY` in your shell profile.
+## Client Installation
 
-### 4. Capture and sync memory
+Supported workstation surfaces:
 
-```bash
-# Structured note
-strata add \
-  --type debug_discovery \
-  --title "OAuth redirect used stale domain" \
-  --summary "Redirect issue was caused by stale runtime env configuration." \
-  --environment staging \
-  --tags oauth,env,redirect
+- Linux terminal
+- macOS Terminal or iTerm
+- WSL
+- xTerm
+- Bash and zsh
+- Windows PowerShell
+- Cursor
+- Claude Code or Claude Desktop with MCP
+- Codex-style agent environments
 
-# End-of-day summary
-strata summary --text "Shipped auth fix; verified staging redirect URIs."
-
-# Push local queue to central API
-strata sync
-
-# Search central memory
-strata search "oauth redirect"
-strata recent --days 7
-```
-
-### Repository layout
-
-```text
-cxl-strata/
-  api/              FastAPI central memory API
-  cli/              strata Typer CLI (pip install -e cli)
-  cursor-rules/     Agent command docs for Cursor and other AI clients
-  docs/             Architecture and security notes
-  LICENSE
-  README.md
-```
-
----
-
-## API deployment (central server)
-
-STRATA runs as a **FastAPI app behind a reverse proxy**. The API binds to localhost; Apache or Nginx terminates TLS and proxies to Uvicorn.
-
-**Recommended production layout:**
-
-```text
-Internet
-    |
-    v
-Apache or Nginx (TLS, port 443)
-    |
-    v
-127.0.0.1:8015  (Uvicorn / systemd)
-    |
-    v
-PostgreSQL
-```
-
-Replace `strata.example.com`, paths, and token values with your own.
-
-### Server prerequisites
-
-```bash
-sudo apt update
-sudo apt install -y python3-venv python3-pip postgresql nginx   # or apache2
-```
-
-Create a dedicated user and app directory:
-
-```bash
-sudo useradd --system --home /opt/cxl-strata --shell /usr/sbin/nologin strata || true
-sudo mkdir -p /opt/cxl-strata
-sudo chown strata:strata /opt/cxl-strata
-```
-
-### Deploy application code
-
-```bash
-sudo -u strata git clone https://github.com/YOUR_ORG/cxl-strata.git /opt/cxl-strata
-cd /opt/cxl-strata/api
-
-sudo -u strata python3 -m venv .venv
-sudo -u strata .venv/bin/pip install -r requirements.txt
-sudo -u strata cp .env.example .env
-```
-
-Edit `/opt/cxl-strata/api/.env`:
-
-```env
-STRATA_ENV=production
-STRATA_API_BASE_URL=https://strata.example.com
-DATABASE_URL=postgresql+psycopg://strata:STRONG_PASSWORD@127.0.0.1:5432/strata
-API_KEY_PEPPER=generate-a-long-random-string
-STRATA_API_KEYS=strata_live_team_key_one,strata_live_team_key_two
-```
-
-> **v0 note:** Set `STRATA_API_KEYS` to comma-separated tokens your team will use. Only listed tokens are accepted. Hashed per-user keys in Postgres are planned for a later release.
-
-Create the database (when Postgres migrations are available):
-
-```bash
-sudo -u postgres createuser strata
-sudo -u postgres createdb -O strata strata
-# Future: cd /opt/cxl-strata/api && .venv/bin/alembic upgrade head
-cd /opt/cxl-strata/api && .venv/bin/alembic upgrade head
-python scripts/seed_key.py
-```
-
-### systemd service
-
-Create `/etc/systemd/system/cxl-strata-api.service`:
-
-```ini
-[Unit]
-Description=STRATA central memory API
-After=network.target postgresql.service
-
-[Service]
-User=strata
-Group=strata
-WorkingDirectory=/opt/cxl-strata/api
-EnvironmentFile=/opt/cxl-strata/api/.env
-ExecStart=/opt/cxl-strata/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8015
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable cxl-strata-api
-sudo systemctl start cxl-strata-api
-sudo systemctl status cxl-strata-api
-curl http://127.0.0.1:8015/health
-```
-
-### Option A: Nginx reverse proxy
-
-Create `/etc/nginx/sites-available/strata`:
-
-```nginx
-server {
-    listen 80;
-    server_name strata.example.com;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name strata.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/strata.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/strata.example.com/privkey.pem;
-
-    client_max_body_size 2m;
-
-    location / {
-        proxy_pass http://127.0.0.1:8015;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable and reload:
-
-```bash
-sudo ln -sf /etc/nginx/sites-available/strata /etc/nginx/sites-enabled/strata
-sudo nginx -t
-sudo systemctl reload nginx
-curl -fsS https://strata.example.com/health
-```
-
-Obtain TLS certificates with Certbot if needed:
-
-```bash
-sudo certbot --nginx -d strata.example.com
-```
-
-### Option B: Apache reverse proxy
-
-Enable modules:
-
-```bash
-sudo a2enmod proxy proxy_http ssl headers rewrite
-```
-
-Create `/etc/apache2/sites-available/strata.conf`:
-
-```apache
-<VirtualHost *:80>
-    ServerName strata.example.com
-    Redirect permanent / https://strata.example.com/
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerName strata.example.com
-
-    SSLEngine on
-    SSLCertificateFile      /etc/letsencrypt/live/strata.example.com/fullchain.pem
-    SSLCertificateKeyFile   /etc/letsencrypt/live/strata.example.com/privkey.pem
-
-    ProxyPreserveHost On
-    RequestHeader set X-Forwarded-Proto "https"
-
-    ProxyPass        / http://127.0.0.1:8015/
-    ProxyPassReverse / http://127.0.0.1:8015/
-
-    ErrorLog ${APACHE_LOG_DIR}/strata-error.log
-    CustomLog ${APACHE_LOG_DIR}/strata-access.log combined
-</VirtualHost>
-```
-
-Enable and reload:
-
-```bash
-sudo a2ensite strata
-sudo apache2ctl configtest
-sudo systemctl reload apache2
-curl -fsS https://strata.example.com/health
-```
-
-### Deploy updates
-
-```bash
-cd /opt/cxl-strata
-sudo -u strata git pull
-cd api
-sudo -u strata .venv/bin/pip install -r requirements.txt
-alembic upgrade head
-python scripts/seed_key.py
-sudo systemctl restart cxl-strata-api
-```
-
-### API endpoints (v1)
-
-| Method | Path | Auth | Purpose |
-|--------|------|------|---------|
-| GET | `/health` | No | Liveness check |
-| GET | `/v1/whoami` | Bearer | Verify token and scopes |
-| POST | `/v1/memory-events` | Bearer | Create one memory event |
-| GET | `/v1/memory-events` | Bearer | List events (optional `?project=`) |
-| GET | `/v1/memory-events/{id}` | Bearer | Fetch one event |
-| GET | `/v1/search` | Bearer | Search (`?q=` required; optional `?project=`) |
-| POST | `/v1/sync/batch` | Bearer | Batch sync from CLI queue |
-
-All authenticated requests use:
-
-```http
-Authorization: Bearer strata_live_your_token_here
-```
-
----
-
-## Client integration (Cursor, Claude, Codex)
-
-STRATA has two integration layers:
-
-1. **CLI** — works from any terminal (`strata add`, `strata summary`, `strata sync`)
-2. **Agent rules** — tell AI assistants when and how to capture memory
-
-Copy [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) into your project or IDE config.
-
-### One-line install (recommended)
-
-Point at your team's central API. The server serves bootstrap scripts that install the CLI + MCP via pip (from git until PyPI publish).
-
-**Linux / macOS:**
+Installers:
 
 ```bash
 curl -fsSL https://strata.example.com/install.sh | bash
 ```
 
-**Windows (PowerShell):**
-
 ```powershell
 irm https://strata.example.com/install.ps1 | iex
 ```
 
-With repo init or MCP snippet (parameters go on the **scriptblock**, not `iex`):
+Repo initialization can be included during install:
+
+```bash
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init --project example-project
+```
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org your-org -Init -Project my-project
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Cursor
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project example-project
 ```
 
-If `strata` is not found in a new terminal, use `python -m cxl_strata.cli whoami` or reopen PowerShell after install (profile PATH hook).
+See [Client Installation](docs/client-installation.md).
 
-**Initialize the current repo** (after install):
+## Cursor, Claude, Codex, And MCP
 
-```bash
-curl -fsSL https://strata.example.com/install.sh | bash -s -- --org your-org --init --project my-project
-```
+STRATA has two integration layers:
 
-Then set your token once in `~/.strata/secrets.json`:
+1. CLI capture: `strata add`, `strata summary`, `strata sync`, `strata search`.
+2. MCP retrieval: `strata_search`, `strata_recent`, `strata_get`, `strata_context`.
 
-```json
-{
-  "api_key": "strata_live_your_personal_token"
-}
-```
+Cursor:
 
-Verify: `strata whoami`
+- Install the CLI.
+- Add [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) to project or user rules.
+- Configure the MCP server if you want AI context retrieval.
 
-Optional: re-run with `--cursor` (bash) or `-Cursor` (PowerShell) for a Cursor MCP JSON snippet. Machine-readable install metadata: `GET /v1/client/manifest`.
+Claude:
 
-**Server env** (production `.env` on the central API):
+- Use the CLI from Claude Code.
+- Add project guidance in `CLAUDE.md`.
+- Configure MCP for Claude Desktop if desired.
 
-| Variable | Purpose |
-|----------|---------|
-| `STRATA_PUBLIC_URL` | Public base URL baked into install scripts |
-| `STRATA_CLIENT_GIT_URL` | Git remote for `pip install git+...#subdirectory=cli` |
-| `STRATA_CLIENT_GIT_REF` | Branch or tag (e.g. `main`) |
-| `STRATA_DEFAULT_ORG` | Default `--org` in install scripts |
+Codex:
 
-### Manual setup (all clients)
+- Use the CLI from the agent shell.
+- Add project guidance in `AGENTS.md`.
+- Ensure `STRATA_API_KEY` or `~/.strata/secrets.json` is available.
 
-In each repo that should report to STRATA:
-
-```bash
-pip install -e /path/to/cxl-strata/cli   # or: pip install cxl-strata when published
-
-export STRATA_API_KEY="strata_live_your_personal_token"
-
-strata init \
-  --api https://strata.example.com \
-  --org your-org \
-  --project your-project \
-  --repo your-repo-name \
-  --actor-name "Your Name" \
-  --actor-email you@example.com
-```
-
-Add to the repo `.gitignore`:
-
-```gitignore
-.strata/secrets.json
-.strata/events.jsonl
-.strata/synced.jsonl
-.strata/failed.jsonl
-```
-
-Optional: store the token in `.strata/secrets.json` (gitignored):
-
-```json
-{
-  "api_key": "strata_live_your_personal_token"
-}
-```
-
-### Cursor
-
-**Slash commands (natural language in chat):**
-
-| Command | What it does |
-|---------|----------------|
-| `/strata add` | Capture durable memory or upload an existing handoff markdown file |
-| `/strata summary` | Upload an end-of-day or end-of-flow summary for the current project |
-
-**Install the rule:**
-
-Copy the contents of [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) into one of:
-
-- `.cursor/rules/strata-memory-capture.mdc` (project rule), or
-- Your user-level Cursor rules
-
-The rule instructs the agent to:
-
-1. Read `.strata/config.json` for project/repo context
-2. Distill the session into a concise `strata add` command (no secrets, no raw chat dump)
-3. Queue locally, then run `strata sync` when you confirm
-
-**Example prompts:**
-
-```text
-/strata add — we fixed OAuth redirect by aligning APP_URL with Google console settings
-/strata summary — shipped staging deploy fix and verified Apache proxy headers
-```
-
-### MCP (AI context retrieval)
-
-The MCP server exposes STRATA memory to Cursor, Claude Desktop, and other MCP clients.
-
-**Install:**
-
-```bash
-cd mcp
-pip install -e .
-```
-
-**Cursor MCP config** (`.cursor/mcp.json` or Cursor settings):
+MCP config example:
 
 ```json
 {
@@ -530,238 +282,117 @@ pip install -e .
       "command": "python",
       "args": ["-m", "strata_mcp.server"],
       "env": {
-        "STRATA_API_URL": "http://127.0.0.1:8015",
-        "STRATA_API_KEY": "strata_dev_your_token"
+        "STRATA_API_URL": "https://strata.example.com",
+        "STRATA_API_KEY": "strata_live_your_personal_token"
       }
     }
   }
 }
 ```
 
-**Tools:** `strata_search`, `strata_recent`, `strata_get`, `strata_context`
+See [Client Installation](docs/client-installation.md#mcp-for-ai-context-retrieval) and [mcp/README.md](mcp/README.md).
 
-See [mcp/README.md](mcp/README.md) for full tool schemas and troubleshooting.
+## Verification Checklist
 
-### Claude (Claude Code / Claude Desktop with project files)
+Server:
 
-Claude does not have native slash commands for STRATA. Use the CLI plus a project instruction file.
-
-**1. Add project instructions**
-
-Create or extend `CLAUDE.md` in the repo root:
-
-```markdown
-## STRATA project memory
-
-When durable project knowledge is discovered (bug root cause, deploy fix, architecture
-decision, client assumption), propose capturing it with the STRATA CLI.
-
-Never include secrets, API keys, or raw .env values.
-
-Example:
-  strata add --type debug_discovery --title "..." --summary "..." --tags tag1,tag2
-  strata sync
-
-For end-of-session summaries:
-  strata summary --text "..." --sync
+```bash
+curl -fsS https://strata.example.com/health
+curl -fsS https://strata.example.com/v1/client/manifest
 ```
 
-**2. Ensure `.strata/config.json` exists** (from `strata init`).
+Client:
 
-**3. Set `STRATA_API_KEY`** in your shell or `.strata/secrets.json` before asking Claude to run capture commands.
-
-Claude Code can run terminal commands directly; Desktop users can copy the proposed `strata` commands from chat.
-
-### Codex (OpenAI Codex CLI / agent environments)
-
-Same pattern as Claude: CLI + instructions file.
-
-**1. Add `AGENTS.md` or extend existing agent instructions:**
-
-```markdown
-## STRATA memory capture
-
-After meaningful work (fixes, deploy changes, decisions), suggest:
-
-  strata add --type <event_type> --title "..." --summary "..."
-  strata sync
-
-Event types: debug_discovery, implementation_note, ops_change, deployment_note,
-architecture_decision, client_assumption, planning_warning, qa_finding, general_note.
-
-Do not capture secrets or full chat logs.
+```bash
+strata whoami
+strata add --type general_note --title "Install check" --summary "Verified STRATA."
+strata sync
+strata search "Install check"
 ```
 
-**2. Initialize STRATA in the repo** (`strata init`).
+Local SQLite and app:
 
-**3. Export `STRATA_API_KEY`** in the environment where Codex runs commands.
+```bash
+strata index
+strata pull --project example-project
+ls .md/workspace_index.sqlite
+strata app --open
+```
 
-### Event types reference
+PowerShell SQLite check:
 
-| Type | Use when |
-|------|----------|
-| `debug_discovery` | Bug cause or unexpected behavior found |
-| `implementation_note` | Useful dev detail future devs should know |
-| `ops_change` | Server, permissions, env, infrastructure change |
-| `deployment_note` | Deploy-specific steps or gotchas |
-| `architecture_decision` | Direction chosen and why |
-| `client_assumption` | Client belief that affects estimates or scope |
-| `planning_warning` | Prior work suggests future estimates should change |
-| `qa_finding` | Durable QA/regression pattern |
-| `general_note` | Nothing else fits |
-| `daily_summary` | End-of-day or end-of-flow summary (`strata summary`) |
-| `handoff_upload` | Existing handoff markdown uploaded via `--handoff-path` |
+```powershell
+Test-Path .md\workspace_index.sqlite
+```
 
----
+See [Quick Start](docs/quickstart.md#10-smoke-test).
 
 ## Troubleshooting
 
-### `401 Unauthorized` or `Unknown access token`
+Common issues:
 
-- Confirm `STRATA_API_KEY` on the client matches a token listed in server `STRATA_API_KEYS`
-- Token must start with `strata_live_` or `strata_dev_`
-- Check for trailing whitespace in `.env` or shell export
-- Test: `curl -H "Authorization: Bearer YOUR_TOKEN" https://strata.example.com/v1/whoami`
+- `strata` not found after install
+- Python, pip, or Git missing
+- `401 Unauthorized`
+- Missing `.strata/config.json`
+- Sync failures
+- Secret detection `422`
+- Local SQLite database missing
+- Localhost app opens but looks empty
+- MCP tools do not appear
+- Apache/Nginx reverse proxy `502`
 
-### `Missing .strata/config.json`
+See [Troubleshooting](docs/troubleshooting.md).
 
-Run `strata init` from the repo root:
+## Security Rules
+
+- Never capture passwords, API keys, private keys, OAuth secrets, raw `.env` values, or unredacted terminal logs.
+- Use HTTPS in production.
+- Bind Uvicorn to `127.0.0.1` behind Apache or Nginx.
+- Give every developer a separate token.
+- Store tokens in `STRATA_API_KEY`, `~/.strata/secrets.json`, or `.strata/secrets.json`.
+- Do not commit `.strata/secrets.json`, queue files, or failed sync payloads.
+
+See [Security](docs/security.md).
+
+## Event Types
+
+| Type | Use when |
+|------|----------|
+| `debug_discovery` | A bug cause or surprising behavior is discovered |
+| `implementation_note` | Future developers need a useful implementation detail |
+| `ops_change` | Server, permission, env, or infrastructure state changed |
+| `deployment_note` | A deployment step or gotcha should be remembered |
+| `architecture_decision` | A direction was chosen and the why matters |
+| `client_assumption` | A client belief or simplification affects future work |
+| `planning_warning` | Prior work changes future estimates or sequencing |
+| `qa_finding` | QA found a durable regression pattern |
+| `general_note` | Nothing else fits |
+| `daily_summary` | End-of-day or end-of-flow summary |
+| `handoff_upload` | Existing handoff markdown uploaded into STRATA |
+
+## Contributing
 
 ```bash
-strata init --api https://strata.example.com --org ORG --project PROJECT --repo REPO
+cd api && pip install -r requirements.txt && python -m pytest -q
+cd ../cli && pip install -e . && python -m cxl_strata.cli --help
+cd ../mcp && pip install -e .
 ```
 
-### `strata sync` reports failures or nothing syncs
-
-- Verify API is reachable: `curl https://strata.example.com/health`
-- Check pending queue: `cat .strata/events.jsonl`
-- Inspect failures: `cat .strata/failed.jsonl`
-- Secret-like content is rejected by design; redact credentials and retry
-- After a successful sync, synced rows move to `.strata/synced.jsonl` and leave the pending queue
-
-### `422` — payload appears to contain secrets
-
-STRATA rejects obvious secret patterns (private keys, `API_KEY=...`, Stripe-style keys, AWS access key IDs). Describe the **setting** without recording the value:
-
-```text
-Good:  OAuth depends on GOOGLE_CLIENT_ID and APP_URL alignment.
-Bad:   GOOGLE_CLIENT_SECRET=actual-secret-value
-```
-
-### `strata` command not found after pip install
-
-- Ensure the install venv/bin directory is on `PATH`, or run: `python -m cxl_strata.cli --help`
-- Reinstall: `pip install -e cli` from the repo
-
-### API health OK but search returns nothing
-
-- Confirm events were synced: `strata sync` then `strata search "your terms"`
-- v0 search is substring match over title, summary, details, tags, environment, event_type, project, and repo
-- **v0 in-memory store:** restarting the API process clears memory until Postgres persistence lands
-
-### Reverse proxy returns 502 Bad Gateway
-
-- Check Uvicorn is running: `systemctl status cxl-strata-api`
-- Confirm bind address: API must listen on `127.0.0.1:8015` (or update proxy target)
-- Check logs: `journalctl -u cxl-strata-api -n 50`
-- Nginx: `sudo nginx -t` — Apache: `sudo apache2ctl configtest`
-
-### SSL / certificate errors from CLI
-
-- Use `https://` in `strata init --api` and in `.strata/config.json`
-- Ensure the certificate covers the hostname clients use
-- For local dev only, use `http://127.0.0.1:8015` without TLS
-
-### Windows-specific notes
-
-- Activate venv: `.venv\Scripts\activate`
-- Prefer `python -m cxl_strata.cli` if the `strata.exe` shim is not on PATH
-- Use `set STRATA_API_KEY=...` in cmd or `$env:STRATA_API_KEY="..."` in PowerShell
-
----
+Keep changes focused. STRATA should capture less, but capture better.
 
 ## License
 
 STRATA is released under the [MIT License](LICENSE).
 
-Copyright (c) 2026 Craft & Logic
+## Related Docs
 
-You may use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the conditions in the LICENSE file. The above copyright notice and permission notice must be included in all copies or substantial portions.
-
----
-
-## Contributing
-
-Contributions are welcome. STRATA is early-stage; focused PRs are easier to review than large rewrites.
-
-### How to contribute
-
-1. **Fork** the repository on GitHub
-2. **Create a branch** from `main`: `git checkout -b feature/short-description`
-3. **Make focused changes** — one concern per PR when possible
-4. **Test locally:**
-   ```bash
-   cd api && pip install -r requirements.txt && python -m pytest -q
-   cd ../cli && pip install -e . && python -m cxl_strata.cli --help
-   cd ../mcp && pip install -e .
-   ```
-5. **Open a pull request** with:
-   - What changed and why
-   - How you tested it
-   - Any deployment or migration notes
-
-### Good first issues
-
-- GitHub release / PyPI publish for CLI and MCP packages
-- Full-text search index (Postgres `tsvector` or external search)
-- Sync conflict resolution and deduplication policies
-- Documentation improvements and deployment examples
-
-### Code guidelines
-
-- Keep STRATA **small and boring** — capture less, but capture better
-- Never add features that store secrets or raw chat logs by default
-- Match existing Python style (type hints, minimal dependencies)
-- OSS defaults stay generic; org-specific hosts belong in private deploy config
-
-### Security reports
-
-If you find a security issue, **do not** open a public GitHub issue with exploit details. Contact the maintainers privately.
-
-### Questions
-
-Open a GitHub Discussion or Issue for design questions, deployment help, or integration ideas.
-
----
-
-## Security
-
-- Never store passwords, API keys, private keys, or raw `.env` values in memory events
-- Each developer should have their own access token
-- Use HTTPS in production; bind the API to localhost behind a reverse proxy
-- See [docs/security.md](docs/security.md) for full guidance
-
----
-
-## Roadmap
-
-| Milestone | Status |
-|-----------|--------|
-| FastAPI app + health endpoint | Done (v0) |
-| CLI: init, add, summary, sync, search, recent, whoami | Done (v0) |
-| Bearer token auth (configured keys) | Done (v0) |
-| Secret pattern rejection | Done (v0) |
-| PostgreSQL + Alembic migrations | Done (v0.2) |
-| Hashed per-user API keys | Done (v0.2) |
-| MCP retrieval for AI context | Done (v0.2) |
-| Curl/PowerShell client bootstrap (`/install.sh`, `/install.ps1`) | Done (v0.3) |
-| GitHub release / PyPI publish | Planned |
-
----
-
-## Related docs
-
-- [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) — agent behavior for `/strata add` and `/strata summary`
-- [docs/architecture.md](docs/architecture.md) — system overview
-- [docs/security.md](docs/security.md) — token and content safety rules
-- [mcp/README.md](mcp/README.md) — MCP server for AI context retrieval
+- [Quick Start](docs/quickstart.md)
+- [Server Setup](docs/server-setup.md)
+- [Provisioning](docs/provisioning.md)
+- [Client Installation](docs/client-installation.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Architecture](docs/architecture.md)
+- [Security](docs/security.md)
+- [MCP Server](mcp/README.md)
+- [Cursor Commands](cursor-rules/strata-commands.md)

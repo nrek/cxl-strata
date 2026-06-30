@@ -57,8 +57,14 @@ def list_documents(
     author: str | None = None,
     since: str | None = None,
     limit: int = 50,
+    offset: int = 0,
+    include_body: bool = True,
 ) -> list[dict[str, Any]]:
-    params: dict[str, str | int] = {"limit": limit}
+    params: dict[str, str | int | bool] = {
+        "limit": limit,
+        "offset": offset,
+        "include_body": include_body,
+    }
     if project:
         params["project"] = project
     if kind:
@@ -68,7 +74,7 @@ def list_documents(
     if since:
         params["since"] = since
     with _client() as client:
-        r = client.get("/v1/documents", params={**params, "include_body": True})
+        r = client.get("/v1/documents", params=params)
         r.raise_for_status()
         return r.json().get("results", [])
 

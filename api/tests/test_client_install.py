@@ -30,3 +30,27 @@ def test_client_manifest(client: TestClient) -> None:
     assert "packages" in body
     assert "cli" in body["packages"]
     assert "#subdirectory=cli" in body["packages"]["cli"]["pip_spec"]
+
+
+def test_strata_logo_asset_served(client: TestClient) -> None:
+    response = client.get("/assets/strata-logo.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG")
+
+
+def test_favicon_and_icon_assets_served(client: TestClient) -> None:
+    favicon = client.get("/favicon.ico")
+    assert favicon.status_code == 200
+    assert favicon.headers["content-type"] == "image/x-icon"
+
+    icon = client.get("/assets/icons/favicon-32x32.png")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"] == "image/png"
+    assert icon.content.startswith(b"\x89PNG")
+
+    manifest = client.get("/assets/icons/manifest.json")
+    assert manifest.status_code == 200
+    body = manifest.json()
+    assert body["name"] == "STRATA"
+    assert body["icons"]

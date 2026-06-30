@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 from typing import Optional
 
@@ -12,7 +13,15 @@ import typer
 from rich import print as rprint
 
 from . import documents, pull
-from .app import DEFAULT_PORT, autostart_status, install_autostart, is_port_open, run_app, uninstall_autostart
+from .app import (
+    DEFAULT_PORT,
+    autostart_status,
+    install_autostart,
+    is_port_open,
+    is_strata_app_healthy,
+    run_app,
+    uninstall_autostart,
+)
 from .workspace_index import indexer, paths, prune
 from .workspace_index.paths import set_workspace_root
 
@@ -37,19 +46,24 @@ def app_main(
         set_workspace_root(root)
     if path:
         documents.stash_paths([path])
-    if daemon:
-        if is_port_open(host, port):
-            rprint(f"[green]STRATA app already listening[/green] on http://{host}:{port}")
+    url = f"http://{host}:{port}"
+    if is_port_open(host, port):
+        if is_strata_app_healthy(host, port):
+            rprint(f"[green]STRATA app already listening[/green] on {url}")
             if open_browser:
-                import webbrowser
-
-                webbrowser.open(f"http://{host}:{port}")
+                webbrowser.open(url)
             return
+        rprint(
+            f"[red]Port {port} is in use, but it is not a healthy STRATA app.[/red]\n"
+            "Stop the stale process using that port or run with --port <other-port>."
+        )
+        raise typer.Exit(1)
+    if daemon:
         cmd = [sys.executable, "-m", "cxl_strata.cli", "app", "--host", host, "--port", str(port)]
         if open_browser:
             cmd.append("--open")
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        rprint(f"[green]Started STRATA app daemon[/green] on http://{host}:{port}")
+        rprint(f"[green]Started STRATA app daemon[/green] on {url}")
         return
     if project:
         rprint(f"[dim]Filtering initial view to project {project}[/dim]")

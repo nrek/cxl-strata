@@ -15,9 +15,9 @@ const EXAMPLES = [
   "last time I touched font awesome",
   "what did we do last week",
   "deploy apache2",
-  "plans in progress",
-  "recent handoffs",
 ];
+
+const SYNC_PAGE_SIZE = 6;
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -30,6 +30,9 @@ const state = {
   latestProjects: [],
   apiOnline: false,
   syncItems: [],
+  syncPage: 0,
+  hasSearched: false,
+  remotePending: 0,
 };
 
 const MOJIBAKE_MARKERS = /â[\u0080-\u00BF]|Ã.|Â.|\uFFFD/;
@@ -217,6 +220,18 @@ function showView(name) {
   $("#view-app").classList.toggle("view-active", name === "app");
 }
 
+function setAppSidebarVisible(visible) {
+  $("#sidebar")?.classList.toggle("hidden", !visible);
+  $("#view-app")?.classList.toggle("pre-search", !visible);
+}
+
+function setAppResultsVisible(visible) {
+  $("#output")?.classList.toggle("hidden", !visible);
+  if (!visible) {
+    $("#meta")?.classList.add("hidden");
+  }
+}
+
 function detectProjectFromQuery(q) {
   const lower = q.toLowerCase();
   for (const p of state.allProjects) {
@@ -285,12 +300,17 @@ function enterProject(project, initialQuery = "") {
   showView("app");
   renderSidebar();
   highlightActiveProject();
+  setAppSidebarVisible(true);
 
   const q = initialQuery.trim();
   $("#scoped-q").value = q;
   $("#scoped-q").placeholder = `Search within ${project}…`;
 
-  runScopedSearch(q);
+  if (q) {
+    runScopedSearch(q);
+  } else {
+    setAppResultsVisible(false);
+  }
   $("#scoped-q").focus();
 }
 
@@ -299,11 +319,17 @@ function selectProject(project) {
   $("#active-project").textContent = project;
   highlightActiveProject();
   $("#scoped-q").placeholder = `Search within ${project}…`;
-  runScopedSearch($("#scoped-q").value.trim() || "");
+  const q = $("#scoped-q").value.trim();
+  if (q) runScopedSearch(q);
 }
 
 function goHome() {
   state.activeProject = null;
+  state.hasSearched = false;
+  setAppResultsVisible(false);
+  setAppSidebarVisible(false);
+  $("#output").innerHTML = "";
+  $("#meta").innerHTML = "";
   showView("home");
   $("#home-q").focus();
 }
@@ -410,13 +436,19 @@ async function openDoc(path) {
 }
 
 async function runScopedSearch(q) {
+  const trimmed = (q || "").trim();
+  if (!trimmed) return;
+
+  state.hasSearched = true;
+  setAppSidebarVisible(true);
+  setAppResultsVisible(true);
   $("#output").innerHTML = '<p class="empty loading">Searching…</p>';
   const source = ($("#scoped-source") || {}).value || "local";
   const data = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      q,
+      q: trimmed,
       limit: 80,
       project: state.activeProject,
       source,
@@ -445,24 +477,49 @@ function syncRowHtml(item) {
     </article>`;
 }
 
-async function loadSyncLocal() {
-  const kind = ($("#sync-filter-kind") || {}).value || "";
-  const params = new URLSearchParams();
-  if (kind) params.set("kind", kind);
-  const data = await api(`/api/sync/local?${params.toString()}`);
-  state.syncItems = data.items || [];
+function renderSyncPage() {
   const el = $("#sync-local-table");
-  if (!state.syncItems.length) {
+  const pager = $("#sync-pagination");
+  const items = state.syncItems;
+
+  if (!items.length) {
     el.innerHTML = '<p class="empty">All local artifacts are indexed and shared.</p>';
+    pager?.classList.add("hidden");
     return;
   }
-  el.innerHTML = state.syncItems.map(syncRowHtml).join("");
+
+  const totalPages = Math.max(1, Math.ceil(items.length / SYNC_PAGE_SIZE));
+  if (state.syncPage >= totalPages) state.syncPage = totalPages - 1;
+  if (state.syncPage < 0) state.syncPage = 0;
+
+  const start = state.syncPage * SYNC_PAGE_SIZE;
+  const pageItems = items.slice(start, start + SYNC_PAGE_SIZE);
+
+  el.innerHTML = pageItems.map(syncRowHtml).join("");
   el.querySelectorAll(".sync-one").forEach((btn) => {
     btn.addEventListener("click", () => syncPaths([btn.dataset.path]));
   });
   el.querySelectorAll(".index-one").forEach((btn) => {
     btn.addEventListener("click", () => indexPaths([btn.dataset.path]));
   });
+
+  if (pager) {
+    const showPager = items.length > SYNC_PAGE_SIZE;
+    pager.classList.toggle("hidden", !showPager);
+    $("#sync-page-info").textContent = `${state.syncPage + 1} / ${totalPages}`;
+    $("#sync-prev").disabled = state.syncPage <= 0;
+    $("#sync-next").disabled = state.syncPage >= totalPages - 1;
+  }
+}
+
+async function loadSyncLocal() {
+  const kind = ($("#sync-filter-kind") || {}).value || "";
+  const params = new URLSearchParams();
+  if (kind) params.set("kind", kind);
+  const data = await api(`/api/sync/local?${params.toString()}`);
+  state.syncItems = data.items || [];
+  state.syncPage = 0;
+  renderSyncPage();
 }
 
 async function syncPaths(paths) {
@@ -499,6 +556,66 @@ function renderApiStatus(cfg) {
     el.classList.add("offline");
     state.apiOnline = false;
   }
+}
+
+function renderStatsLine(stats, remotePending) {
+  const el = $("#stats-line");
+  if (!el) return;
+  const kinds =
+    stats.by_kind?.map((k) => `${kindLabel(k.kind, k.n)}: ${k.n}`).join(" · ") || "";
+  let html = esc(kinds);
+  const pending = remotePending?.pending ?? 0;
+  if (state.apiOnline && remotePending?.online !== false && pending > 0) {
+    html += ` · <button type="button" id="remote-sync-btn" class="stats-sync-btn">sync ${pending}</button>`;
+  }
+  el.innerHTML = html;
+  $("#remote-sync-btn")?.addEventListener("click", pullRemote);
+}
+
+async function pullRemote() {
+  const btn = $("#remote-sync-btn");
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = "syncing…";
+  try {
+    await api("/api/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    await refreshDashboard();
+  } catch (err) {
+    alert(`Pull failed: ${err.message}`);
+    btn.disabled = false;
+    btn.textContent = `sync ${state.remotePending || ""}`.trim();
+    await refreshRemotePending();
+  }
+}
+
+async function refreshRemotePending() {
+  if (!state.apiOnline) return;
+  try {
+    const remotePending = await api("/api/sync/remote-pending");
+    state.remotePending = remotePending.pending || 0;
+    const stats = await api("/api/stats");
+    renderStatsLine(stats, remotePending);
+  } catch (_) {
+    /* keep current stats */
+  }
+}
+
+async function refreshDashboard() {
+  const [stats, summary, remotePending] = await Promise.all([
+    api("/api/stats"),
+    api("/api/projects/summary"),
+    state.apiOnline
+      ? api("/api/sync/remote-pending").catch(() => ({ online: false, pending: 0 }))
+      : Promise.resolve({ online: false, pending: 0 }),
+  ]);
+  state.remotePending = remotePending.pending || 0;
+  renderStatsLine(stats, remotePending);
+  renderProjectPanels(summary);
+  await loadSyncLocal();
 }
 
 function handleHomeSearch(rawQ) {
@@ -538,9 +655,16 @@ async function init() {
 
   renderApiStatus(cfg);
   state.allProjects = projects;
-  const kinds =
-    stats.by_kind?.map((k) => `${kindLabel(k.kind, k.n)}: ${k.n}`).join(" · ") || "";
-  $("#stats-line").textContent = `${kinds}`;
+
+  let remotePending = { online: false, pending: 0 };
+  if (state.apiOnline) {
+    remotePending = await api("/api/sync/remote-pending").catch(() => ({
+      online: false,
+      pending: 0,
+    }));
+  }
+  state.remotePending = remotePending.pending || 0;
+  renderStatsLine(stats, remotePending);
 
   renderProjectPanels(summary);
   renderSidebar();
@@ -550,6 +674,19 @@ async function init() {
   $("#sync-filter-kind")?.addEventListener("change", () => loadSyncLocal());
   $("#sync-all-btn")?.addEventListener("click", () => {
     syncPaths(state.syncItems.map((i) => i.path));
+  });
+  $("#sync-prev")?.addEventListener("click", () => {
+    if (state.syncPage > 0) {
+      state.syncPage -= 1;
+      renderSyncPage();
+    }
+  });
+  $("#sync-next")?.addEventListener("click", () => {
+    const totalPages = Math.ceil(state.syncItems.length / SYNC_PAGE_SIZE);
+    if (state.syncPage < totalPages - 1) {
+      state.syncPage += 1;
+      renderSyncPage();
+    }
   });
 
   const chips = $("#example-chips");

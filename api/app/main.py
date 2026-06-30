@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import mimetypes
+from pathlib import Path
+
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_auth, require_scopes
@@ -24,6 +27,8 @@ from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
 app = FastAPI(title="STRATA", version="0.3.0", description="Shared project memory API")
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+ICONS_DIR = STATIC_DIR / "icons"
 
 app.add_middleware(
     CORSMiddleware,
@@ -46,6 +51,49 @@ def install_sh() -> PlainTextResponse:
         media_type="text/x-sh",
         headers={"Content-Disposition": "inline; filename=install.sh"},
     )
+
+
+@app.get("/assets/strata-logo.png", response_class=FileResponse)
+def strata_logo() -> FileResponse:
+    logo = STATIC_DIR / "strata-logo.png"
+    if not logo.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return FileResponse(logo, media_type="image/png")
+
+
+@app.get("/favicon.ico", response_class=FileResponse)
+def favicon() -> FileResponse:
+    icon = ICONS_DIR / "favicon.ico"
+    if not icon.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return FileResponse(icon, media_type="image/x-icon")
+
+
+@app.get("/assets/icons/manifest.json", response_class=FileResponse)
+def icons_manifest() -> FileResponse:
+    manifest = ICONS_DIR / "manifest.json"
+    if not manifest.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return FileResponse(manifest, media_type="application/manifest+json")
+
+
+@app.get("/assets/icons/browserconfig.xml", response_class=FileResponse)
+def icons_browserconfig() -> FileResponse:
+    config = ICONS_DIR / "browserconfig.xml"
+    if not config.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return FileResponse(config, media_type="application/xml")
+
+
+@app.get("/assets/icons/{filename}", response_class=FileResponse)
+def icon_asset(filename: str) -> FileResponse:
+    if filename in {"manifest.json", "browserconfig.xml"}:
+        raise HTTPException(status_code=404, detail="asset not found")
+    icon = ICONS_DIR / filename
+    if not icon.is_file() or ICONS_DIR not in icon.resolve().parents:
+        raise HTTPException(status_code=404, detail="asset not found")
+    media = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(icon, media_type=media)
 
 
 @app.get("/install.ps1", response_class=PlainTextResponse)
@@ -234,6 +282,7 @@ def list_documents(
     author: str | None = Query(None),
     since: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     include_body: bool = Query(False),
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
@@ -241,7 +290,12 @@ def list_documents(
     require_scopes(auth, "memory:read")
     service = DocumentService(db, auth)
     rows = service.list_documents(
-        project=project, kind=kind, author=author, since=since, limit=limit
+        project=project,
+        kind=kind,
+        author=author,
+        since=since,
+        limit=limit,
+        offset=offset,
     )
     return {
         "results": [

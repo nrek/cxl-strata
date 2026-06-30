@@ -53,3 +53,33 @@ strata search "deploy apache"
 ```
 
 Store access tokens in `STRATA_API_KEY` or `~/.strata/secrets.json`; never commit secrets.
+
+### Named org profiles (multi-installation)
+
+Your **default** STRATA install uses `~/.strata/global.json` + `~/.strata/secrets.json` with no alias.
+
+To talk to a **separate** STRATA org/installation with its own API key (without mixing knowledge libraries):
+
+```bash
+# One-time: save a named profile
+strata org add commonspace --key strata_live_... --org commonspace
+
+# Use it for any command
+strata -org commonspace whoami
+strata -org commonspace search "deploy apache"
+strata -org commonspace stash --project commonspace-app
+
+strata org list
+```
+
+Profile files live at `~/.strata/orgs/{alias}.json`:
+
+```json
+{
+  "api_key": "strata_live_...",
+  "org": "commonspace",
+  "api_base_url": "https://strata.craftxlogic.com"
+}
+```
+
+`api_base_url` is optional; when omitted, the default from `~/.strata/global.json` is used.

@@ -9,6 +9,7 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib import request
 from urllib.parse import parse_qs, urlparse
 
 from ..content_safety import find_secret_markers
@@ -99,6 +100,24 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             _json_response(self, {"items": rows})
             return
 
+        if path == "/api/sync/remote-pending":
+            try:
+                from ..pull import count_remote_pending
+
+                _json_response(self, {"online": True, **count_remote_pending()})
+            except FileNotFoundError as exc:
+                _json_response(
+                    self,
+                    {"online": False, "pending": 0, "error": str(exc)},
+                )
+            except Exception as exc:  # noqa: BLE001
+                _json_response(
+                    self,
+                    {"online": False, "pending": 0, "error": str(exc)},
+                    HTTPStatus.BAD_GATEWAY,
+                )
+            return
+
         if path == "/api/doc":
             qs = parse_qs(parsed.query)
             doc_path = (qs.get("path") or [None])[0]
@@ -149,6 +168,39 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(content)
             return
+
+        if path == "/favicon.ico":
+            fp = STATIC_DIR / "icons" / "favicon.ico"
+            if fp.is_file():
+                content = fp.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/x-icon")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+
+        if path == "/manifest.json":
+            fp = STATIC_DIR / "icons" / "manifest.json"
+            if fp.is_file():
+                content = fp.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/manifest+json; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
+
+        if path == "/browserconfig.xml":
+            fp = STATIC_DIR / "icons" / "browserconfig.xml"
+            if fp.is_file():
+                content = fp.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
+                return
 
         if path in ("/", "/index.html"):
             index = STATIC_DIR / "index.html"
@@ -244,7 +296,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                     project=body.get("project"),
                     kind=body.get("kind"),
                     since=body.get("since"),
-                    limit=int(body.get("limit", 100)),
+                    limit=int(body.get("limit", 2000)),
                 )
                 _json_response(self, result)
             except Exception as exc:  # noqa: BLE001
@@ -282,3 +334,15 @@ def is_port_open(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.5)
         return sock.connect_ex((host, port)) == 0
+
+
+def is_strata_app_healthy(host: str, port: int) -> bool:
+    """Return true only when the listener is the STRATA workspace app."""
+    try:
+        with request.urlopen(f"http://{host}:{port}/api/stats", timeout=2) as response:
+            if response.status != HTTPStatus.OK:
+                return False
+            payload = json.loads(response.read().decode("utf-8"))
+            return isinstance(payload.get("by_kind"), list)
+    except Exception:  # noqa: BLE001 - health probe must be best-effort
+        return False

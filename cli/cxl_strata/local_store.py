@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+_active_org_alias: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "active_org_alias", default=None
+)
 
 STRATA_DIR = Path(".strata")
 CONFIG_FILE = STRATA_DIR / "config.json"
@@ -19,6 +24,82 @@ FAILED_FILE = STRATA_DIR / "failed.jsonl"
 USER_STRATA_DIR = Path.home() / ".strata"
 USER_GLOBAL_FILE = USER_STRATA_DIR / "global.json"
 USER_SECRETS_FILE = USER_STRATA_DIR / "secrets.json"
+
+
+def _orgs_dir() -> Path:
+    return USER_STRATA_DIR / "orgs"
+
+
+def set_active_org(alias: str | None) -> None:
+    """Select a named org profile for this CLI invocation (default has no alias)."""
+    _active_org_alias.set(alias.strip() if alias else None)
+
+
+def get_active_org() -> str | None:
+    return _active_org_alias.get()
+
+
+def org_profile_path(alias: str) -> Path:
+    safe = alias.strip().replace("\\", "").replace("/", "")
+    if not safe or safe != alias.strip():
+        raise ValueError(f"Invalid org alias: {alias!r}")
+    return _orgs_dir() / f"{safe}.json"
+
+
+def save_org_profile(
+    alias: str,
+    *,
+    api_key: str,
+    org: str,
+    api_base_url: str | None = None,
+) -> Path:
+    _orgs_dir().mkdir(parents=True, exist_ok=True)
+    payload: dict[str, str] = {
+        "api_key": api_key.strip(),
+        "org": org.strip(),
+    }
+    if api_base_url:
+        payload["api_base_url"] = api_base_url.rstrip("/")
+    path = org_profile_path(alias)
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def load_org_profile(alias: str) -> dict[str, Any]:
+    path = org_profile_path(alias)
+    if not path.is_file():
+        raise FileNotFoundError(alias)
+    return _read_json(path)
+
+
+def list_org_profiles() -> list[str]:
+    orgs_dir = _orgs_dir()
+    if not orgs_dir.is_dir():
+        return []
+    return sorted(p.stem for p in orgs_dir.glob("*.json") if p.is_file())
+
+
+def _profile_to_config(profile: dict[str, Any]) -> dict[str, Any]:
+    base = load_global_config() if USER_GLOBAL_FILE.is_file() else {}
+    org_slug = profile.get("org") or profile.get("organization_slug")
+    merged: dict[str, Any] = {
+        "organization_slug": org_slug,
+        "org_profile": org_slug,
+        "api_base_url": (
+            profile.get("api_base_url")
+            or base.get("api_base_url")
+            or "http://127.0.0.1:8015"
+        ),
+    }
+    for key in ("project_slug", "repo_name", "workspace_id", "actor_name", "actor_email"):
+        if profile.get(key) is not None:
+            merged[key] = profile[key]
+    if CONFIG_FILE.is_file():
+        repo_cfg = _read_json(CONFIG_FILE)
+        merged.setdefault("project_slug", repo_cfg.get("project_slug"))
+        merged.setdefault("repo_name", repo_cfg.get("repo_name"))
+        merged.setdefault("workspace_id", repo_cfg.get("workspace_id"))
+    return merged
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -39,6 +120,18 @@ def load_global_config() -> dict[str, Any]:
 
 
 def load_config() -> dict[str, Any]:
+    alias = get_active_org()
+    if alias:
+        try:
+            profile = load_org_profile(alias)
+        except FileNotFoundError as exc:
+            known = ", ".join(list_org_profiles()) or "(none)"
+            raise RuntimeError(
+                f"Unknown org alias '{alias}'. Known aliases: {known}. "
+                f"Add one with: strata org add {alias} --key ... --org ORG_SLUG"
+            ) from exc
+        return _profile_to_config(profile)
+
     if CONFIG_FILE.is_file():
         return _read_json(CONFIG_FILE)
     global_cfg = load_global_config()
@@ -51,6 +144,22 @@ def load_config() -> dict[str, Any]:
 
 
 def load_api_key() -> str:
+    alias = get_active_org()
+    if alias:
+        try:
+            profile = load_org_profile(alias)
+        except FileNotFoundError as exc:
+            known = ", ".join(list_org_profiles()) or "(none)"
+            raise RuntimeError(
+                f"Unknown org alias '{alias}'. Known aliases: {known}."
+            ) from exc
+        key = str(profile.get("api_key", "")).strip()
+        if key and not key.startswith("REPLACE_WITH"):
+            return key
+        raise RuntimeError(
+            f"Org alias '{alias}' is missing api_key in {org_profile_path(alias)}"
+        )
+
     env = os.environ.get("STRATA_API_KEY", "").strip()
     if env:
         return env

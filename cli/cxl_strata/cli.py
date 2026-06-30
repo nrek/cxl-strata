@@ -21,6 +21,62 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+org_app = typer.Typer(help="Manage named org profiles (separate API keys / installations)")
+app.add_typer(org_app, name="org")
+
+
+@app.callback()
+def main_callback(
+    org: Optional[str] = typer.Option(
+        None,
+        "--org",
+        "-org",
+        help="Use a named org profile from ~/.strata/orgs/{alias}.json (default has no alias)",
+    ),
+) -> None:
+    """Global options for STRATA CLI."""
+    local_store.set_active_org(org)
+
+
+@org_app.command("add")
+def org_add_cmd(
+    alias: str = typer.Argument(..., help="Profile alias, e.g. commonspace"),
+    key: str = typer.Option(..., "--key", help="API key for this org/installation"),
+    org_slug: str = typer.Option(..., "--org", help="Organization slug on the target API"),
+    api: Optional[str] = typer.Option(
+        None,
+        "--api",
+        help="API base URL (defaults to ~/.strata/global.json api_base_url)",
+    ),
+) -> None:
+    """Save a named org profile with its own API key."""
+    path = local_store.save_org_profile(alias, api_key=key, org=org_slug, api_base_url=api)
+    rprint(f"[green]Saved org profile[/green] {alias} -> {path}")
+
+
+@org_app.command("list")
+def org_list_cmd() -> None:
+    """List saved org profile aliases."""
+    aliases = local_store.list_org_profiles()
+    if not aliases:
+        rprint("[yellow]No org profiles.[/yellow] Default install uses ~/.strata/secrets.json")
+        return
+    for alias in aliases:
+        profile = local_store.load_org_profile(alias)
+        org_name = profile.get("org") or profile.get("organization_slug")
+        api = profile.get("api_base_url") or "(default API)"
+        rprint(f"[bold]{alias}[/bold]  org={org_name}  api={api}")
+
+
+@org_app.command("remove")
+def org_remove_cmd(alias: str = typer.Argument(..., help="Profile alias to delete")) -> None:
+    """Remove a named org profile."""
+    path = local_store.org_profile_path(alias)
+    if not path.is_file():
+        raise typer.BadParameter(f"Unknown org alias: {alias}")
+    path.unlink()
+    rprint(f"[green]Removed[/green] org profile {alias}")
+
 
 @app.command("init")
 def init_cmd(
@@ -209,6 +265,9 @@ def whoami_cmd() -> None:
     """Verify access token and actor identity."""
     data = api_client.whoami()
     cfg = local_store.load_config()
+    alias = local_store.get_active_org()
+    if alias:
+        rprint(f"Org profile: {alias}")
     rprint(f"Actor: {cfg.get('actor_name') or data.get('actor')}")
     rprint(f"Organization: {cfg.get('organization_slug') or data.get('organization')}")
     rprint(f"Scopes: {', '.join(data.get('scopes', []))}")

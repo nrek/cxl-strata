@@ -4,19 +4,43 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>STRATA</title>
+  <link rel="icon" href="/static/icons/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/static/icons/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32x32.png" />
+  <link rel="icon" type="image/png" sizes="96x96" href="/static/icons/favicon-96x96.png" />
+  <link rel="apple-touch-icon" sizes="57x57" href="/static/icons/apple-icon-57x57.png" />
+  <link rel="apple-touch-icon" sizes="60x60" href="/static/icons/apple-icon-60x60.png" />
+  <link rel="apple-touch-icon" sizes="72x72" href="/static/icons/apple-icon-72x72.png" />
+  <link rel="apple-touch-icon" sizes="76x76" href="/static/icons/apple-icon-76x76.png" />
+  <link rel="apple-touch-icon" sizes="114x114" href="/static/icons/apple-icon-114x114.png" />
+  <link rel="apple-touch-icon" sizes="120x120" href="/static/icons/apple-icon-120x120.png" />
+  <link rel="apple-touch-icon" sizes="144x144" href="/static/icons/apple-icon-144x144.png" />
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-icon-152x152.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-icon-180x180.png" />
+  <link rel="apple-touch-icon" href="/static/icons/apple-icon.png" />
+  <link rel="manifest" href="/static/icons/manifest.json" />
+  <meta name="msapplication-TileColor" content="#0c0d10" />
+  <meta name="msapplication-TileImage" content="/static/icons/ms-icon-144x144.png" />
+  <meta name="msapplication-config" content="/static/icons/browserconfig.xml" />
+  <meta name="theme-color" content="#0c0d10" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <!-- Home: centered search + project panels -->
+  <!-- Home: dashboard layout per mockup -->
   <div id="view-home" class="view view-active">
+    <header class="home-topbar">
+      <div id="api-status" class="api-status hidden"></div>
+      <p id="stats-line" class="home-stats">Loading index…</p>
+    </header>
+
     <div class="home-shell">
       <div class="home-center">
         <div class="home-brand">
-          <div class="home-logo" aria-hidden="true">⌘</div>
-          <h1>STRATA</h1>
-          <p class="home-sub" id="stats-line">Loading index…</p>
+          <img class="home-logo" src="/static/strata-logo.png" alt="STRATA" />
         </div>
 
+        <div class="home-search-block">
         <form id="home-search-form" class="search-bar search-bar-lg" role="search">
           <input
             id="home-q"
@@ -25,35 +49,20 @@
             autocomplete="off"
             autofocus
           />
-          <select id="home-source" aria-label="Source filter">
+          <select id="home-source" class="strata-select" aria-label="Source filter">
             <option value="local">Local</option>
             <option value="both">Both</option>
             <option value="shared">Shared</option>
           </select>
-          <button type="submit" aria-label="Search">→</button>
+          <button type="submit" class="icon-btn icon-btn-accent" aria-label="Search">
+            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+          </button>
         </form>
 
-        <div id="api-status" class="api-status hidden"></div>
+        <div class="home-hints" id="example-chips"></div>
+        </div>
 
-        <section id="sync-local-section" class="sync-section">
-          <div class="sync-head">
-            <h2>Sync Local</h2>
-            <div class="sync-controls">
-              <select id="sync-filter-kind" aria-label="Kind filter">
-                <option value="">All kinds</option>
-                <option value="handoff">handoff</option>
-                <option value="blueprint">blueprint</option>
-                <option value="plan">plan</option>
-                <option value="rule">rule</option>
-              </select>
-              <button type="button" id="sync-all-btn" class="ghost-btn">Sync All</button>
-              <button type="button" id="sync-refresh-btn" class="ghost-btn">Refresh</button>
-            </div>
-          </div>
-          <div id="sync-local-table" class="sync-table"></div>
-        </section>
-
-        <div class="home-panels">
+        <div id="home-panels" class="home-panels">
           <section class="home-panel">
             <h2>Latest Projects</h2>
             <ul id="latest-projects" class="project-rows"></ul>
@@ -64,16 +73,47 @@
           </section>
         </div>
 
-        <div class="home-hints" id="example-chips"></div>
+        <section id="sync-local-section" class="sync-section">
+          <div class="sync-head">
+            <h2>Sync Local</h2>
+            <div class="sync-controls">
+              <select id="sync-filter-kind" class="strata-select" aria-label="Kind filter">
+                <option value="">All Types</option>
+                <option value="handoff">handoff</option>
+                <option value="blueprint">blueprint</option>
+                <option value="plan">plan</option>
+                <option value="rule">rule</option>
+              </select>
+              <button type="button" id="sync-all-btn" class="icon-btn" title="Upload all" aria-label="Upload all">
+                <i class="fa-solid fa-upload" aria-hidden="true"></i>
+              </button>
+              <button type="button" id="sync-refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh">
+                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+          <div id="sync-local-table" class="sync-table"></div>
+          <nav id="sync-pagination" class="sync-pagination hidden" aria-label="Sync Local pages">
+            <button type="button" id="sync-prev" class="icon-btn" aria-label="Previous page">
+              <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+            </button>
+            <span id="sync-page-info" class="sync-page-info"></span>
+            <button type="button" id="sync-next" class="icon-btn" aria-label="Next page">
+              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            </button>
+          </nav>
+        </section>
       </div>
     </div>
   </div>
 
   <!-- App: sidebar browser + scoped search in content -->
-  <div id="view-app" class="view hidden">
-    <aside id="sidebar">
+  <div id="view-app" class="view hidden pre-search">
+    <aside id="sidebar" class="hidden">
       <div class="sidebar-top">
-        <button type="button" id="home-btn" class="ghost-btn">← Home</button>
+        <button type="button" id="home-btn" class="ghost-btn">
+          <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> Home
+        </button>
       </div>
       <h2>Projects</h2>
       <ul id="project-list" class="project-rows sidebar-rows"></ul>
@@ -94,16 +134,18 @@
           placeholder='Search within this project — e.g. "last time I touched font awesome"'
           autocomplete="off"
         />
-        <select id="scoped-source" aria-label="Source filter">
+        <select id="scoped-source" class="strata-select" aria-label="Source filter">
           <option value="local">Local</option>
           <option value="both">Both</option>
           <option value="shared">Shared</option>
         </select>
-        <button type="submit" aria-label="Search">Search</button>
+        <button type="submit" class="icon-btn icon-btn-accent" aria-label="Search">
+          <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </button>
       </form>
 
       <div id="meta" class="meta hidden"></div>
-      <div id="output"></div>
+      <div id="output" class="hidden"></div>
     </section>
   </div>
 
@@ -114,7 +156,9 @@
           <h2 id="doc-title"></h2>
           <p id="doc-subtitle" class="doc-subtitle"></p>
         </div>
-        <button type="button" id="doc-close" aria-label="Close">×</button>
+        <button type="button" id="doc-close" class="icon-btn" aria-label="Close">
+          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+        </button>
       </header>
       <div id="doc-body" class="markdown-body"></div>
     </article>

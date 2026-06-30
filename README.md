@@ -1,5 +1,9 @@
 # STRATA
 
+<p align="center">
+  <img src="assets/strata-logo.png" alt="STRATA logo" width="240">
+</p>
+
 **STRATA** is an open-source shared project memory system for technical teams.
 
 Developers capture durable notes, handoffs, and daily summaries from local workspaces. A central API stores that memory so the whole team can search it later. STRATA is designed to preserve **what changed, why, and how it was fixed** — not raw chat logs or terminal surveillance.

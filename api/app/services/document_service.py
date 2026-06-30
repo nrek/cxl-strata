@@ -172,6 +172,7 @@ class DocumentService:
         author: str | None = None,
         since: str | None = None,
         limit: int = 50,
+        offset: int = 0,
     ) -> list[SharedDocument]:
         stmt = select(SharedDocument).where(
             SharedDocument.organization_id == self.auth.organization_id
@@ -184,7 +185,7 @@ class DocumentService:
             stmt = stmt.where(SharedDocument.author_name.ilike(f"%{author}%"))
         if since:
             stmt = stmt.where(SharedDocument.updated_at >= since)
-        stmt = stmt.order_by(SharedDocument.updated_at.desc()).limit(limit)
+        stmt = stmt.order_by(SharedDocument.updated_at.desc()).offset(offset).limit(limit)
         return list(self.db.scalars(stmt).all())
 
     def search(self, q: str, *, project: str | None = None, limit: int = 50) -> list[SharedDocument]:

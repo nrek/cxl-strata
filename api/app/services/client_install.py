@@ -221,17 +221,42 @@ if (-not (Test-Path $SecretsJson)) {{
 }}
 
 $userBase = python -m site --user-base 2>$null
-if ($userBase) {{ $env:Path = "$userBase\\Scripts;$userBase;$env:Path" }}
+$scriptsDir = if ($userBase) {{ Join-Path $userBase "Scripts" }} else {{ $null }}
+if ($scriptsDir -and (Test-Path $scriptsDir)) {{
+  $env:Path = "$scriptsDir;$env:Path"
+  $profileMarker = "# STRATA pip user Scripts"
+  if ($PROFILE -and (Test-Path (Split-Path $PROFILE -Parent))) {{
+    $profileContent = if (Test-Path $PROFILE) {{ Get-Content $PROFILE -Raw }} else {{ "" }}
+    if ($profileContent -notlike "*$profileMarker*") {{
+      Add-Content -Path $PROFILE -Value @"
+
+$profileMarker
+`$__strataScripts = Join-Path (python -m site --user-base 2>`$null) 'Scripts'
+if (`$__strataScripts -and (Test-Path `$__strataScripts)) {{ `$env:Path = "`$__strataScripts;" + `$env:Path }}
+"@
+      Write-Host "==> Added STRATA Scripts dir to PowerShell profile: $PROFILE"
+    }}
+  }}
+  Write-Host "==> PATH includes $scriptsDir for this session"
+}}
+
+function Invoke-Strata {{
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+  if (Get-Command strata -ErrorAction SilentlyContinue) {{
+    & strata @Args
+  }} else {{
+    & python -m cxl_strata.cli @Args
+  }}
+}}
 
 if ($Init) {{
-  Require-Command strata
   if (-not $Repo) {{ $Repo = Split-Path -Leaf (Get-Location) }}
   if (-not $Project) {{ $Project = $Repo }}
   $initArgs = @("init", "--api", $ApiUrl, "--org", $Org, "--project", $Project, "--repo", $Repo)
   if ($ActorName) {{ $initArgs += @("--actor-name", $ActorName) }}
   if ($ActorEmail) {{ $initArgs += @("--actor-email", $ActorEmail) }}
   Write-Host "==> Running strata $($initArgs -join ' ')"
-  & strata @initArgs
+  Invoke-Strata @initArgs
 }}
 
 if ($Cursor) {{
@@ -260,9 +285,14 @@ STRATA client installed.
 
 Next steps:
   1. Edit $SecretsJson and set api_key to your strata_live_... token
-  2. Per repo: irm {public_url}/install.ps1 | iex; then run with -Init -Project YOUR_PROJECT
-  3. Verify: strata whoami
-  4. Optional: re-run with -Cursor for MCP JSON
+  2. Verify (this session): Invoke-Strata whoami
+     Or after opening a new terminal: strata whoami
+  3. Init this repo (pass switches to the scriptblock, NOT to iex):
+     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
+  4. Optional MCP snippet:
+     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
+
+Quick test now: python -m cxl_strata.cli whoami
 
 Manifest: {public_url}/v1/client/manifest
 "@
@@ -305,8 +335,11 @@ def client_manifest() -> dict:
             ),
             "windows_one_liner": f"irm {base}/install.ps1 | iex",
             "windows_with_init": (
-                f"irm {base}/install.ps1 | iex; "
-                f"irm {base}/install.ps1 | iex -Org {settings.strata_default_org} -Init"
+                f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
+                f"-Org {settings.strata_default_org} -Init -Project YOUR_PROJECT"
+            ),
+            "windows_with_cursor": (
+                f"& ([scriptblock]::Create((irm {base}/install.ps1))) -Cursor"
             ),
         },
         "packages": {

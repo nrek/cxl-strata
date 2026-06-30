@@ -406,6 +406,15 @@ curl -fsSL https://strata.example.com/install.sh | bash
 irm https://strata.example.com/install.ps1 | iex
 ```
 
+With repo init or MCP snippet (parameters go on the **scriptblock**, not `iex`):
+
+```powershell
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org your-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Cursor
+```
+
+If `strata` is not found in a new terminal, use `python -m cxl_strata.cli whoami` or reopen PowerShell after install (profile PATH hook).
+
 **Initialize the current repo** (after install):
 
 ```bash

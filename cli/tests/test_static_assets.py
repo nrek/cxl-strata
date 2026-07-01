@@ -31,8 +31,10 @@ def test_project_click_browses_project_without_search_text() -> None:
 def test_search_cards_include_sync_button_wiring() -> None:
     root = _package_root()
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
 
     assert "function canSyncResult(item)" in app_js
     assert "result-sync-btn" in app_js
     assert "syncSearchResult(el.dataset.path)" in app_js
     assert "async function syncSearchResult(path)" in app_js
+    assert "Upload Local to STRATA API" in index

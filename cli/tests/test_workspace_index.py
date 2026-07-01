@@ -114,3 +114,17 @@ def test_search_results_include_sync_status_for_local_documents(workspace: Path)
         row = next(r for r in changed["results"] if r["path"] == path)
         assert row["sync_status"] == "changed"
         assert row["syncable"] is True
+
+
+def test_project_timeline_events_include_sync_status(workspace: Path) -> None:
+    stats = indexer.index_all(prune=False)
+    assert stats["indexed"] >= 1
+
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        result = nl_query.parse_and_run(conn, "", project="test-proj")
+
+    row = next(r for r in result["events"] if r["path"] == path)
+    assert row["sync_status"] == "not_shared"
+    assert row["syncable"] is True

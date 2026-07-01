@@ -152,6 +152,22 @@ def sort_events_newest_first(events: list[dict[str, Any]]) -> list[dict[str, Any
     )
 
 
+def _sync_status(row: sqlite3.Row | dict[str, Any]) -> str:
+    remote_id = row["remote_id"] if isinstance(row, sqlite3.Row) else row.get("remote_id")
+    if not remote_id:
+        return "not_shared"
+    updated_at = str(row["updated_at"] if isinstance(row, sqlite3.Row) else row.get("updated_at") or "")
+    synced_at = str(row["synced_at"] if isinstance(row, sqlite3.Row) else row.get("synced_at") or "")
+    if updated_at and synced_at and updated_at > synced_at:
+        return "changed"
+    return "shared"
+
+
+def _sync_meta(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    status = _sync_status(row)
+    return {"sync_status": status, "syncable": status in {"not_shared", "changed"}}
+
+
 def parse_hours(text: str, *, default: int = 168) -> int:
     lower = text.lower()
     for pat, hours in TIME_PATTERNS:
@@ -259,6 +275,7 @@ def timeline(
     rows = conn.execute(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
+               origin, remote_id, shared_at, synced_at,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
@@ -278,6 +295,7 @@ def timeline(
                 "title": fix_mojibake(row["title"] or PathStem(row["path"])),
                 "path": row["path"],
                 "excerpt": fix_mojibake(row["excerpt"]),
+                **_sync_meta(row),
             }
         )
 
@@ -294,6 +312,7 @@ def timeline(
         sec_rows = conn.execute(
             f"""
             SELECT d.path, d.project, d.title, d.updated_at, d.created_at,
+                   d.origin, d.remote_id, d.shared_at, d.synced_at,
                    s.heading, s.section_at,
                    substr(s.body, 1, 400) AS excerpt, s.ordinal
             FROM sections s
@@ -319,6 +338,7 @@ def timeline(
                     "path": row["path"],
                     "excerpt": fix_mojibake(row["excerpt"]),
                     "ordinal": row["ordinal"],
+                    **_sync_meta(row),
                 }
             )
 

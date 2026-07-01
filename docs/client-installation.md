@@ -63,6 +63,14 @@ python3 -m cxl_strata.cli --init
 
 This command hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
 
+If PowerShell reports `No such option: --init`, the installed CLI is older than the docs. Rerun the installer bootstrap instead:
+
+```powershell
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+```
+
+That path uses the installer script itself to refresh the package, initialize the repo, create the SQLite cache, and open the UI.
+
 ## Linux, macOS, WSL, xTerm, Bash, Zsh
 
 Use the Unix installer from any shell:
@@ -131,6 +139,8 @@ python -m cxl_strata.cli --init
 ```
 
 This is the easiest all-in-one command: it adds STRATA to PATH for future terminals, creates the local SQLite database, indexes local Cursor/Claude/Codex context files, pulls shared docs when possible, and opens the localhost UI.
+
+If `--init` is not recognized, rerun the installer with `-Init -Project my-project`; the installer bootstrap is the compatibility fallback for older local CLI installs.
 
 When you install with repo initialization, STRATA now runs `strata index` automatically after `strata init`:
 

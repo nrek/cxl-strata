@@ -68,7 +68,7 @@ if ! python3 -m pip --version >/dev/null 2>&1; then
   exit 1
 fi
 
-PIP=(python3 -m pip install --user --upgrade)
+PIP=(python3 -m pip install --user --upgrade --force-reinstall --no-cache-dir)
 CLI_SPEC="git+${{STRATA_GIT_URL}}@${{STRATA_GIT_REF}}#subdirectory=cli"
 MCP_SPEC="git+${{STRATA_GIT_URL}}@${{STRATA_GIT_REF}}#subdirectory=mcp"
 
@@ -158,6 +158,9 @@ if [[ "$DO_INIT" -eq 1 ]]; then
   INDEX_ARGS=(index)
   echo "==> Initializing STRATA local SQLite index"
   "${{STRATA_CMD[@]}}" "${{INDEX_ARGS[@]}}" || echo "==> Warning: local SQLite index initialization failed; run: ${{STRATA_CMD[*]}} index"
+  APP_ARGS=(app --open)
+  echo "==> Opening STRATA localhost UI"
+  "${{STRATA_CMD[@]}}" "${{APP_ARGS[@]}}"
 fi
 
 if [[ "$DO_CURSOR" -eq 1 ]]; then
@@ -189,9 +192,9 @@ STRATA client installed.
 Next steps:
   1. Edit ~/.strata/secrets.json and set api_key to your strata_live_... token
      (or: export STRATA_API_KEY=strata_live_...)
-  2. Run the post-key bootstrap: python3 -m cxl_strata.cli --init
-     This hardens PATH, creates .md/workspace_index.sqlite, and opens the local UI.
-  3. In each repo: curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
+  2. If this is a fresh shell with the latest CLI: python3 -m cxl_strata.cli --init
+  3. If --init is unavailable, run the installer bootstrap instead:
+     curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
   4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
@@ -241,9 +244,9 @@ $CliSpec = "git+$GitUrl@$GitRef#subdirectory=cli"
 $McpSpec = "git+$GitUrl@$GitRef#subdirectory=mcp"
 
 Write-Host "==> Installing STRATA CLI"
-python -m pip install --user --upgrade $CliSpec
+python -m pip install --user --upgrade --force-reinstall --no-cache-dir $CliSpec
 Write-Host "==> Installing STRATA MCP server"
-python -m pip install --user --upgrade $McpSpec
+python -m pip install --user --upgrade --force-reinstall --no-cache-dir $McpSpec
 
 $StrataHome = Join-Path $env:USERPROFILE ".strata"
 New-Item -ItemType Directory -Force -Path $StrataHome | Out-Null
@@ -329,6 +332,9 @@ if ($Init) {{
   }} catch {{
     Write-Warning "Local SQLite index initialization failed; run: python -m cxl_strata.cli index"
   }}
+  $appArgs = @("app", "--open")
+  Write-Host "==> Opening STRATA localhost UI"
+  Invoke-Strata @appArgs
 }}
 
 if ($Cursor) {{
@@ -357,17 +363,19 @@ STRATA client installed.
 
 Next steps:
   1. Edit $SecretsJson and set api_key to your strata_live_... token
-  2. Run the post-key bootstrap:
+  2. If this shell has the latest CLI, run the post-key bootstrap:
      python -m cxl_strata.cli --init
      This hardens PATH, creates .md\\workspace_index.sqlite, and opens the local UI.
-  3. Verify (this session): Invoke-Strata whoami
+  3. If --init says 'No such option', use the installer bootstrap instead:
+     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org $Org -Init -Project YOUR_PROJECT
+  4. Verify (this session): Invoke-Strata whoami
      Or after opening a new terminal: strata whoami
-  4. Init this repo (pass switches to the scriptblock, NOT to iex):
+  5. Init this repo (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
-  5. Local SQLite index is initialized during -Init; refresh later with: strata index
-  6. Open UI: strata app --open
-  7. Optional autostart: strata app install-autostart
-  8. Optional MCP snippet:
+  6. Local SQLite index is initialized during -Init; refresh later with: strata index
+  7. Open UI: strata app --open
+  8. Optional autostart: strata app install-autostart
+  9. Optional MCP snippet:
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
 
 Quick test now: python -m cxl_strata.cli whoami
@@ -443,6 +451,10 @@ def client_manifest() -> dict:
             "app": "strata app --open",
             "autostart": "strata app install-autostart",
             "post_key_bootstrap": "python -m cxl_strata.cli --init",
+            "post_key_bootstrap_fallback_windows": (
+                f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
+                f"-Org {settings.strata_default_org} -Init -Project YOUR_PROJECT"
+            ),
             "local_db": ".md/workspace_index.sqlite",
             "ui_port": 8765,
         },

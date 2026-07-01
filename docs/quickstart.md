@@ -20,6 +20,12 @@ python -m cxl_strata.cli --init
 
 This hardens PATH, creates `.md/workspace_index.sqlite`, and opens `http://127.0.0.1:8765`.
 
+If this returns `No such option: --init`, refresh through the installer bootstrap instead:
+
+```powershell
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+```
+
 ## 1. Verify The API And Identity
 
 Open a new terminal after installing STRATA so your shell reloads PATH. Then run:

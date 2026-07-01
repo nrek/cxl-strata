@@ -286,6 +286,18 @@ python -m cxl_strata.cli --init
 
 It hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
 
+If the command fails with `No such option: --init`, the workstation is still running an older installed CLI. On Windows, use the installer bootstrap fallback:
+
+```powershell
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+```
+
+Then retry:
+
+```powershell
+python -m cxl_strata.cli --help
+```
+
 From the workspace root:
 
 ```bash

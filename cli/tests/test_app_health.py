@@ -5,7 +5,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
-from cxl_strata.app.server import bootstrap_workspace_index, is_strata_app_healthy
+from cxl_strata import cursor_rule, local_store
+from cxl_strata.app.server import bootstrap_workspace_index, is_strata_app_healthy, setup_status
 from cxl_strata.workspace_index import paths
 from cxl_strata.workspace_index.paths import set_workspace_root
 
@@ -73,3 +74,53 @@ def test_bootstrap_workspace_index_creates_sqlite_for_fresh_agent_workspace(
     assert db_path.exists()
     assert result["db_path"] == str(db_path)
     assert result["index"]["indexed"] == 1
+
+
+def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("STRATA_API_KEY", "strata_live_test")
+    set_workspace_root(tmp_path)
+    local_store.ensure_layout()
+    local_store.CONFIG_FILE.write_text(
+        json.dumps(
+            {
+                "api_base_url": "http://127.0.0.1:8015",
+                "organization_slug": "example",
+                "project_slug": "example-project",
+                "repo_name": "example-repo",
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths.DB_PATH.parent.mkdir(parents=True)
+    paths.DB_PATH.write_text("", encoding="utf-8")
+    cursor_rule.install_cursor_rule()
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is True
+    assert checks["config"]["ok"] is True
+    assert checks["api_key"]["ok"] is True
+    assert checks["sqlite"]["ok"] is True
+    assert checks["cursor_rule"]["ok"] is True
+
+
+def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("STRATA_API_KEY", raising=False)
+    monkeypatch.setattr(local_store, "USER_SECRETS_FILE", tmp_path / "missing-secrets.json")
+    set_workspace_root(tmp_path)
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is False
+    assert checks["config"]["ok"] is False
+    assert "strata init" in checks["config"]["fix"]
+    assert checks["api_key"]["ok"] is False
+    assert "STRATA_API_KEY" in checks["api_key"]["fix"]
+    assert checks["sqlite"]["ok"] is False
+    assert "strata index" in checks["sqlite"]["fix"]
+    assert checks["cursor_rule"]["ok"] is False
+    assert "python -m cxl_strata.cli --init" in checks["cursor_rule"]["fix"]

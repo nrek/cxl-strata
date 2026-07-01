@@ -198,10 +198,11 @@ Next steps:
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
   4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
-  5. Local SQLite index is initialized during --init; refresh later with: strata index
-  6. Open local UI: strata app --open
-  7. Optional autostart (never installed silently): strata app install-autostart
-  8. Optional Cursor MCP: re-run with --cursor for JSON snippet
+  5. --init initializes SQLite and installs .cursor/rules/strata-memory-capture.mdc
+  6. Refresh local index later with: strata index
+  7. Open local UI: strata app --open
+  8. Optional autostart (never installed silently): strata app install-autostart
+  9. Optional Cursor MCP: re-run with --cursor for JSON snippet
 
 Manifest: {public_url}/v1/client/manifest
 EOF
@@ -372,10 +373,11 @@ Next steps:
      Or after opening a new terminal: strata whoami
   5. Init this repo (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
-  6. Local SQLite index is initialized during -Init; refresh later with: strata index
-  7. Open UI: strata app --open
-  8. Optional autostart: strata app install-autostart
-  9. Optional MCP snippet:
+  6. -Init initializes SQLite and installs .cursor\\rules\\strata-memory-capture.mdc
+  7. Refresh local index later with: strata index
+  8. Open UI: strata app --open
+  9. Optional autostart: strata app install-autostart
+  10. Optional MCP snippet:
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
 
 Quick test now: python -m cxl_strata.cli whoami
@@ -445,11 +447,16 @@ def client_manifest() -> dict:
         },
         "workspace_knowledge": {
             "index": "strata index",
-            "prune": "strata prune --archive-handoffs --execute",
-            "stash": "strata stash --project YOUR_PROJECT",
+            "prune": "strata prune --archive-handoffs",
+            "prune_project": "strata prune YOUR_PROJECT --archive-handoffs",
+            "prune_execute": "strata prune --archive-handoffs --execute",
+            "prune_project_execute": "strata prune YOUR_PROJECT --archive-handoffs --execute",
+            "stash": "strata stash",
+            "stash_project": "strata stash --project YOUR_PROJECT",
             "pull": "strata pull --project YOUR_PROJECT",
             "app": "strata app --open",
             "autostart": "strata app install-autostart",
+            "cursor_rule": ".cursor/rules/strata-memory-capture.mdc",
             "post_key_bootstrap": "python -m cxl_strata.cli --init",
             "post_key_bootstrap_fallback_windows": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) "

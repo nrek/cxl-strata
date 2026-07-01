@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from . import db
-from .paths import WORKSPACE_ROOT
+from . import paths
 from .storage import verify_file_matches_db
 
 
@@ -31,6 +31,7 @@ def _is_older_than(row_updated_at: str | None, *, cutoff: datetime) -> bool:
 def run_prune(
     *,
     kinds: list[str],
+    project: str | None = None,
     execute: bool = False,
     plan_status: str | None = None,
     older_than_hours: int | None = None,
@@ -63,6 +64,9 @@ def run_prune(
         if plan_status and "plan" in kinds:
             clauses.append("plan_status = ?")
             params.append(plan_status)
+        if project:
+            clauses.append("project = ?")
+            params.append(project)
 
         rows = conn.execute(
             f"SELECT path, kind, plan_status, updated_at FROM documents WHERE {' AND '.join(clauses)}",
@@ -80,7 +84,7 @@ def run_prune(
                 stats["errors"].append({"path": rel, "reason": reason})
                 continue
             stats["verified"] += 1
-            fp = WORKSPACE_ROOT / rel
+            fp = paths.WORKSPACE_ROOT / rel
             if not fp.is_file():
                 if execute:
                     conn.execute(

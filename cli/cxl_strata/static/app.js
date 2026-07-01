@@ -31,6 +31,11 @@ const ACTION = {
     "Re-read this file from disk and refresh your local SQLite index without uploading.",
 };
 
+const TOOL_PROMPTS = {
+  prune: "/strata prune",
+  summarize: "/strata summary",
+};
+
 const $ = (sel) => document.querySelector(sel);
 
 marked.setOptions({ gfm: true, breaks: true });
@@ -247,6 +252,213 @@ function setAppResultsVisible(visible) {
   if (!visible) {
     $("#meta")?.classList.add("hidden");
   }
+}
+
+function setToolDrawerOpen(open) {
+  const drawer = $("#tool-drawer");
+  const toggle = $("#tool-drawer-toggle");
+  const icon = toggle?.querySelector("i");
+  if (!drawer || !toggle || !icon) return;
+
+  drawer.classList.toggle("open", open);
+  drawer.setAttribute("aria-hidden", open ? "false" : "true");
+  toggle.classList.toggle("open", open);
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+  toggle.setAttribute("aria-label", open ? "Close tool drawer" : "Open tool drawer");
+  icon.classList.toggle("fa-wrench", !open);
+  icon.classList.toggle("fa-times", open);
+}
+
+function setToolStatus(message) {
+  const el = $("#tool-drawer-status");
+  if (el) el.textContent = message || "";
+}
+
+function setupStatusHtml(item) {
+  const stateClass = item.ok ? "ok" : "missing";
+  const stateLabel = item.ok ? "Ready" : "Needs setup";
+  return `
+    <article class="setup-status-item ${stateClass}">
+      <div class="setup-status-main">
+        <span class="setup-status-dot" aria-hidden="true"></span>
+        <div>
+          <strong>${esc(item.label)}</strong>
+          <span>${esc(item.path || "")}</span>
+        </div>
+      </div>
+      ${
+        item.ok
+          ? `<code>${stateLabel}</code>`
+          : `<button type="button" class="tool-mini-btn setup-fix-copy" data-fix="${esc(item.fix || "")}">Copy fix</button>`
+      }
+    </article>`;
+}
+
+function renderSetupStatus(data) {
+  const el = $("#setup-status-list");
+  if (!el) return;
+  const checks = data?.checks || [];
+  if (!checks.length) {
+    el.innerHTML = '<p class="tool-muted">No setup checks returned.</p>';
+    return;
+  }
+  el.innerHTML = checks.map(setupStatusHtml).join("");
+  el.querySelectorAll(".setup-fix-copy").forEach((btn) => {
+    btn.addEventListener("click", () => copySetupFix(btn));
+  });
+}
+
+async function loadSetupStatus() {
+  const el = $("#setup-status-list");
+  if (el) el.innerHTML = '<p class="tool-muted">Checking local setup…</p>';
+  try {
+    const data = await api("/api/setup/status");
+    renderSetupStatus(data);
+    setToolStatus(data.ok ? "Setup ready." : "Setup needs attention.");
+  } catch (err) {
+    if (el) el.innerHTML = `<p class="tool-muted">Setup check failed: ${esc(err.message)}</p>`;
+  }
+}
+
+async function copySetupFix(btn) {
+  const fix = btn?.dataset.fix;
+  if (!fix) return;
+  const idle = btn.textContent;
+  try {
+    await copyText(fix);
+    btn.textContent = "Copied";
+    setToolStatus("Fix command copied.");
+  } catch (err) {
+    setToolStatus(`Copy failed: ${err.message}`);
+  } finally {
+    window.setTimeout(() => {
+      btn.textContent = idle;
+    }, 1400);
+  }
+}
+
+function uniquePaths(items) {
+  return [...new Set((items || []).map((item) => item.path).filter(Boolean))];
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+async function copyToolPrompt(promptKey, btn) {
+  const text = TOOL_PROMPTS[promptKey];
+  if (!text) return;
+  const idle = btn?.querySelector("code")?.textContent || "copy prompt";
+  try {
+    await copyText(text);
+    setToolStatus("Prompt copied.");
+    if (btn) btn.querySelector("code").textContent = "copied";
+  } catch (err) {
+    setToolStatus(`Copy failed: ${err.message}`);
+  } finally {
+    if (btn) {
+      window.setTimeout(() => {
+        btn.querySelector("code").textContent = idle;
+      }, 1400);
+    }
+  }
+}
+
+async function runToolCommand(command) {
+  const btn = document.querySelector(`[data-tool-command="${cssEscape(command)}"]`);
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
+  setToolStatus("Running...");
+
+  try {
+    if (command === "sync-remote") {
+      if (!state.apiOnline) {
+        setToolStatus("Remote API is offline. Local search remains available.");
+        return;
+      }
+      await api("/api/pull", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      await refreshDashboard();
+      setToolStatus("Remote sync complete.");
+      return;
+    }
+
+    if (command === "sync-local") {
+      if (!state.syncItems.length) await loadSyncLocal({ resetPage: false });
+      const paths = uniquePaths(state.syncItems);
+      if (!paths.length) {
+        setToolStatus("All local artifacts are already shared.");
+        return;
+      }
+      await syncPaths(paths);
+      await refreshRemotePending();
+      setToolStatus(`Shared ${paths.length} local artifact${paths.length === 1 ? "" : "s"}.`);
+      return;
+    }
+
+    if (command === "index-local") {
+      await Promise.all([
+        loadRecentLocal({ resetPage: false }),
+        loadSyncLocal({ resetPage: false }),
+      ]);
+      const paths = uniquePaths([...state.recentItems, ...state.syncItems]);
+      if (!paths.length) {
+        setToolStatus("No local artifacts found to index.");
+        return;
+      }
+      await indexPaths(paths);
+      setToolStatus(`Indexed ${paths.length} local artifact${paths.length === 1 ? "" : "s"}.`);
+      return;
+    }
+  } catch (err) {
+    setToolStatus(`Command failed: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initToolDrawer() {
+  const toggle = $("#tool-drawer-toggle");
+  const drawer = $("#tool-drawer");
+  if (!toggle || !drawer) return;
+
+  toggle.addEventListener("click", () => {
+    const open = !drawer.classList.contains("open");
+    setToolDrawerOpen(open);
+    if (open) loadSetupStatus();
+  });
+
+  $("#setup-status-refresh")?.addEventListener("click", () => loadSetupStatus());
+
+  drawer.querySelectorAll("[data-tool-command]").forEach((btn) => {
+    btn.addEventListener("click", () => runToolCommand(btn.dataset.toolCommand));
+  });
+
+  drawer.querySelectorAll("[data-tool-prompt]").forEach((btn) => {
+    btn.addEventListener("click", () => copyToolPrompt(btn.dataset.toolPrompt, btn));
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && drawer.classList.contains("open")) {
+      setToolDrawerOpen(false);
+    }
+  });
 }
 
 function detectProjectFromQuery(q) {
@@ -1129,6 +1341,7 @@ async function init() {
     if (e.target === $("#doc-modal")) $("#doc-modal").close();
   });
 
+  initToolDrawer();
   showView("home");
 }
 

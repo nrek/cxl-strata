@@ -1,0 +1,100 @@
+# STRATA Cursor commands
+
+When the user types **`/strata add`**, **`/strata summary`**, or **`/strata prune`**, treat it as a STRATA project memory command.
+
+## Prerequisites
+
+- Repo has `.strata/config.json` from `strata init`, or infer project from repo folder / blueprint.
+- Access token is in `STRATA_API_KEY` or `.strata/secrets.json`; never commit secrets.
+- Central API URL is in `.strata/config.json`.
+
+## `/strata add`
+
+**Purpose:** Capture durable memory or upload an existing handoff.
+
+**Agent behavior:**
+
+1. Identify `project_slug` and `repo_name` from `.strata/config.json` or the repo folder.
+2. If the user points at a handoff file, queue it:
+
+```bash
+strata add --handoff-path .md/handoff/<project>/<timestamp>.md
+```
+
+3. Otherwise, distill the session into a concise note with no secrets and no raw chat dump:
+
+```bash
+strata add \
+  --type "<event_type>" \
+  --title "<short title>" \
+  --summary "<1-2 sentence durable summary>" \
+  --details "<optional supporting detail>" \
+  --environment "<local|staging|production|none>" \
+  --tags "<comma,separated,tags>" \
+  --visibility internal \
+  --confidence observed
+```
+
+4. Offer to run `strata sync`, or run it if the user confirms.
+
+## `/strata summary`
+
+**Purpose:** End-of-day or end-of-flow summary for the current project.
+
+**Agent behavior:**
+
+1. Summarize what changed, verification, decisions, and follow-ups.
+2. Queue via CLI:
+
+```bash
+strata summary \
+  --project "<project_slug>" \
+  --text "<concise summary of work done>" \
+  --sync
+```
+
+## `/strata prune`
+
+**Purpose:** Offload archival local markdown files from the filesystem while keeping content searchable in STRATA's local SQLite datastore and available for sync.
+
+**Supported forms:**
+
+```text
+/strata prune
+/strata prune <project name>
+/strata prune --execute
+/strata prune <project name> --execute
+```
+
+**Agent behavior:**
+
+1. Parse optional project scope and `--execute`.
+2. If no project is provided, operate across all local projects. If a project is provided, scope both stash and prune to that project.
+3. Before pruning, stash/index matching documents so content remains searchable locally:
+
+```bash
+strata stash
+strata stash --project "<project name>"
+```
+
+4. For non-`--execute`, generate a report only:
+
+```bash
+strata prune --archive-handoffs
+strata prune "<project name>" --archive-handoffs
+```
+
+5. For `--execute`, confirm the user intended deletion, then stash and prune:
+
+```bash
+strata prune --archive-handoffs --execute
+strata prune "<project name>" --archive-handoffs --execute
+```
+
+6. Report `would_prune` for dry runs or `pruned` for execute runs, plus skipped/errors. Never delete files without explicit `--execute`.
+
+## Security
+
+- Never include passwords, tokens, API keys, private keys, or raw `.env` values.
+- Default visibility is `internal`.
+- Client-management context stays `internal` or `admin_only`, not `client_safe` unless explicitly safe.

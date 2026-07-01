@@ -61,7 +61,7 @@ On macOS/Linux systems where Python is named `python3`:
 python3 -m cxl_strata.cli --init
 ```
 
-This command hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
+This command hardens PATH, installs `.cursor/rules/strata-memory-capture.mdc`, creates `.md/workspace_index.sqlite`, and opens the browser UI.
 
 If PowerShell reports `No such option: --init`, the installed CLI is older than the docs. Rerun the installer bootstrap instead:
 
@@ -277,10 +277,12 @@ Expected output includes actor, organization, scopes, and API.
 
 ## Cursor
 
-Install the CLI first, then add the project rule from [../cursor-rules/strata-commands.md](../cursor-rules/strata-commands.md) to either:
+`python -m cxl_strata.cli --init` and installer `-Init` automatically write the project Cursor rule to `.cursor/rules/strata-memory-capture.mdc`. If you need to install the rule manually, copy [../cursor-rules/strata-commands.md](../cursor-rules/strata-commands.md) to either:
 
 - `.cursor/rules/strata-memory-capture.mdc`
 - User-level Cursor rules
+
+That rule makes prompt-facing commands such as `/strata add`, `/strata summary`, and `/strata prune` available to Cursor. If `/strata prune` is not recognized, confirm the rule is present, then restart or reload Cursor's rules. Without the rule, use the CLI equivalents directly: `strata stash`, `strata stash --project <project>`, `strata prune --archive-handoffs`, and `strata prune <project> --archive-handoffs --execute`.
 
 For MCP retrieval, add a server config such as:
 

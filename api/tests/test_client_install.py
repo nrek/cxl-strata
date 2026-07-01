@@ -21,6 +21,7 @@ def test_install_sh_served(client: TestClient) -> None:
     assert '"${STRATA_CMD[@]}" "${INDEX_ARGS[@]}"' in body
     assert 'APP_ARGS=(app --open)' in body
     assert "python3 -m cxl_strata.cli --init" in body
+    assert "installs .cursor/rules/strata-memory-capture.mdc" in body
 
 
 def test_install_ps1_served(client: TestClient) -> None:
@@ -40,6 +41,7 @@ def test_install_ps1_served(client: TestClient) -> None:
     assert "Invoke-Strata @indexArgs" in body
     assert '$appArgs = @("app", "--open")' in body
     assert "python -m cxl_strata.cli --init" in body
+    assert "installs .cursor\\rules\\strata-memory-capture.mdc" in body
 
 
 def test_client_manifest(client: TestClient) -> None:
@@ -53,6 +55,7 @@ def test_client_manifest(client: TestClient) -> None:
     assert "cli" in body["packages"]
     assert "#subdirectory=cli" in body["packages"]["cli"]["pip_spec"]
     assert body["workspace_knowledge"]["post_key_bootstrap"] == "python -m cxl_strata.cli --init"
+    assert body["workspace_knowledge"]["cursor_rule"] == ".cursor/rules/strata-memory-capture.mdc"
     assert "-Init -Project YOUR_PROJECT" in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
 
 

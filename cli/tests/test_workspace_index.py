@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cxl_strata.workspace_index import db, indexer, nl_query, queries, sync_review
+from cxl_strata.workspace_index import db, indexer, nl_query, prune, queries, sync_review
 from cxl_strata.workspace_index.paths import set_workspace_root
 
 
@@ -221,3 +221,15 @@ def test_project_timeline_events_include_sync_status(workspace: Path) -> None:
     row = next(r for r in result["events"] if r["path"] == path)
     assert row["sync_status"] == "not_shared"
     assert row["syncable"] is True
+
+
+def test_prune_can_scope_to_project(workspace: Path) -> None:
+    other = workspace / ".md" / "handoff" / "other-proj" / "2026-06-30T13-00-00Z.md"
+    other.parent.mkdir(parents=True)
+    other.write_text("# Handoff — other\n\n- **Changed:** other project\n", encoding="utf-8")
+    indexer.index_all(prune=False)
+
+    result = prune.run_prune(kinds=["handoff"], project="test-proj")
+
+    assert ".md/handoff/test-proj/2026-06-30T12-00-00Z.md" in result["would_prune"]
+    assert ".md/handoff/other-proj/2026-06-30T13-00-00Z.md" not in result["would_prune"]

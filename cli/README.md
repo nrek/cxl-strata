@@ -12,6 +12,8 @@ python -m cxl_strata.cli --init
 strata whoami
 ```
 
+`strata init` and `python -m cxl_strata.cli --init` install `.cursor/rules/strata-memory-capture.mdc` so Cursor can use `/strata add`, `/strata summary`, and `/strata prune`.
+
 ## Workspace knowledge (hybrid local + shared)
 
 Local SQLite (`.md/workspace_index.sqlite`) is the fast offline cache. Shared full artifacts live in the central API.
@@ -23,9 +25,12 @@ strata index
 
 # Archive old handoffs into SQLite (dry-run by default)
 strata prune --archive-handoffs
+strata prune synq-phalanx --archive-handoffs
 strata prune --archive-handoffs --execute
+strata prune synq-phalanx --archive-handoffs --execute
 
 # Push indexed docs to central API (author from API token)
+strata stash
 strata stash --project synq-phalanx
 strata stash --path .md/handoff/synq-phalanx/2026-06-30T12-00-00Z.md
 

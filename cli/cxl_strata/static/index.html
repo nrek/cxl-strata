@@ -204,6 +204,71 @@
     </article>
   </dialog>
 
+  <aside id="tool-drawer" class="tool-drawer" aria-hidden="true" aria-labelledby="tool-drawer-title">
+    <div class="tool-drawer-inner">
+      <header class="tool-drawer-header">
+        <div>
+          <h2 id="tool-drawer-title">STRATA Tools</h2>
+        </div>
+      </header>
+
+      <section class="tool-section" aria-labelledby="tool-setup-title">
+        <div class="tool-section-head">
+          <h3 id="tool-setup-title">Setup Status</h3>
+          <button type="button" id="setup-status-refresh" class="tool-mini-btn">Refresh</button>
+        </div>
+        <div id="setup-status-list" class="setup-status-list">
+          <p class="tool-muted">Checking local setup…</p>
+        </div>
+      </section>
+
+      <section class="tool-section" aria-labelledby="tool-quick-title">
+        <h3 id="tool-quick-title">Quick Commands</h3>
+        <div class="tool-command-list">
+          <button type="button" class="tool-command" data-tool-command="sync-remote">
+            <span>Sync From Remote</span>
+            <code>strata pull</code>
+          </button>
+          <button type="button" class="tool-command" data-tool-command="sync-local">
+            <span>Sync All Local</span>
+            <code>strata sync</code>
+          </button>
+          <button type="button" class="tool-command" data-tool-command="index-local">
+            <span>Strata Index</span>
+            <code>strata index</code>
+          </button>
+        </div>
+      </section>
+
+      <section class="tool-section" aria-labelledby="tool-prompts-title">
+        <h3 id="tool-prompts-title">Copy Prompts</h3>
+        <div class="tool-command-list">
+          <button type="button" class="tool-command" data-tool-prompt="prune">
+            <span>Strata Prune</span>
+            <code>/strata prune</code>
+          </button>
+          <button type="button" class="tool-command" data-tool-prompt="summarize">
+            <span>Strata Summarize</span>
+            <code>/strata summary</code>
+          </button>
+        </div>
+      </section>
+
+      <p id="tool-drawer-status" class="tool-drawer-status" role="status" aria-live="polite"></p>
+    </div>
+  </aside>
+
+  <button
+    type="button"
+    id="tool-drawer-toggle"
+    class="tool-drawer-toggle"
+    aria-label="Open tool drawer"
+    aria-controls="tool-drawer"
+    aria-expanded="false"
+  >
+    <i class="fa-solid fa-wrench" aria-hidden="true"></i>
+  </button>
+
   <script src="/static/marked.min.js"></script>
   <script src="/static/app.js"></script>
 </body>

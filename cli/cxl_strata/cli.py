@@ -13,7 +13,7 @@ import typer
 from rich import print as rprint
 from rich.prompt import Prompt
 
-from . import api_client, local_store
+from . import api_client, cursor_rule, local_store
 from .content_safety import find_secret_markers
 from .workspace_cmds import register as register_workspace_cmds
 
@@ -121,6 +121,8 @@ def bootstrap_client_environment() -> None:
     """Post-install bootstrap: PATH, SQLite cache, and localhost UI."""
     path_result = harden_user_path()
     rprint(f"[green]PATH includes[/green] {path_result['scripts_dir']}")
+    rule_result = cursor_rule.install_cursor_rule()
+    rprint(f"[green]Cursor rule {rule_result['status']}[/green] {rule_result['path']}")
 
     project: str | None = None
     try:
@@ -223,7 +225,9 @@ def init_cmd(
         "actor_email": actor_email,
     }
     local_store.CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    rule_result = cursor_rule.install_cursor_rule()
     rprint("[green]Initialized[/green] .strata/config.json")
+    rprint(f"[green]Cursor rule {rule_result['status']}[/green] {rule_result['path']}")
     rprint("Set access token: export STRATA_API_KEY=strata_dev_...  or  .strata/secrets.json")
 
 

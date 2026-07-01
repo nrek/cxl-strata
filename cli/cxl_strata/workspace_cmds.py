@@ -119,6 +119,7 @@ def register(app: typer.Typer) -> None:
 
     @app.command("prune")
     def prune_cmd(
+        project: Optional[str] = typer.Argument(None, help="Optional project slug to prune"),
         kinds: str = typer.Option("handoff", "--kinds"),
         plan_status: Optional[str] = typer.Option(None, "--plan-status"),
         execute: bool = typer.Option(False, "--execute"),
@@ -131,6 +132,7 @@ def register(app: typer.Typer) -> None:
             set_workspace_root(root)
         result = prune.run_prune(
             kinds=[k.strip() for k in kinds.split(",") if k.strip()],
+            project=project,
             execute=execute,
             plan_status=plan_status,
             older_than_hours=older_than_hours,

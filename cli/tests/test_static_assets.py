@@ -82,3 +82,46 @@ def test_search_cards_include_sync_button_wiring() -> None:
     assert "shareSearchResult(el.dataset.path)" in app_js
     assert "async function shareSearchResult(path)" in app_js
     assert "Share to Team" in index
+
+
+def test_tool_drawer_static_wiring() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="tool-drawer"' in index
+    assert 'id="tool-drawer-toggle"' in index
+    assert "fa-wrench" in index
+    assert "Quick Commands" in index
+    assert "Setup Status" in index
+    assert 'id="setup-status-list"' in index
+    assert 'id="setup-status-refresh"' in index
+    assert "Sync From Remote" in index
+    assert "Sync All Local" in index
+    assert "Strata Index" in index
+    assert "Copy Prompts" in index
+    assert "Strata Prune" in index
+    assert "Strata Summarize" in index
+
+    assert "function setToolDrawerOpen(open)" in app_js
+    assert "function initToolDrawer()" in app_js
+    assert "async function runToolCommand(command)" in app_js
+    assert "async function copyToolPrompt(promptKey, btn)" in app_js
+    assert "async function loadSetupStatus()" in app_js
+    assert "/api/setup/status" in app_js
+    assert "TOOL_PROMPTS" in app_js
+    assert 'prune: "/strata prune"' in app_js
+    assert 'summarize: "/strata summary"' in app_js
+    assert "Use STRATA prune" not in app_js
+    assert "cursor-rules/strata-commands.md" not in app_js
+    assert "/strata prune" in index
+    assert "fa-times" in app_js
+
+    assert ".tool-drawer" in style
+    assert ".setup-status-list" in style
+    assert ".setup-status-item" in style
+    assert ".setup-status-dot" in style
+    assert ".tool-drawer.open" in style
+    assert ".tool-drawer-toggle" in style
+    assert ".tool-drawer-toggle.open" in style

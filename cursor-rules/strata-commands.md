@@ -1,6 +1,6 @@
 # STRATA Cursor commands
 
-When the user types **`/strata add`** or **`/strata summary`**, treat it as a capture request for the **current repo's** STRATA project memory.
+When the user types **`/strata add`**, **`/strata summary`**, or **`/strata prune`**, treat it as a STRATA project memory command.
 
 ## Prerequisites
 
@@ -56,6 +56,48 @@ strata summary \
 ```
 
 3. Default `event_type` on server: `daily_summary`. Title pattern: `Daily summary - <project>`.
+
+## `/strata prune`
+
+**Purpose:** Offload archival local markdown files from the user's filesystem while keeping the content searchable in STRATA's local SQLite datastore and available for sync to STRATA.
+
+**Supported forms:**
+
+```text
+/strata prune
+/strata prune <project name>
+/strata prune --execute
+/strata prune <project name> --execute
+```
+
+**Agent behavior:**
+
+1. Parse optional project scope and `--execute`.
+2. If no project is provided, operate across all local projects. If a project is provided, scope both stash and prune to that project.
+3. Before pruning, stash/index the matching documents so the content remains in the local searchable SQLite datastore:
+
+```bash
+strata stash
+strata stash --project "<project name>"
+```
+
+4. For non-`--execute` commands, generate a report of markdown files that can be stashed and pruned. Do not delete files:
+
+```bash
+strata prune --archive-handoffs
+strata prune "<project name>" --archive-handoffs
+```
+
+5. For `--execute` commands, confirm the user intended deletion, then stash and prune. Prune verifies file-backed documents match the SQLite body before marking them `db_only` and removing archival local files:
+
+```bash
+strata prune --archive-handoffs --execute
+strata prune "<project name>" --archive-handoffs --execute
+```
+
+6. Report `would_prune` for dry runs or `pruned` for execute runs, plus skipped/errors. Never delete files without explicit `--execute`.
+
+**If `/strata prune` is not recognized:** install the STRATA CLI, then add this rule file (`cursor-rules/strata-commands.md`) to `.cursor/rules/strata-memory-capture.mdc` or user-level Cursor rules, and restart/reload the AI IDE rules. Until then, use the CLI equivalents above.
 
 ## Security (hard rules)
 

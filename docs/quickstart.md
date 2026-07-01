@@ -10,7 +10,7 @@ STRATA has three local surfaces:
 
 The central API is separate. It stores team memory in PostgreSQL and serves search/MCP requests.
 
-Fresh installs create the SQLite cache during repo init (`--init`) and again when the app starts if it is missing. Cursor, Claude, and Codex instruction files are indexed as local rules when present.
+Fresh installs create the SQLite cache during repo init (`--init`) and again when the app starts if it is missing. `--init` also installs `.cursor/rules/strata-memory-capture.mdc` so Cursor can recognize `/strata add`, `/strata summary`, and `/strata prune`.
 
 After installing and setting your API key, run the post-key bootstrap:
 
@@ -18,7 +18,7 @@ After installing and setting your API key, run the post-key bootstrap:
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, creates `.md/workspace_index.sqlite`, and opens `http://127.0.0.1:8765`.
+This hardens PATH, installs the Cursor rule, creates `.md/workspace_index.sqlite`, and opens `http://127.0.0.1:8765`.
 
 If this returns `No such option: --init`, refresh through the installer bootstrap instead:
 
@@ -196,6 +196,8 @@ Cursor:
 ```text
 /strata add - capture a durable note
 /strata summary - capture an end-of-flow summary
+/strata prune - report archival local markdown files that can be stashed and pruned
+/strata prune my-project --execute - stash then remove archival local files for one project
 ```
 
 Claude or Codex:
@@ -203,6 +205,9 @@ Claude or Codex:
 ```bash
 strata add --type implementation_note --title "Useful context" --summary "A concise durable note."
 strata summary --text "End-of-day project summary." --sync
+strata stash
+strata prune --archive-handoffs
+strata prune my-project --archive-handoffs --execute
 ```
 
 MCP clients can retrieve context with:

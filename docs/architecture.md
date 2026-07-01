@@ -44,7 +44,7 @@ http://127.0.0.1:8765
 | CLI | `cli/` | `strata` command, repo config, JSONL queue, sync/search, local workspace index |
 | Local app | `cli/cxl_strata/app/` | Browser UI over `.md/workspace_index.sqlite` |
 | MCP server | `mcp/` | Stdio MCP server that reads from the central API |
-| Cursor rules | `cursor-rules/` | Agent behavior for `/strata add` and `/strata summary` |
+| Cursor rules | `cursor-rules/`, packaged CLI rule asset | Agent behavior for `/strata add`, `/strata summary`, and `/strata prune`; installed to `.cursor/rules/strata-memory-capture.mdc` during init |
 | Docs | `docs/` | Server setup, provisioning, client install, security, troubleshooting |
 
 ## Storage

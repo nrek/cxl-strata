@@ -110,7 +110,7 @@ Run the post-key bootstrap:
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, creates `.md/workspace_index.sqlite`, and opens the local UI.
+This hardens PATH, installs `.cursor/rules/strata-memory-capture.mdc`, creates `.md/workspace_index.sqlite`, and opens the local UI.
 
 If that returns `No such option: --init`, the workstation still has an older CLI. On Windows, rerun the installer bootstrap instead:
 
@@ -286,7 +286,8 @@ STRATA has two integration layers:
 Cursor:
 
 - Install the CLI.
-- Add [cursor-rules/strata-commands.md](cursor-rules/strata-commands.md) to project or user rules.
+- Run `python -m cxl_strata.cli --init` to install the project Cursor rule.
+- Use `/strata add`, `/strata summary`, and `/strata prune` from Cursor once the rule is installed.
 - Configure the MCP server if you want AI context retrieval.
 
 Claude:

@@ -12,6 +12,7 @@ from pathlib import Path
 from urllib import request
 from urllib.parse import parse_qs, urlparse
 
+from .. import cursor_rule, local_store
 from ..content_safety import find_secret_markers
 from ..documents import stash_paths
 from ..local_store import load_config
@@ -68,6 +69,62 @@ def _api_online() -> dict:
         return {"online": False, "error": str(exc)}
 
 
+def _cursor_rule_ok(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    return all(marker in text for marker in cursor_rule.REQUIRED_MARKERS)
+
+
+def setup_status() -> dict:
+    config_path = local_store.CONFIG_FILE
+    sqlite_path = paths.DB_PATH
+    rule_path = cursor_rule.RULE_DEST
+    checks = [
+        {
+            "id": "config",
+            "label": "Repo config",
+            "ok": config_path.is_file(),
+            "path": str(config_path),
+            "fix": "strata init --api <api-url> --org <org> --project <project> --repo <repo>",
+        },
+        {
+            "id": "api_key",
+            "label": "API key",
+            "ok": _api_key_available(),
+            "path": "STRATA_API_KEY or .strata/secrets.json",
+            "fix": "Set STRATA_API_KEY or create .strata/secrets.json with api_key.",
+        },
+        {
+            "id": "sqlite",
+            "label": "Local SQLite index",
+            "ok": sqlite_path.is_file(),
+            "path": str(sqlite_path),
+            "fix": "strata index",
+        },
+        {
+            "id": "cursor_rule",
+            "label": "Cursor slash-command rule",
+            "ok": _cursor_rule_ok(rule_path),
+            "path": str(rule_path),
+            "fix": "python -m cxl_strata.cli --init",
+        },
+    ]
+    return {
+        "ok": all(item["ok"] for item in checks),
+        "workspace_root": str(paths.WORKSPACE_ROOT),
+        "checks": checks,
+    }
+
+
+def _api_key_available() -> bool:
+    try:
+        local_store.load_api_key()
+        return True
+    except Exception:  # noqa: BLE001 - setup status only
+        return False
+
+
 class StrataAppHandler(BaseHTTPRequestHandler):
     server_version = "StrataApp/1.0"
 
@@ -110,6 +167,10 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 **_api_online(),
             }
             _json_response(self, payload)
+            return
+
+        if path == "/api/setup/status":
+            _json_response(self, setup_status())
             return
 
         if path == "/api/authors":

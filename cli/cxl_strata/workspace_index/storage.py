@@ -5,8 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from . import db, parsers
-from .paths import WORKSPACE_ROOT
+from . import db, parsers, paths
 from .parsers import (
     doc_id_for_path,
     dumps_json,
@@ -29,7 +28,7 @@ def file_hash(text: str) -> str:
 
 def write_markdown_file(rel_path: str, text: str) -> Path:
     """Write a repo-relative markdown path under WORKSPACE_ROOT."""
-    fp = WORKSPACE_ROOT / rel_path.replace("\\", "/")
+    fp = paths.WORKSPACE_ROOT / rel_path.replace("\\", "/")
     fp.parent.mkdir(parents=True, exist_ok=True)
     fp.write_text(text, encoding="utf-8")
     return fp
@@ -42,7 +41,7 @@ def verify_file_matches_db(conn, rel_path: str) -> tuple[bool, str]:
     ).fetchone()
     if not row:
         return False, "not in database"
-    fp = WORKSPACE_ROOT / rel_path
+    fp = paths.WORKSPACE_ROOT / rel_path
     if not fp.is_file():
         if row["storage"] == "db_only":
             return True, "already db_only"
@@ -176,10 +175,10 @@ def plan_set_status_db(
 
     name = Path(rel).name
     new_rel = f".cursor/plans/{status}/{name}"
-    old_fp = WORKSPACE_ROOT / rel
+    old_fp = paths.WORKSPACE_ROOT / rel
     if old_fp.is_file():
         old_fp.unlink()
-    new_fp = WORKSPACE_ROOT / new_rel
+    new_fp = paths.WORKSPACE_ROOT / new_rel
     if new_fp.is_file() and new_rel != rel:
         new_fp.unlink()
 

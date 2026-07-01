@@ -80,11 +80,13 @@ def list_documents(
 
 
 def search_documents(
-    q: str, *, project: str | None = None, limit: int = 50
+    q: str, *, project: str | None = None, limit: int = 50, author: str | None = None
 ) -> dict[str, Any]:
     params: dict[str, str | int] = {"q": q, "limit": limit}
     if project:
         params["project"] = project
+    if author:
+        params["author"] = author
     with _client() as client:
         r = client.get("/v1/documents/search", params=params)
         r.raise_for_status()

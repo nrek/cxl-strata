@@ -165,7 +165,12 @@ def _sync_status(row: sqlite3.Row | dict[str, Any]) -> str:
 
 def _sync_meta(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     status = _sync_status(row)
-    return {"sync_status": status, "syncable": status in {"not_shared", "changed"}}
+    data = dict(row) if isinstance(row, sqlite3.Row) else row
+    return {
+        "sync_status": status,
+        "syncable": status in {"not_shared", "changed"},
+        "author_name": queries.effective_author_name(data),
+    }
 
 
 def parse_hours(text: str, *, default: int = 168) -> int:
@@ -261,6 +266,7 @@ def timeline(
     hours: int = 168,
     limit: int = 80,
     include_sections: bool = True,
+    author: str | None = None,
 ) -> dict[str, Any]:
     since = _iso_since_hours(hours)
     events: list[dict[str, Any]] = []
@@ -275,7 +281,7 @@ def timeline(
     rows = conn.execute(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
-               origin, remote_id, shared_at, synced_at,
+               origin, remote_id, shared_at, synced_at, author_name,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
@@ -312,7 +318,7 @@ def timeline(
         sec_rows = conn.execute(
             f"""
             SELECT d.path, d.project, d.title, d.updated_at, d.created_at,
-                   d.origin, d.remote_id, d.shared_at, d.synced_at,
+                   d.origin, d.remote_id, d.shared_at, d.synced_at, d.author_name,
                    s.heading, s.section_at,
                    substr(s.body, 1, 400) AS excerpt, s.ordinal
             FROM sections s
@@ -347,6 +353,8 @@ def timeline(
             row["at"] = normalize_event_at(row.get("at"), row.get("path", ""))
 
     events = sort_events_newest_first(events)
+    if author:
+        events = queries.filter_by_author(events, author)
     return {
         "intent": "timeline",
         "hours": hours,
@@ -366,11 +374,12 @@ def parse_and_run(
     *,
     limit: int = 50,
     project: str | None = None,
+    author: str | None = None,
 ) -> dict[str, Any]:
     text = query.strip()
 
     if not text and project:
-        out = timeline(conn, projects=[project], hours=336, limit=limit, include_sections=True)
+        out = timeline(conn, projects=[project], hours=336, limit=limit, include_sections=True, author=author)
         return {
             "query": "",
             "intent": "timeline",
@@ -402,7 +411,7 @@ def parse_and_run(
     }
 
     if intent == "timeline" or (projects and intent == "search" and "timeline" in text.lower()):
-        out = timeline(conn, projects=projects or None, hours=hours, limit=limit)
+        out = timeline(conn, projects=projects or None, hours=hours, limit=limit, author=author)
         return {**meta, **out}
 
     if intent == "recent" and projects:
@@ -410,6 +419,10 @@ def parse_and_run(
             conn, projects[0], hours=hours, limit=limit
         )
         handoffs = sort_events_newest_first(payload.get("handoffs", []))
+        for row in handoffs:
+            row["author_name"] = queries.effective_author_name(row)
+        if author:
+            handoffs = queries.filter_by_author(handoffs, author)
         return {**meta, "intent": "recent", "handoffs": handoffs}
 
     if intent == "plans":
@@ -421,7 +434,7 @@ def parse_and_run(
                 break
         plan_project = scoped or (projects[0] if len(projects) == 1 else None)
         items = queries.plan_list(
-            conn, status=status, project=plan_project, limit=limit
+            conn, status=status, project=plan_project, limit=limit, author=author
         )
         if projects and len(projects) > 1:
             pset = set(projects)
@@ -437,6 +450,7 @@ def parse_and_run(
         query=fts_query,
         project=project_filter,
         limit=search_limit * 3 if last_time else search_limit,
+        author=author,
     )
 
     if projects and len(projects) > 1 and not scoped:
@@ -453,7 +467,7 @@ def parse_and_run(
         results = results[: min(limit, 8)]
 
     if not results and projects and not last_time:
-        out = timeline(conn, projects=projects, hours=hours, limit=limit)
+        out = timeline(conn, projects=projects, hours=hours, limit=limit, author=author)
         return {**meta, **out}
 
     return {**meta, "intent": "search", "fts_query": fts_query, "results": results}

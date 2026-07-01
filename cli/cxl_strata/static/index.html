@@ -74,6 +74,18 @@
         </div>
 
         <section id="home-files-section" class="home-tabs-section">
+          <div class="home-tab-filters">
+            <select id="files-filter-kind" class="strata-select" aria-label="Document type filter">
+              <option value="">All Types</option>
+              <option value="handoff">handoff</option>
+              <option value="blueprint">blueprint</option>
+              <option value="plan">plan</option>
+              <option value="rule">rule</option>
+            </select>
+            <select id="files-filter-author" class="strata-select" aria-label="Author filter">
+              <option value="">All Authors</option>
+            </select>
+          </div>
           <nav class="home-tabs" role="tablist" aria-label="Local files">
             <button type="button" role="tab" id="tab-recent" class="home-tab active" aria-selected="true" aria-controls="panel-recent">
               Recent Locally Changed Files
@@ -101,13 +113,6 @@
             <div class="sync-head">
               <p class="sync-subtitle">Sync unsent or changed local docs so teammates can search them centrally.</p>
               <div class="sync-controls">
-                <select id="sync-filter-kind" class="strata-select" aria-label="Kind filter">
-                  <option value="">All Types</option>
-                  <option value="handoff">handoff</option>
-                  <option value="blueprint">blueprint</option>
-                  <option value="plan">plan</option>
-                  <option value="rule">rule</option>
-                </select>
                 <button type="button" id="sync-all-btn" class="icon-btn" title="Share all pending local files with your team" aria-label="Share all pending">
                   <i class="fa-solid fa-upload" aria-hidden="true"></i>
                 </button>
@@ -163,6 +168,9 @@
           <option value="local">Local</option>
           <option value="both">Both</option>
           <option value="shared">Shared</option>
+        </select>
+        <select id="scoped-filter-author" class="strata-select" aria-label="Author filter">
+          <option value="">All Authors</option>
         </select>
         <button type="submit" class="icon-btn icon-btn-accent" aria-label="Search">
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>

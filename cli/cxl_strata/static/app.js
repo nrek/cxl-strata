@@ -47,6 +47,7 @@ const state = {
   recentPage: 0,
   homeTab: "recent",
   activeDocPath: null,
+  authors: [],
   hasSearched: false,
   remotePending: 0,
 };
@@ -632,6 +633,41 @@ async function indexDocFromModal() {
   }
 }
 
+async function loadAuthors() {
+  const data = await api("/api/authors").catch(() => ({ authors: [] }));
+  state.authors = data.authors || [];
+  const options =
+    '<option value="">All Authors</option>' +
+    state.authors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
+  for (const id of ["files-filter-author", "scoped-filter-author"]) {
+    const el = $(id);
+    if (!el) continue;
+    const prev = el.value;
+    el.innerHTML = options;
+    if (prev && state.authors.includes(prev)) el.value = prev;
+  }
+}
+
+function filesFilterParams() {
+  const params = new URLSearchParams();
+  const kind = ($("#files-filter-kind") || {}).value || "";
+  const author = ($("#files-filter-author") || {}).value || "";
+  if (kind) params.set("kind", kind);
+  if (author) params.set("author", author);
+  return params;
+}
+
+function scopedAuthorFilter() {
+  return ($("#scoped-filter-author") || {}).value || "";
+}
+
+function reloadHomeFileTabs() {
+  return Promise.all([
+    loadRecentLocal({ resetPage: true }),
+    loadSyncLocal({ resetPage: true }),
+  ]);
+}
+
 async function runScopedSearch(q) {
   const trimmed = (q || "").trim();
   if (!trimmed) return;
@@ -641,6 +677,7 @@ async function runScopedSearch(q) {
   setAppResultsVisible(true);
   $("#output").innerHTML = '<p class="empty loading">Searching…</p>';
   const source = ($("#scoped-source") || {}).value || "local";
+  const author = scopedAuthorFilter();
   const data = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -649,6 +686,7 @@ async function runScopedSearch(q) {
       limit: 80,
       project: state.activeProject,
       source,
+      author: author || undefined,
     }),
   });
   renderResults(data);
@@ -661,6 +699,7 @@ async function browseProject(project) {
   setAppResultsVisible(true);
   $("#output").innerHTML = '<p class="empty loading">Loading project…</p>';
   const source = ($("#scoped-source") || {}).value || "local";
+  const author = scopedAuthorFilter();
   const data = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -669,6 +708,7 @@ async function browseProject(project) {
       limit: 80,
       project,
       source,
+      author: author || undefined,
     }),
   });
   renderResults(data);
@@ -706,7 +746,7 @@ function recentRowHtml(item) {
         <span class="recent-title">${esc(title)}</span>
       </div>
       <div class="sync-meta">
-        ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)} · ${esc(fmtDate(item.updated_at || item.created_at))}
+        ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)}${item.author_name ? ` · ${esc(item.author_name)}` : ""} · ${esc(fmtDate(item.updated_at || item.created_at))}
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
@@ -809,7 +849,8 @@ function switchHomeTab(tab) {
 }
 
 async function loadRecentLocal({ resetPage = true } = {}) {
-  const data = await api("/api/documents/recent-local");
+  const params = filesFilterParams();
+  const data = await api(`/api/documents/recent-local?${params.toString()}`);
   state.recentItems = data.items || [];
   if (resetPage) state.recentPage = 0;
   renderRecentPage();
@@ -847,13 +888,11 @@ function renderSyncPage() {
   });
 }
 
-async function loadSyncLocal() {
-  const kind = ($("#sync-filter-kind") || {}).value || "";
-  const params = new URLSearchParams();
-  if (kind) params.set("kind", kind);
+async function loadSyncLocal({ resetPage = true } = {}) {
+  const params = filesFilterParams();
   const data = await api(`/api/sync/local?${params.toString()}`);
   state.syncItems = data.items || [];
-  state.syncPage = 0;
+  if (resetPage) state.syncPage = 0;
   renderSyncPage();
 }
 
@@ -1005,13 +1044,23 @@ async function init() {
 
   renderProjectPanels(summary);
   renderSidebar();
+  await loadAuthors();
   await Promise.all([loadRecentLocal(), loadSyncLocal()]);
 
   $("#tab-recent")?.addEventListener("click", () => switchHomeTab("recent"));
   $("#tab-share")?.addEventListener("click", () => switchHomeTab("share"));
 
-  $("#sync-refresh-btn")?.addEventListener("click", () => loadSyncLocal());
-  $("#sync-filter-kind")?.addEventListener("change", () => loadSyncLocal());
+  $("#files-filter-kind")?.addEventListener("change", () => reloadHomeFileTabs());
+  $("#files-filter-author")?.addEventListener("change", () => reloadHomeFileTabs());
+  $("#scoped-filter-author")?.addEventListener("change", () => {
+    if (state.view === "app" && state.activeProject) {
+      const q = $("#scoped-q").value.trim();
+      if (q) runScopedSearch(q);
+      else browseProject(state.activeProject);
+    }
+  });
+
+  $("#sync-refresh-btn")?.addEventListener("click", () => loadSyncLocal({ resetPage: false }));
   $("#sync-all-btn")?.addEventListener("click", () => {
     syncPaths(state.syncItems.map((i) => i.path));
   });

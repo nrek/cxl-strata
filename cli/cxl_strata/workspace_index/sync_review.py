@@ -10,7 +10,7 @@ from typing import Any
 from . import db
 from .indexer import discover_files, index_file
 from . import paths
-from .queries import _with_sync_status
+from .queries import _with_sync_status, effective_author_name, filter_by_author
 
 
 def _mtime_iso(path: Path) -> str:
@@ -74,6 +74,7 @@ def scan_pending(
     *,
     project: str | None = None,
     kind: str | None = None,
+    author: str | None = None,
     show_all: bool = False,
 ) -> list[dict[str, Any]]:
     """Return local artifacts that are new/changed/unshared vs SQLite."""
@@ -126,19 +127,21 @@ def scan_pending(
                 "updated_at": _mtime_iso(path),
                 "local_status": local_status,
                 "share_status": share_status,
-                "author_name": db_row.get("author_name") if db_row else None,
+                "author_name": effective_author_name(db_row),
                 "excerpt": excerpt,
             }
         )
 
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
-    return rows
+    return filter_by_author(rows, author)
 
 
 def scan_recent_locally_changed(
     *,
     hours: int = 168,
     limit: int = 200,
+    kind: str | None = None,
+    author: str | None = None,
 ) -> list[dict[str, Any]]:
     """On-disk files with recent local edit or share activity, newest first."""
     since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace(
@@ -154,13 +157,15 @@ def scan_recent_locally_changed(
                 """
                 SELECT path, kind, project, title, created_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
-                       storage, substr(body, 1, 180) AS excerpt
+                       storage, author_name, substr(body, 1, 180) AS excerpt
                 FROM documents
                 """
             ).fetchall()
         }
 
     for file_kind, path in discover_files():
+        if kind and file_kind != kind:
+            continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         try:
             mtime = _mtime_iso(path)
@@ -195,12 +200,14 @@ def scan_recent_locally_changed(
             "synced_at": db_row.get("synced_at") if db_row else None,
             "local_status": local_status,
             "share_status": share_status,
+            "author_name": effective_author_name(db_row),
             "excerpt": excerpt,
         }
         rows.append(_with_sync_status(item))
 
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
-    return rows[:limit]
+    filtered = filter_by_author(rows, author)
+    return filtered[:limit]
 
 
 def index_path_only(path: str) -> bool:

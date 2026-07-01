@@ -44,6 +44,18 @@ def test_home_tabs_recent_local_and_share_to_team() -> None:
     assert "RECENT_PAGE_SIZE = 6" in app_js
 
 
+def test_author_filter_controls() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'id="files-filter-author"' in index
+    assert 'id="scoped-filter-author"' in index
+    assert "/api/authors" in app_js
+    assert "async function loadAuthors()" in app_js
+    assert "function filesFilterParams()" in app_js
+
+
 def test_modal_and_action_ctas() -> None:
     root = _package_root()
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")

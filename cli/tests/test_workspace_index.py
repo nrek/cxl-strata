@@ -116,6 +116,28 @@ def test_search_results_include_sync_status_for_local_documents(workspace: Path)
         assert row["syncable"] is True
 
 
+def test_list_authors_and_filter_by_author(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+        authors = queries.list_authors(conn)
+        assert "Tester" in authors
+
+    items = sync_review.scan_recent_locally_changed(hours=168, limit=50, author="Tester")
+    assert any(item["path"] == path for item in items)
+
+    other = sync_review.scan_recent_locally_changed(hours=168, limit=50, author="Nobody")
+    assert not any(item["path"] == path for item in other)
+
+
 def test_knowledge_get_includes_sync_status(workspace: Path) -> None:
     indexer.index_all(prune=False)
     path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"

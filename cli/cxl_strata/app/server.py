@@ -112,12 +112,21 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             _json_response(self, payload)
             return
 
+        if path == "/api/authors":
+            with db.connect() as conn:
+                db.init_db(conn)
+                _json_response(self, {"authors": queries.list_authors(conn)})
+            return
+
         if path == "/api/sync/local":
             qs = parse_qs(parsed.query)
             project = (qs.get("project") or [None])[0]
             kind = (qs.get("kind") or [None])[0]
+            author = (qs.get("author") or [None])[0]
             show_all = (qs.get("all") or ["0"])[0] in ("1", "true", "yes")
-            rows = sync_review.scan_pending(project=project, kind=kind, show_all=show_all)
+            rows = sync_review.scan_pending(
+                project=project, kind=kind, author=author, show_all=show_all
+            )
             _json_response(self, {"items": rows})
             return
 
@@ -149,9 +158,13 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 hours = int((qs.get("hours") or ["168"])[0])
             except ValueError:
                 hours = 168
+            kind = (qs.get("kind") or [None])[0]
+            author = (qs.get("author") or [None])[0]
             limit = max(1, min(limit, 500))
             hours = max(1, min(hours, 24 * 30))
-            items = sync_review.scan_recent_locally_changed(hours=hours, limit=limit)
+            items = sync_review.scan_recent_locally_changed(
+                hours=hours, limit=limit, kind=kind, author=author
+            )
             _json_response(self, {"items": items, "hours": hours})
             return
 
@@ -267,15 +280,20 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             q = str(body.get("q", "")).strip()
             limit = int(body.get("limit", 50))
             project = body.get("project")
+            author = body.get("author")
             source = str(body.get("source", "local")).lower()
             if project is not None:
                 project = str(project).strip() or None
+            if author is not None:
+                author = str(author).strip() or None
 
             local_result: dict = {"results": []}
             if source in ("local", "both"):
                 with db.connect() as conn:
                     db.init_db(conn)
-                    local_result = nl_query.parse_and_run(conn, q, limit=limit, project=project)
+                    local_result = nl_query.parse_and_run(
+                        conn, q, limit=limit, project=project, author=author
+                    )
                 for row in local_result.get("results") or []:
                     row["source"] = "local"
 
@@ -283,7 +301,9 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 try:
                     from .. import api_client
 
-                    remote = api_client.search_documents(q, project=project, limit=limit)
+                    remote = api_client.search_documents(
+                        q, project=project, limit=limit, author=author
+                    )
                     remote_results = remote.get("results", [])
                     for row in remote_results:
                         row["source"] = "shared"

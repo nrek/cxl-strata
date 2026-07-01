@@ -45,6 +45,54 @@ def _with_sync_status(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
+def local_default_author() -> str | None:
+    try:
+        from ..local_store import load_config
+
+        name = (load_config().get("actor_name") or "").strip()
+        return name or None
+    except FileNotFoundError:
+        return None
+
+
+def effective_author_name(row: dict[str, Any] | None) -> str | None:
+    if row and row.get("author_name"):
+        name = str(row["author_name"]).strip()
+        if name:
+            return name
+    return local_default_author()
+
+
+def list_authors(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute(
+        """
+        SELECT DISTINCT author_name
+        FROM documents
+        WHERE author_name IS NOT NULL AND TRIM(author_name) != ''
+        ORDER BY author_name COLLATE NOCASE
+        """
+    ).fetchall()
+    names = {r["author_name"] for r in rows}
+    default = local_default_author()
+    if default:
+        names.add(default)
+    return sorted(names, key=lambda s: s.lower())
+
+
+def filter_by_author(items: list[dict[str, Any]], author: str | None) -> list[dict[str, Any]]:
+    if not author:
+        return items
+    key = author.strip().lower()
+    if not key:
+        return items
+    out: list[dict[str, Any]] = []
+    for item in items:
+        name = (item.get("author_name") or effective_author_name(item) or "").strip().lower()
+        if name == key:
+            out.append(item)
+    return out
+
+
 def _handoff_documents_since(
     conn: sqlite3.Connection,
     project: str,
@@ -204,6 +252,7 @@ def knowledge_search(
     project: str | None = None,
     kind: str | None = None,
     plan_status: str | None = None,
+    author: str | None = None,
     limit: int = 15,
 ) -> list[dict[str, Any]]:
     clauses = ["documents_fts MATCH ?"]
@@ -224,7 +273,7 @@ def knowledge_search(
         f"""
         SELECT d.path, d.kind, d.project, d.title, d.plan_status,
                d.updated_at, d.created_at, d.origin, d.remote_id,
-               d.shared_at, d.synced_at,
+               d.shared_at, d.synced_at, d.author_name,
                snippet(documents_fts, 1, '**', '**', '…', 32) AS snippet,
                bm25(documents_fts) AS rank
         FROM documents_fts
@@ -235,7 +284,8 @@ def knowledge_search(
         """,
         params,
     ).fetchall()
-    return [_with_sync_status(r) for r in rows]
+    items = [_with_sync_status(r) for r in rows]
+    return filter_by_author(items, author) if author else items
 
 
 def knowledge_get(conn: sqlite3.Connection, path: str) -> dict[str, Any] | None:
@@ -289,6 +339,7 @@ def plan_list(
     status: str | None = None,
     project: str | None = None,
     linear_task_id: str | None = None,
+    author: str | None = None,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
     clauses = ["1=1"]
@@ -306,7 +357,7 @@ def plan_list(
     rows = conn.execute(
         f"""
         SELECT d.path, p.status, p.name, p.project, p.linear_task_id,
-               p.todo_total, p.todo_done, p.overview, d.updated_at
+               p.todo_total, p.todo_done, p.overview, d.updated_at, d.author_name
         FROM plans p
         JOIN documents d ON d.id = p.document_id
         WHERE {" AND ".join(clauses)}
@@ -315,7 +366,8 @@ def plan_list(
         """,
         params,
     ).fetchall()
-    return [dict(r) for r in rows]
+    items = [dict(r) for r in rows]
+    return filter_by_author(items, author) if author else items
 
 
 def plan_get(conn: sqlite3.Connection, path: str) -> dict[str, Any] | None:

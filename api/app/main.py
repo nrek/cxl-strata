@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_auth, require_scopes
@@ -29,6 +29,7 @@ from app.services.memory_service import MemoryService, event_to_dict
 app = FastAPI(title="STRATA", version="0.3.0", description="Shared project memory API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ICONS_DIR = STATIC_DIR / "icons"
+LANDING_PATH = STATIC_DIR / "index.html"
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,6 +37,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/", response_class=HTMLResponse)
+def landing() -> HTMLResponse:
+    if not LANDING_PATH.is_file():
+        raise HTTPException(status_code=404, detail="landing not found")
+    return HTMLResponse(LANDING_PATH.read_text(encoding="utf-8"))
 
 
 @app.get("/health")

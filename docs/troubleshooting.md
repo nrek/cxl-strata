@@ -153,7 +153,7 @@ Get-Command strata
 strata whoami
 ```
 
-The installer tries to do these PATH updates automatically. If your terminal was already open before install, reopening it is often enough.
+The installer tries to do these PATH updates automatically and marks its profile block with `STRATA_PATH_BLOCK_BEGIN` / `STRATA_PATH_BLOCK_END`. If your terminal was already open before install, reopening it is often enough.
 
 Manual reinstall:
 
@@ -276,7 +276,15 @@ Bad: GOOGLE_CLIENT_SECRET=actual-secret-value
 
 ## Local SQLite Database Missing
 
-The local SQLite cache is created by workspace indexing, not by `strata init`.
+The local SQLite cache is created by workspace indexing and by the localhost app bootstrap.
+
+The all-in-one post-key bootstrap is:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+It hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
 
 From the workspace root:
 
@@ -291,6 +299,15 @@ PowerShell:
 strata index
 Test-Path .md\workspace_index.sqlite
 ```
+
+No-PATH fallback:
+
+```bash
+python -m cxl_strata.cli index
+python -m cxl_strata.cli app --open
+```
+
+The install scripts also run `index` automatically when you pass `--init` / `-Init`.
 
 If STRATA cannot find the workspace root:
 
@@ -308,13 +325,21 @@ strata index
 
 ## Localhost App Opens But Looks Empty
 
-The app browses local SQLite. Refresh the local cache:
+The app browses local SQLite. It creates the database if missing, but it can still look empty if there are no local docs or shared docs have not been pulled.
+
+Refresh the local cache:
 
 ```bash
 strata index
 strata pull --project my-project
 strata app --open
 ```
+
+STRATA indexes these local agent/project instruction files when present:
+
+- Cursor: `.cursor/rules/*.mdc`
+- Claude: `CLAUDE.md`, `.claude/**/*.md`
+- Codex: `AGENTS.md`, `.codex/**/*.md`
 
 If port `8765` is in use:
 
@@ -377,6 +402,8 @@ If PATH does not update, reopen PowerShell or run:
 ```powershell
 python -m cxl_strata.cli whoami
 ```
+
+The installer also updates the user-level PATH environment variable. That is what makes `strata` visible to new PowerShell, Cursor, Claude, and Codex terminal sessions. Existing terminals may still need to be reopened.
 
 ## SSL Or Certificate Errors
 

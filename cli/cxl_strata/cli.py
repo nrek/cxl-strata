@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sysconfig
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -25,17 +27,138 @@ org_app = typer.Typer(help="Manage named org profiles (separate API keys / insta
 app.add_typer(org_app, name="org")
 
 
-@app.callback()
+def _user_scripts_dir() -> Path:
+    scripts = sysconfig.get_path("scripts", f"{os.name}_user")
+    if scripts:
+        return Path(scripts).expanduser()
+    return Path.home() / (".local/bin" if os.name != "nt" else "AppData/Roaming/Python/Scripts")
+
+
+def _prepend_current_path(path: Path) -> None:
+    raw = str(path)
+    parts = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p]
+    if raw not in parts:
+        os.environ["PATH"] = raw + os.pathsep + os.environ.get("PATH", "")
+
+
+def _append_managed_block(path: Path, block: str) -> bool:
+    marker = "STRATA_PATH_BLOCK_BEGIN"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+        if marker in existing:
+            return False
+        with path.open("a", encoding="utf-8", newline="\n") as fh:
+            fh.write("\n" + block.strip() + "\n")
+        return True
+    except OSError:
+        return False
+
+
+def _persist_path_unix(scripts_dir: Path) -> list[str]:
+    block = f"""
+# STRATA_PATH_BLOCK_BEGIN
+# STRATA pip user bin
+export PATH="{scripts_dir}:$PATH"
+# STRATA_PATH_BLOCK_END
+"""
+    changed: list[str] = []
+    for profile in (Path.home() / ".profile", Path.home() / ".bashrc", Path.home() / ".zshrc"):
+        if _append_managed_block(profile, block):
+            changed.append(str(profile))
+    return changed
+
+
+def _persist_path_windows(scripts_dir: Path) -> list[str]:
+    changed: list[str] = []
+    raw = str(scripts_dir)
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            "Environment",
+            0,
+            winreg.KEY_READ | winreg.KEY_SET_VALUE,
+        ) as key:
+            try:
+                value, value_type = winreg.QueryValueEx(key, "Path")
+            except FileNotFoundError:
+                value, value_type = "", winreg.REG_EXPAND_SZ
+            parts = [p for p in str(value).split(os.pathsep) if p]
+            if raw not in parts:
+                new_value = raw + (os.pathsep + str(value) if value else "")
+                winreg.SetValueEx(key, "Path", 0, value_type, new_value)
+                changed.append("HKCU\\Environment\\Path")
+    except OSError:
+        pass
+
+    block = r"""
+# STRATA_PATH_BLOCK_BEGIN
+# STRATA pip user Scripts
+$__strataScripts = python -c "import os, sysconfig; print(sysconfig.get_path('scripts', f'{os.name}_user') or '')" 2>$null
+if ($__strataScripts -and (Test-Path $__strataScripts)) { $env:Path = "$__strataScripts;" + $env:Path }
+# STRATA_PATH_BLOCK_END
+"""
+    docs = Path.home() / "Documents"
+    for profile in (
+        docs / "PowerShell" / "Microsoft.PowerShell_profile.ps1",
+        docs / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1",
+    ):
+        if _append_managed_block(profile, block):
+            changed.append(str(profile))
+    return changed
+
+
+def harden_user_path() -> dict[str, object]:
+    scripts_dir = _user_scripts_dir()
+    _prepend_current_path(scripts_dir)
+    changed = _persist_path_windows(scripts_dir) if os.name == "nt" else _persist_path_unix(scripts_dir)
+    return {"scripts_dir": str(scripts_dir), "changed": changed}
+
+
+def bootstrap_client_environment() -> None:
+    """Post-install bootstrap: PATH, SQLite cache, and localhost UI."""
+    path_result = harden_user_path()
+    rprint(f"[green]PATH includes[/green] {path_result['scripts_dir']}")
+
+    project: str | None = None
+    try:
+        cfg = local_store.load_config()
+        project = cfg.get("project_slug")
+    except Exception:
+        project = None
+
+    from .app.server import bootstrap_workspace_index, run_app
+
+    stats = bootstrap_workspace_index(project=project, pull_shared=True)
+    rprint(f"[green]SQLite ready[/green] {stats['db_path']}")
+    rprint("[green]Opening STRATA UI[/green] http://127.0.0.1:8765")
+    run_app(open_browser=True, project=project, pull_shared=False)
+
+
+@app.callback(invoke_without_command=True)
 def main_callback(
+    ctx: typer.Context,
     org: Optional[str] = typer.Option(
         None,
         "--org",
         "-org",
         help="Use a named org profile from ~/.strata/orgs/{alias}.json (default has no alias)",
     ),
+    client_init: bool = typer.Option(
+        False,
+        "--init",
+        help="Post-install bootstrap: harden PATH, initialize local SQLite, and open UI",
+    ),
 ) -> None:
     """Global options for STRATA CLI."""
     local_store.set_active_org(org)
+    if client_init:
+        bootstrap_client_environment()
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None:
+        return
 
 
 @org_app.command("add")

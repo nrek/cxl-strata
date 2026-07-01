@@ -27,6 +27,24 @@ def _snippet(text: str, max_len: int = 400) -> str:
     return t[: max_len - 3] + "..."
 
 
+def _sync_status(row: dict[str, Any]) -> str:
+    if not row.get("remote_id"):
+        return "not_shared"
+    updated_at = str(row.get("updated_at") or "")
+    synced_at = str(row.get("synced_at") or "")
+    if updated_at and synced_at and updated_at > synced_at:
+        return "changed"
+    return "shared"
+
+
+def _with_sync_status(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    status = _sync_status(item)
+    item["sync_status"] = status
+    item["syncable"] = status in {"not_shared", "changed"}
+    return item
+
+
 def _handoff_documents_since(
     conn: sqlite3.Connection,
     project: str,
@@ -192,7 +210,8 @@ def knowledge_search(
     rows = conn.execute(
         f"""
         SELECT d.path, d.kind, d.project, d.title, d.plan_status,
-               d.updated_at, d.created_at,
+               d.updated_at, d.created_at, d.origin, d.remote_id,
+               d.shared_at, d.synced_at,
                snippet(documents_fts, 1, '**', '**', '…', 32) AS snippet,
                bm25(documents_fts) AS rank
         FROM documents_fts
@@ -203,7 +222,7 @@ def knowledge_search(
         """,
         params,
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_with_sync_status(r) for r in rows]
 
 
 def knowledge_get(conn: sqlite3.Connection, path: str) -> dict[str, Any] | None:

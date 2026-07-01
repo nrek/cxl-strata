@@ -15,11 +15,32 @@ from urllib.parse import parse_qs, urlparse
 from ..content_safety import find_secret_markers
 from ..documents import stash_paths
 from ..local_store import load_config
-from ..workspace_index import db, nl_query, queries, sync_review
+from ..workspace_index import db, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 DEFAULT_PORT = 8765
+
+
+def bootstrap_workspace_index(
+    *,
+    project: str | None = None,
+    pull_shared: bool = False,
+) -> dict:
+    """Create and warm the local SQLite index before the UI opens."""
+    stats: dict = {
+        "db_path": str(paths.DB_PATH),
+        "workspace_root": str(paths.WORKSPACE_ROOT),
+        "index": indexer.index_all(prune=False),
+    }
+    if pull_shared:
+        try:
+            from ..pull import pull_documents
+
+            stats["pull"] = pull_documents(project=project)
+        except Exception as exc:  # noqa: BLE001 - app must open even when API is offline
+            stats["pull_error"] = str(exc)
+    return stats
 
 
 def _json_response(handler: BaseHTTPRequestHandler, payload: object, status: int = 200) -> None:
@@ -311,9 +332,13 @@ def run_app(
     host: str = "127.0.0.1",
     port: int = DEFAULT_PORT,
     open_browser: bool = False,
+    project: str | None = None,
+    pull_shared: bool = False,
 ) -> None:
     if not STATIC_DIR.is_dir():
         raise FileNotFoundError(f"Missing static dir: {STATIC_DIR}")
+
+    bootstrap_workspace_index(project=project, pull_shared=pull_shared)
 
     server = ThreadingHTTPServer((host, port), StrataAppHandler)
     url = f"http://{host}:{port}"

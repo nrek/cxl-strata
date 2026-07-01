@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 
-from cxl_strata.app.server import is_strata_app_healthy
+from cxl_strata.app.server import bootstrap_workspace_index, is_strata_app_healthy
+from cxl_strata.workspace_index import paths
+from cxl_strata.workspace_index.paths import set_workspace_root
 
 
 class HealthyHandler(BaseHTTPRequestHandler):
@@ -55,3 +58,18 @@ def test_app_health_rejects_stale_broken_listener() -> None:
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_bootstrap_workspace_index_creates_sqlite_for_fresh_agent_workspace(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "CLAUDE.md").write_text("# Claude instructions\n", encoding="utf-8")
+    set_workspace_root(tmp_path)
+    db_path = paths.DB_PATH
+    assert not db_path.exists()
+
+    result = bootstrap_workspace_index()
+
+    assert db_path.exists()
+    assert result["db_path"] == str(db_path)
+    assert result["index"]["indexed"] == 1

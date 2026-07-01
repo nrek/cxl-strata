@@ -521,6 +521,12 @@ button:hover { filter: brightness(1.08); }
   overflow: hidden;
 }
 
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.55rem;
+}
+
 .empty {
   color: var(--muted);
   padding: 2rem 1rem;

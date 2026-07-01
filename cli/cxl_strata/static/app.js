@@ -270,7 +270,7 @@ function renderProjectPanels(summary) {
     .join("");
 
   document.querySelectorAll("#latest-projects button, #frequent-projects button").forEach((btn) => {
-    btn.addEventListener("click", () => enterProject(btn.dataset.project));
+    btn.addEventListener("click", () => enterProject(btn.dataset.project, { browse: true }));
   });
 }
 
@@ -294,7 +294,11 @@ function highlightActiveProject() {
   });
 }
 
-function enterProject(project, initialQuery = "") {
+function enterProject(project, initialQueryOrOptions = "") {
+  const options =
+    typeof initialQueryOrOptions === "object" && initialQueryOrOptions !== null
+      ? initialQueryOrOptions
+      : { initialQuery: initialQueryOrOptions };
   state.activeProject = project;
   $("#active-project").textContent = project;
   showView("app");
@@ -302,12 +306,14 @@ function enterProject(project, initialQuery = "") {
   highlightActiveProject();
   setAppSidebarVisible(true);
 
-  const q = initialQuery.trim();
+  const q = (options.initialQuery || "").trim();
   $("#scoped-q").value = q;
   $("#scoped-q").placeholder = `Search within ${project}…`;
 
   if (q) {
     runScopedSearch(q);
+  } else if (options.browse) {
+    browseProject(project);
   } else {
     setAppResultsVisible(false);
   }
@@ -320,7 +326,11 @@ function selectProject(project) {
   highlightActiveProject();
   $("#scoped-q").placeholder = `Search within ${project}…`;
   const q = $("#scoped-q").value.trim();
-  if (q) runScopedSearch(q);
+  if (q) {
+    runScopedSearch(q);
+  } else {
+    browseProject(project);
+  }
 }
 
 function goHome() {
@@ -357,6 +367,9 @@ function cardHtml(item) {
   const excerpt = stripMarkdown(item.excerpt || item.snippet || item.overview || item.body || "");
   const source = item.source || item.origin || "local";
   const author = item.author_name || "";
+  const syncButton = canSyncResult(item)
+    ? `<button type="button" class="ghost-btn result-sync-btn" data-path="${esc(path)}">Sync</button>`
+    : "";
 
   return `
     <article class="card" data-path="${esc(path)}">
@@ -367,7 +380,17 @@ function cardHtml(item) {
       </div>
       <div class="card-meta">${esc(project)} · ${esc(fmtDate(at))}${author ? ` · ${esc(author)}` : ""}</div>
       ${excerpt ? `<p class="card-excerpt">${esc(excerpt)}</p>` : ""}
+      ${syncButton ? `<div class="card-actions">${syncButton}</div>` : ""}
     </article>`;
+}
+
+function canSyncResult(item) {
+  const source = item.source || item.origin || "local";
+  return (
+    Boolean(item.path) &&
+    source === "local" &&
+    (item.syncable === true || item.sync_status === "not_shared" || item.sync_status === "changed")
+  );
 }
 
 function renderTimeline(events) {
@@ -422,7 +445,16 @@ function renderResults(data) {
   }
 
   out.querySelectorAll(".card[data-path]").forEach((el) => {
-    el.addEventListener("click", () => openDoc(el.dataset.path));
+    el.addEventListener("click", (event) => {
+      if (event.target.closest(".result-sync-btn")) return;
+      openDoc(el.dataset.path);
+    });
+  });
+  out.querySelectorAll(".result-sync-btn").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      syncSearchResult(el.dataset.path);
+    });
   });
 }
 
@@ -433,6 +465,43 @@ async function openDoc(path) {
   $("#doc-subtitle").textContent = path.replace(/^\.md\//, "");
   $("#doc-body").innerHTML = renderMarkdown(prepareBodyForDisplay(doc.body));
   $("#doc-modal").showModal();
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
+async function syncSearchResult(path) {
+  if (!path) return;
+  const btn = document.querySelector(`.result-sync-btn[data-path="${cssEscape(path)}"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Syncing…";
+  }
+
+  const result = await api("/api/sync/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paths: [path] }),
+  });
+  if (result.failed?.length) {
+    alert(result.failed.map((f) => `${f.path}: ${f.error}`).join("\n"));
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Sync";
+    }
+    return;
+  }
+
+  const q = $("#scoped-q").value.trim();
+  if (q) {
+    await runScopedSearch(q);
+  } else if (state.activeProject) {
+    await browseProject(state.activeProject);
+  }
+  await loadSyncLocal();
+  await refreshRemotePending();
 }
 
 async function runScopedSearch(q) {
@@ -451,6 +520,26 @@ async function runScopedSearch(q) {
       q: trimmed,
       limit: 80,
       project: state.activeProject,
+      source,
+    }),
+  });
+  renderResults(data);
+}
+
+async function browseProject(project) {
+  state.activeProject = project;
+  state.hasSearched = true;
+  setAppSidebarVisible(true);
+  setAppResultsVisible(true);
+  $("#output").innerHTML = '<p class="empty loading">Loading project…</p>';
+  const source = ($("#scoped-source") || {}).value || "local";
+  const data = await api("/api/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      q: "",
+      limit: 80,
+      project,
       source,
     }),
   });

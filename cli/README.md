@@ -8,6 +8,7 @@ Local capture, workspace knowledge indexing, and central sync for STRATA project
 pip install -e .
 strata init --api https://strata.craftxlogic.com --org craftxlogic --project example --repo example-repo
 export STRATA_API_KEY=strata_live_...
+python -m cxl_strata.cli --init
 strata whoami
 ```
 
@@ -16,7 +17,8 @@ strata whoami
 Local SQLite (`.md/workspace_index.sqlite`) is the fast offline cache. Shared full artifacts live in the central API.
 
 ```bash
-# Index handoffs, blueprints, plans, rules from workspace root
+# Create/refresh .md/workspace_index.sqlite from workspace root
+# Includes handoffs, blueprints, plans, Cursor rules, CLAUDE.md, and AGENTS.md
 strata index
 
 # Archive old handoffs into SQLite (dry-run by default)
@@ -30,7 +32,7 @@ strata stash --path .md/handoff/synq-phalanx/2026-06-30T12-00-00Z.md
 # Pull shared docs into local SQLite for offline search
 strata pull --project synq-phalanx
 
-# Local UI on http://127.0.0.1:8765 — search, Sync Local table, source filters
+# Local UI on http://127.0.0.1:8765 — bootstraps SQLite if missing
 strata app --open
 
 # Opt-in autostart (never installed by one-line installer)

@@ -107,31 +107,40 @@ else
   echo "==> Keeping existing $SECRETS_JSON"
 fi
 
-# Ensure user-local bin is on PATH for this session and future shells.
-USER_BASE="$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")"
-STRATA_BIN_DIR="$USER_BASE/bin"
+# Ensure user-local scripts are on PATH for this session and future shells.
+STRATA_BIN_DIR="$(python3 - <<'PY'
+import os
+import sysconfig
+
+print(sysconfig.get_path('scripts', f'{{os.name}}_user') or '')
+PY
+)"
+if [[ -z "$STRATA_BIN_DIR" ]]; then
+  USER_BASE="$(python3 -m site --user-base 2>/dev/null || echo "$HOME/.local")"
+  STRATA_BIN_DIR="$USER_BASE/bin"
+fi
+
 case ":$PATH:" in
   *":$STRATA_BIN_DIR:"*) ;;
   *) export PATH="$STRATA_BIN_DIR:$PATH" ;;
 esac
 
-PROFILE_FILE="${{HOME}}/.profile"
-case "$(basename "${{SHELL:-}}")" in
-  zsh) PROFILE_FILE="${{HOME}}/.zshrc" ;;
-  bash) PROFILE_FILE="${{HOME}}/.bashrc" ;;
-esac
-PATH_MARKER="# STRATA pip user bin"
-if [[ -n "$PROFILE_FILE" ]]; then
+PROFILE_FILES=("$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc")
+PATH_BLOCK_BEGIN="# STRATA_PATH_BLOCK_BEGIN"
+PATH_BLOCK_END="# STRATA_PATH_BLOCK_END"
+for PROFILE_FILE in "${{PROFILE_FILES[@]}}"; do
   touch "$PROFILE_FILE" 2>/dev/null || true
-  if [[ -w "$PROFILE_FILE" ]] && ! grep -Fq "$PATH_MARKER" "$PROFILE_FILE" 2>/dev/null; then
+  if [[ -w "$PROFILE_FILE" ]] && ! grep -Fq "$PATH_BLOCK_BEGIN" "$PROFILE_FILE" 2>/dev/null; then
     cat >>"$PROFILE_FILE" <<EOF
 
-$PATH_MARKER
+$PATH_BLOCK_BEGIN
+# STRATA pip user bin
 export PATH="$STRATA_BIN_DIR:\\$PATH"
+$PATH_BLOCK_END
 EOF
     echo "==> Added STRATA bin dir to $PROFILE_FILE"
   fi
-fi
+done
 
 STRATA_CMD=(strata)
 if ! command -v strata >/dev/null 2>&1; then
@@ -146,6 +155,9 @@ if [[ "$DO_INIT" -eq 1 ]]; then
   [[ -n "$ACTOR_EMAIL" ]] && INIT_ARGS+=(--actor-email "$ACTOR_EMAIL")
   echo "==> Running ${{STRATA_CMD[*]}} ${{INIT_ARGS[*]}}"
   "${{STRATA_CMD[@]}}" "${{INIT_ARGS[@]}}"
+  INDEX_ARGS=(index)
+  echo "==> Initializing STRATA local SQLite index"
+  "${{STRATA_CMD[@]}}" "${{INDEX_ARGS[@]}}" || echo "==> Warning: local SQLite index initialization failed; run: ${{STRATA_CMD[*]}} index"
 fi
 
 if [[ "$DO_CURSOR" -eq 1 ]]; then
@@ -177,14 +189,16 @@ STRATA client installed.
 Next steps:
   1. Edit ~/.strata/secrets.json and set api_key to your strata_live_... token
      (or: export STRATA_API_KEY=strata_live_...)
-  2. In each repo: curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
+  2. Run the post-key bootstrap: python3 -m cxl_strata.cli --init
+     This hardens PATH, creates .md/workspace_index.sqlite, and opens the local UI.
+  3. In each repo: curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
-  3. Verify: strata whoami
+  4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
-  4. Index workspace knowledge: strata index
-  5. Open local UI: strata app --open
-  6. Optional autostart (never installed silently): strata app install-autostart
-  7. Optional Cursor MCP: re-run with --cursor for JSON snippet
+  5. Local SQLite index is initialized during --init; refresh later with: strata index
+  6. Open local UI: strata app --open
+  7. Optional autostart (never installed silently): strata app install-autostart
+  8. Optional Cursor MCP: re-run with --cursor for JSON snippet
 
 Manifest: {public_url}/v1/client/manifest
 EOF
@@ -251,8 +265,11 @@ if (-not (Test-Path $SecretsJson)) {{
   Write-Host "==> Keeping existing $SecretsJson"
 }}
 
-$userBase = python -m site --user-base 2>$null
-$scriptsDir = if ($userBase) {{ Join-Path $userBase "Scripts" }} else {{ $null }}
+$scriptsDir = python -c "import os, sysconfig; print(sysconfig.get_path('scripts', f'{{os.name}}_user') or '')" 2>$null
+if (-not $scriptsDir) {{
+  $userBase = python -m site --user-base 2>$null
+  $scriptsDir = if ($userBase) {{ Join-Path $userBase "Scripts" }} else {{ $null }}
+}}
 if ($scriptsDir -and (Test-Path $scriptsDir)) {{
   $pathParts = @($env:Path -split ';' | Where-Object {{ $_ }})
   if ($pathParts -notcontains $scriptsDir) {{
@@ -263,11 +280,12 @@ if ($scriptsDir -and (Test-Path $scriptsDir)) {{
   $userPathParts = @($userPath -split ';' | Where-Object {{ $_ }})
   if ($userPathParts -notcontains $scriptsDir) {{
     $newUserPath = if ($userPath) {{ "$scriptsDir;$userPath" }} else {{ $scriptsDir }}
-    [Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+    [Environment]::SetEnvironmentVariable("Path", $newUserPath, [EnvironmentVariableTarget]::User)
     Write-Host "==> Added STRATA Scripts dir to user PATH: $scriptsDir"
   }}
 
-  $profileMarker = "# STRATA pip user Scripts"
+  $profileMarker = "# STRATA_PATH_BLOCK_BEGIN"
+  $profileEndMarker = "# STRATA_PATH_BLOCK_END"
   if ($PROFILE) {{
     $profileDir = Split-Path $PROFILE -Parent
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
@@ -276,8 +294,10 @@ if ($scriptsDir -and (Test-Path $scriptsDir)) {{
       Add-Content -Path $PROFILE -Value @"
 
 $profileMarker
-`$__strataScripts = Join-Path (python -m site --user-base 2>`$null) 'Scripts'
+# STRATA pip user Scripts
+`$__strataScripts = python -c "import os, sysconfig; print(sysconfig.get_path('scripts', f'{{os.name}}_user') or '')" 2>`$null
 if (`$__strataScripts -and (Test-Path `$__strataScripts)) {{ `$env:Path = "`$__strataScripts;" + `$env:Path }}
+$profileEndMarker
 "@
       Write-Host "==> Added STRATA Scripts dir to PowerShell profile: $PROFILE"
     }}
@@ -302,6 +322,13 @@ if ($Init) {{
   if ($ActorEmail) {{ $initArgs += @("--actor-email", $ActorEmail) }}
   Write-Host "==> Running strata $($initArgs -join ' ')"
   Invoke-Strata @initArgs
+  $indexArgs = @("index")
+  Write-Host "==> Initializing STRATA local SQLite index"
+  try {{
+    Invoke-Strata @indexArgs
+  }} catch {{
+    Write-Warning "Local SQLite index initialization failed; run: python -m cxl_strata.cli index"
+  }}
 }}
 
 if ($Cursor) {{
@@ -330,14 +357,17 @@ STRATA client installed.
 
 Next steps:
   1. Edit $SecretsJson and set api_key to your strata_live_... token
-  2. Verify (this session): Invoke-Strata whoami
+  2. Run the post-key bootstrap:
+     python -m cxl_strata.cli --init
+     This hardens PATH, creates .md\\workspace_index.sqlite, and opens the local UI.
+  3. Verify (this session): Invoke-Strata whoami
      Or after opening a new terminal: strata whoami
-  3. Init this repo (pass switches to the scriptblock, NOT to iex):
+  4. Init this repo (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
-  4. Index workspace: strata index
-  5. Open UI: strata app --open
-  6. Optional autostart: strata app install-autostart
-  7. Optional MCP snippet:
+  5. Local SQLite index is initialized during -Init; refresh later with: strata index
+  6. Open UI: strata app --open
+  7. Optional autostart: strata app install-autostart
+  8. Optional MCP snippet:
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
 
 Quick test now: python -m cxl_strata.cli whoami
@@ -412,6 +442,7 @@ def client_manifest() -> dict:
             "pull": "strata pull --project YOUR_PROJECT",
             "app": "strata app --open",
             "autostart": "strata app install-autostart",
+            "post_key_bootstrap": "python -m cxl_strata.cli --init",
             "local_db": ".md/workspace_index.sqlite",
             "ui_port": 8765,
         },

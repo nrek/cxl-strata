@@ -7,6 +7,7 @@ The installer does three things:
 1. Installs the STRATA CLI (`strata`).
 2. Installs the STRATA MCP server package.
 3. Writes user-level defaults in `~/.strata/global.json` and `~/.strata/secrets.json`.
+4. When run with repo init, creates the local SQLite workspace index used by the localhost UI.
 
 It does not grant access by itself. Each user still needs a personal token from an admin.
 
@@ -25,8 +26,10 @@ The `strata` command is installed by `pip install --user`. That puts the executa
 
 The installer now tries to make `strata` work automatically:
 
-- Linux, macOS, WSL, bash, zsh, xTerm: adds Python's user bin directory to the current session and writes a STRATA PATH block to `.bashrc`, `.zshrc`, or `.profile`.
-- Windows PowerShell: adds Python's user `Scripts` directory to the current session, the user PATH environment variable, and the PowerShell profile.
+- Linux, macOS, WSL, bash, zsh, xTerm: asks Python for the actual user scripts directory, adds it to the current session, and writes a managed STRATA PATH block to `.profile`, `.bashrc`, and `.zshrc` when those files are writable.
+- Windows PowerShell: asks Python for the actual user `Scripts` directory, adds it to the current session, adds it to the user PATH environment variable, and writes a managed STRATA PATH block to the PowerShell profile.
+
+The managed profile block is marked with `STRATA_PATH_BLOCK_BEGIN` / `STRATA_PATH_BLOCK_END`, so it is easy to find or remove later.
 
 After install, open a new terminal and run:
 
@@ -46,6 +49,20 @@ On macOS/Linux systems where Python is named `python3`:
 python3 -m cxl_strata.cli whoami
 ```
 
+After setting your API key, run the post-key bootstrap:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+On macOS/Linux systems where Python is named `python3`:
+
+```bash
+python3 -m cxl_strata.cli --init
+```
+
+This command hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
+
 ## Linux, macOS, WSL, xTerm, Bash, Zsh
 
 Use the Unix installer from any shell:
@@ -63,7 +80,7 @@ curl -fsSL https://strata.example.com/install.sh | bash -s -- \
   --project my-project
 ```
 
-The installer persists PATH for future shells. If this shell was already open before install and `strata` is not found yet, open a new shell or use:
+The installer persists PATH for future shells in `.profile`, `.bashrc`, and `.zshrc` when possible. If this shell was already open before install and `strata` is not found yet, open a new shell or use:
 
 ```bash
 python3 -m cxl_strata.cli whoami
@@ -95,7 +112,65 @@ The installer persists PATH for future PowerShell sessions. If `strata` is not f
 python -m cxl_strata.cli whoami
 ```
 
-The installer adds the Python user Scripts directory to the current session, the user PATH environment variable, and your PowerShell profile when possible.
+The installer adds the Python user Scripts directory to the current session, the user PATH environment variable, and your PowerShell profile when possible. The user PATH update is what makes `strata` available to new PowerShell, Cursor, Claude, and Codex terminals.
+
+## Local SQLite And UI Bootstrap
+
+The localhost UI reads from a local SQLite cache at:
+
+```text
+.md/workspace_index.sqlite
+```
+
+Fresh workstations should not have to create that file by hand.
+
+After setting the API key, users should run:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+This is the easiest all-in-one command: it adds STRATA to PATH for future terminals, creates the local SQLite database, indexes local Cursor/Claude/Codex context files, pulls shared docs when possible, and opens the localhost UI.
+
+When you install with repo initialization, STRATA now runs `strata index` automatically after `strata init`:
+
+```bash
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init --project my-project
+```
+
+PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+```
+
+That creates `.md/workspace_index.sqlite` in the detected workspace/repo root and indexes local agent context files.
+
+The UI also bootstraps the database when it starts:
+
+```bash
+strata app --open
+```
+
+No-PATH fallback:
+
+```bash
+python -m cxl_strata.cli app --open
+```
+
+Cursor, Claude, and Codex context files are indexed as local rules when present:
+
+- Cursor: `.cursor/rules/*.mdc`
+- Claude: `CLAUDE.md`, `.claude/**/*.md`
+- Codex: `AGENTS.md`, `.codex/**/*.md`
+
+If the UI opens but looks empty, run:
+
+```bash
+strata index
+strata pull --project my-project
+strata app --open
+```
 
 ## Set The API Key
 

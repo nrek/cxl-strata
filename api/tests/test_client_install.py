@@ -13,6 +13,12 @@ def test_install_sh_served(client: TestClient) -> None:
     assert "strata init" in body or "strata \"${INIT_ARGS[@]}\"" in body
     assert "STRATA pip user bin" in body
     assert "python3 -m cxl_strata.cli" in body
+    assert "sysconfig.get_path('scripts'" in body
+    assert 'PROFILE_FILES=("$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc")' in body
+    assert "STRATA_PATH_BLOCK_BEGIN" in body
+    assert 'INDEX_ARGS=(index)' in body
+    assert '"${STRATA_CMD[@]}" "${INDEX_ARGS[@]}"' in body
+    assert "python3 -m cxl_strata.cli --init" in body
 
 
 def test_install_ps1_served(client: TestClient) -> None:
@@ -24,6 +30,12 @@ def test_install_ps1_served(client: TestClient) -> None:
     assert "STRATA pip user Scripts" in body
     assert "[Environment]::SetEnvironmentVariable" in body
     assert "python -m cxl_strata.cli" in body
+    assert "sysconfig.get_path('scripts'" in body
+    assert "[EnvironmentVariableTarget]::User" in body
+    assert "STRATA_PATH_BLOCK_BEGIN" in body
+    assert '$indexArgs = @("index")' in body
+    assert "Invoke-Strata @indexArgs" in body
+    assert "python -m cxl_strata.cli --init" in body
 
 
 def test_client_manifest(client: TestClient) -> None:
@@ -36,6 +48,7 @@ def test_client_manifest(client: TestClient) -> None:
     assert "packages" in body
     assert "cli" in body["packages"]
     assert "#subdirectory=cli" in body["packages"]["cli"]["pip_spec"]
+    assert body["workspace_knowledge"]["post_key_bootstrap"] == "python -m cxl_strata.cli --init"
 
 
 def test_strata_logo_asset_served(client: TestClient) -> None:

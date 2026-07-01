@@ -92,7 +92,7 @@ Install on Windows PowerShell:
 irm https://strata.example.com/install.ps1 | iex
 ```
 
-The installer tries to add `strata` to PATH automatically. Open a new terminal after install, then run `strata whoami`. If your shell still cannot find `strata`, use `python -m cxl_strata.cli whoami` (or `python3 -m cxl_strata.cli whoami`) and see [Client Installation](docs/client-installation.md#about-path).
+The installer tries to add `strata` to PATH automatically by updating the current session and common shell profiles or the Windows user PATH. Open a new terminal after install, then run `strata whoami`. If your shell still cannot find `strata`, use `python -m cxl_strata.cli whoami` (or `python3 -m cxl_strata.cli whoami`) and see [Client Installation](docs/client-installation.md#about-path).
 
 Add your token:
 
@@ -103,6 +103,14 @@ Add your token:
 ```
 
 Store it in `~/.strata/secrets.json` or `%USERPROFILE%\.strata\secrets.json`.
+
+Run the post-key bootstrap:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+This hardens PATH, creates `.md/workspace_index.sqlite`, and opens the local UI.
 
 Initialize a repo:
 
@@ -141,6 +149,8 @@ strata index
 strata pull --project example-project
 strata app --open
 ```
+
+`strata index` creates `.md/workspace_index.sqlite` if it does not exist. The app also initializes this SQLite cache on startup, and indexes Cursor (`.cursor/rules/*.mdc`), Claude (`CLAUDE.md`, `.claude/**/*.md`), and Codex (`AGENTS.md`, `.codex/**/*.md`) instruction files as local rules.
 
 See [Quick Start](docs/quickstart.md) for the full local workflow.
 
@@ -238,7 +248,13 @@ curl -fsSL https://strata.example.com/install.sh | bash
 irm https://strata.example.com/install.ps1 | iex
 ```
 
-Both installers persist Python's user scripts directory to PATH where possible so `strata` works in new terminals. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
+After a user sets their token, have them run:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+That post-key bootstrap hardens PATH, creates the local SQLite cache, and opens the browser UI. Both installers also persist Python's user scripts directory to PATH where possible so `strata` works in new terminals, including agent terminals in Cursor, Claude, and Codex. When installed with repo init, they also run `strata index` so the local SQLite cache exists before the UI opens. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
 
 Repo initialization can be included during install:
 

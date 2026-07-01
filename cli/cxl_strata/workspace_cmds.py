@@ -16,6 +16,7 @@ from . import documents, pull
 from .app import (
     DEFAULT_PORT,
     autostart_status,
+    bootstrap_workspace_index,
     install_autostart,
     is_port_open,
     is_strata_app_healthy,
@@ -46,6 +47,7 @@ def app_main(
         set_workspace_root(root)
     if path:
         documents.stash_paths([path])
+    bootstrap_workspace_index(project=project, pull_shared=bool(project))
     url = f"http://{host}:{port}"
     if is_port_open(host, port):
         if is_strata_app_healthy(host, port):
@@ -60,6 +62,8 @@ def app_main(
         raise typer.Exit(1)
     if daemon:
         cmd = [sys.executable, "-m", "cxl_strata.cli", "app", "--host", host, "--port", str(port)]
+        if project:
+            cmd.extend(["--project", project])
         if open_browser:
             cmd.append("--open")
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -67,7 +71,7 @@ def app_main(
         return
     if project:
         rprint(f"[dim]Filtering initial view to project {project}[/dim]")
-    run_app(host=host, port=port, open_browser=open_browser)
+    run_app(host=host, port=port, open_browser=open_browser, project=project)
 
 
 @app_typer.command("status")

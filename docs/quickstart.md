@@ -10,6 +10,16 @@ STRATA has three local surfaces:
 
 The central API is separate. It stores team memory in PostgreSQL and serves search/MCP requests.
 
+Fresh installs create the SQLite cache during repo init (`--init`) and again when the app starts if it is missing. Cursor, Claude, and Codex instruction files are indexed as local rules when present.
+
+After installing and setting your API key, run the post-key bootstrap:
+
+```bash
+python -m cxl_strata.cli --init
+```
+
+This hardens PATH, creates `.md/workspace_index.sqlite`, and opens `http://127.0.0.1:8765`.
+
 ## 1. Verify The API And Identity
 
 Open a new terminal after installing STRATA so your shell reloads PATH. Then run:
@@ -32,7 +42,7 @@ On macOS/Linux systems where Python is named `python3`:
 python3 -m cxl_strata.cli whoami
 ```
 
-The module command proves STRATA is installed even if your shell has not picked up Python's user scripts directory yet. See [Client Installation](client-installation.md#about-path) for PATH details.
+The module command proves STRATA is installed even if your shell has not picked up Python's user scripts directory yet. The installer writes managed PATH blocks for future shells, but existing terminals may need to be reopened. See [Client Installation](client-installation.md#about-path) for PATH details.
 
 ## 2. Initialize The Current Repo
 
@@ -47,6 +57,14 @@ strata init \
 ```
 
 This writes `.strata/config.json` and local queue files.
+
+Create or refresh the local SQLite index:
+
+```bash
+strata index
+```
+
+This creates `.md/workspace_index.sqlite` if it does not exist.
 
 ## 3. Capture A Memory Note
 
@@ -93,7 +111,7 @@ These commands query the central API.
 
 ## 6. Build The Local SQLite Cache
 
-From the workspace root, index local artifacts:
+From the workspace root, index local artifacts. This includes `.cursor/rules/*.mdc`, `CLAUDE.md`, `.claude/**/*.md`, `AGENTS.md`, and `.codex/**/*.md` when those files exist:
 
 ```bash
 strata index

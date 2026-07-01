@@ -61,7 +61,16 @@ BLUEPRINT_ALIASES: dict[str, str] = {
 
 
 def _looks_like_workspace(root: Path) -> bool:
-    return (root / ".md" / "handoff").is_dir() or (root / ".md" / "blueprints").is_dir()
+    return (
+        (root / ".md" / "handoff").is_dir()
+        or (root / ".md" / "blueprints").is_dir()
+        or (root / ".strata" / "config.json").is_file()
+        or (root / ".cursor").is_dir()
+        or (root / ".claude").is_dir()
+        or (root / ".codex").is_dir()
+        or (root / "CLAUDE.md").is_file()
+        or (root / "AGENTS.md").is_file()
+    )
 
 
 @lru_cache(maxsize=1)

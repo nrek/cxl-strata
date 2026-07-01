@@ -115,17 +115,15 @@ This hardens PATH, installs `.cursor/rules/strata-memory-capture.mdc`, creates `
 If that returns `No such option: --init`, the workstation still has an older CLI. On Windows, rerun the installer bootstrap instead:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project example-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
-Initialize a repo:
+Initialize the workspace:
 
 ```bash
 strata init \
   --api https://strata.example.com \
-  --org example-org \
-  --project example-project \
-  --repo example-repo
+  --org example-org
 ```
 
 Verify:
@@ -152,7 +150,7 @@ Open the local browser app:
 
 ```bash
 strata index
-strata pull --project example-project
+strata pull
 strata app --open
 ```
 
@@ -260,18 +258,18 @@ After a user sets their token, have them run:
 python -m cxl_strata.cli --init
 ```
 
-That post-key bootstrap hardens PATH, creates the local SQLite cache, and opens the browser UI. Both installers also persist Python's user scripts directory to PATH where possible so `strata` works in new terminals, including agent terminals in Cursor, Claude, and Codex. When installed with repo init, they also run `strata index` so the local SQLite cache exists before the UI opens. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
+That post-key bootstrap hardens PATH, creates the local SQLite cache, and opens the browser UI. Both installers also persist Python's user scripts directory to PATH where possible so `strata` works in new terminals, including agent terminals in Cursor, Claude, and Codex. When installed with workspace init, they also run `strata index` so the local SQLite cache exists before the UI opens. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
 
-If a client sees `No such option: --init`, they are running an older installed CLI. Have them rerun the scriptblock installer with `-Init -Project ...`; that path does not require the root `--init` option.
+If a client sees `No such option: --init`, they are running an older installed CLI. Have them rerun the scriptblock installer with `-Init`; that path does not require the root `--init` option.
 
-Repo initialization can be included during install:
+Workspace initialization can be included during install:
 
 ```bash
-curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init --project example-project
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init
 ```
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project example-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 See [Client Installation](docs/client-installation.md).
@@ -343,7 +341,7 @@ Local SQLite and app:
 
 ```bash
 strata index
-strata pull --project example-project
+strata pull
 ls .md/workspace_index.sqlite
 strata app --open
 ```

@@ -56,7 +56,8 @@ def test_client_manifest(client: TestClient) -> None:
     assert "#subdirectory=cli" in body["packages"]["cli"]["pip_spec"]
     assert body["workspace_knowledge"]["post_key_bootstrap"] == "python -m cxl_strata.cli --init"
     assert body["workspace_knowledge"]["cursor_rule"] == ".cursor/rules/strata-memory-capture.mdc"
-    assert "-Init -Project YOUR_PROJECT" in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
+    assert "-Init" in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
+    assert "-Project" not in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
 
 
 def test_strata_large_logo_asset_served(client: TestClient) -> None:

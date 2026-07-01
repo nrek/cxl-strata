@@ -139,3 +139,14 @@ def test_tool_drawer_static_wiring() -> None:
     assert ".tool-drawer.open" in style
     assert ".tool-drawer-toggle" in style
     assert ".tool-drawer-toggle.open" in style
+
+
+def test_quickstart_leads_with_workspace_defaults() -> None:
+    repo_root = _package_root().parents[1]
+    quickstart = (repo_root / "docs" / "quickstart.md").read_text(encoding="utf-8")
+
+    assert "## 2. Initialize The Workspace" in quickstart
+    assert "## 2. Initialize The Current Repo" not in quickstart
+    assert "--repo my-repo" not in quickstart
+    assert "strata pull --project my-project" not in quickstart
+    assert "strata stash --project my-project" not in quickstart

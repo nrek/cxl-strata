@@ -4,13 +4,13 @@ This guide is for a developer whose workstation already has STRATA installed and
 
 STRATA has three local surfaces:
 
-- `.strata/` in each repo: repo config and JSONL sync queue.
+- `.strata/` in the workspace or a repo: STRATA config and JSONL sync queue.
 - `.md/workspace_index.sqlite` at the workspace root: local searchable SQLite cache for handoffs, blueprints, plans, rules, and pulled shared docs.
 - `strata app --open`: localhost UI for browsing the local SQLite cache.
 
 The central API is separate. It stores team memory in PostgreSQL and serves search/MCP requests.
 
-Fresh installs create the SQLite cache during repo init (`--init`) and again when the app starts if it is missing. `--init` also installs `.cursor/rules/strata-memory-capture.mdc` so Cursor can recognize `/strata add`, `/strata summary`, and `/strata prune`.
+Fresh installs create the SQLite cache during bootstrap (`--init`) and again when the app starts if it is missing. `--init` also installs `.cursor/rules/strata-memory-capture.mdc` so Cursor can recognize `/strata add`, `/strata summary`, and `/strata prune`.
 
 After installing and setting your API key, run the post-key bootstrap:
 
@@ -23,7 +23,7 @@ This hardens PATH, installs the Cursor rule, creates `.md/workspace_index.sqlite
 If this returns `No such option: --init`, refresh through the installer bootstrap instead:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 ## 1. Verify The API And Identity
@@ -50,19 +50,17 @@ python3 -m cxl_strata.cli whoami
 
 The module command proves STRATA is installed even if your shell has not picked up Python's user scripts directory yet. The installer writes managed PATH blocks for future shells, but existing terminals may need to be reopened. See [Client Installation](client-installation.md#about-path) for PATH details.
 
-## 2. Initialize The Current Repo
+## 2. Initialize The Workspace
 
-From the repo root:
+From the workspace root, for example `D:\projects` when Cursor is opened there:
 
 ```bash
 strata init \
   --api https://strata.example.com \
-  --org example-org \
-  --project my-project \
-  --repo my-repo
+  --org example-org
 ```
 
-This writes `.strata/config.json` and local queue files.
+This writes `.strata/config.json` and local queue files without narrowing STRATA to one project or repo. Use `--project` only when you intentionally want capture commands to default to one project, and `--repo` only when you intentionally want notes scoped to one repo.
 
 Create or refresh the local SQLite index:
 
@@ -126,7 +124,7 @@ strata index
 Pull shared documents from the central API into the local SQLite cache:
 
 ```bash
-strata pull --project my-project
+strata pull
 ```
 
 Confirm the SQLite cache exists:
@@ -180,7 +178,7 @@ strata app uninstall-autostart
 Push indexed workspace documents to the central API:
 
 ```bash
-strata stash --project my-project
+strata stash
 ```
 
 Push one file:
@@ -219,20 +217,17 @@ MCP clients can retrieve context with:
 
 ## 10. Smoke Test
 
-Run this from any initialized repo:
+Run this from the initialized workspace:
 
 ```bash
-strata add --type general_note --title "STRATA install check" --summary "Verified STRATA capture and sync."
-strata sync
-strata search "STRATA install check"
 strata index
-strata pull --project my-project
+strata pull
+strata stash
 strata app --open
 ```
 
 Success means:
 
-- `strata sync` reports at least one synced event.
-- `strata search` finds the test note.
+- `strata stash` shares pending indexed workspace docs or reports nothing pending.
 - `.md/workspace_index.sqlite` exists at the workspace root.
 - The localhost app opens on `127.0.0.1:8765`.

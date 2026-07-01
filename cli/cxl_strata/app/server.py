@@ -78,15 +78,17 @@ def _cursor_rule_ok(path: Path) -> bool:
 
 def setup_status() -> dict:
     config_path = local_store.CONFIG_FILE
+    global_config_path = local_store.USER_GLOBAL_FILE
+    active_config_path = config_path if config_path.is_file() else global_config_path
     sqlite_path = paths.DB_PATH
     rule_path = cursor_rule.RULE_DEST
     checks = [
         {
             "id": "config",
-            "label": "Repo config",
-            "ok": config_path.is_file(),
-            "path": str(config_path),
-            "fix": "strata init --api <api-url> --org <org> --project <project> --repo <repo>",
+            "label": "STRATA config",
+            "ok": config_path.is_file() or global_config_path.is_file(),
+            "path": str(active_config_path),
+            "fix": "strata init --api <api-url> --org <org>",
         },
         {
             "id": "api_key",

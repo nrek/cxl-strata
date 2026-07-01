@@ -106,9 +106,37 @@ def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) ->
     assert checks["cursor_rule"]["ok"] is True
 
 
+def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("STRATA_API_KEY", "strata_live_test")
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    set_workspace_root(tmp_path)
+    local_store.USER_GLOBAL_FILE.write_text(
+        json.dumps(
+            {
+                "api_base_url": "https://strata.example.com",
+                "organization_slug": "example-org",
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths.DB_PATH.parent.mkdir(parents=True)
+    paths.DB_PATH.write_text("", encoding="utf-8")
+    cursor_rule.install_cursor_rule()
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is True
+    assert checks["config"]["ok"] is True
+    assert checks["config"]["label"] == "STRATA config"
+    assert checks["config"]["path"] == str(local_store.USER_GLOBAL_FILE)
+
+
 def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("STRATA_API_KEY", raising=False)
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "missing-global.json")
     monkeypatch.setattr(local_store, "USER_SECRETS_FILE", tmp_path / "missing-secrets.json")
     set_workspace_root(tmp_path)
 
@@ -118,6 +146,8 @@ def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None
     assert result["ok"] is False
     assert checks["config"]["ok"] is False
     assert "strata init" in checks["config"]["fix"]
+    assert "--project" not in checks["config"]["fix"]
+    assert "--repo" not in checks["config"]["fix"]
     assert checks["api_key"]["ok"] is False
     assert "STRATA_API_KEY" in checks["api_key"]["fix"]
     assert checks["sqlite"]["ok"] is False

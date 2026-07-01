@@ -220,22 +220,22 @@ Common causes:
 
 ## Missing `.strata/config.json`
 
-Run from the repo root:
+Run from the workspace root:
 
 ```bash
-strata init --api https://strata.example.com --org example-org --project my-project --repo my-repo
+strata init --api https://strata.example.com --org example-org
 ```
 
-The installer can also initialize a repo:
+The installer can also initialize the workspace:
 
 ```bash
-curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init --project my-project
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init
 ```
 
 PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 ## `strata sync` Reports Failures
@@ -289,7 +289,7 @@ It hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
 If the command fails with `No such option: --init`, the workstation is still running an older installed CLI. On Windows, use the installer bootstrap fallback:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 Then retry:
@@ -343,7 +343,7 @@ Refresh the local cache:
 
 ```bash
 strata index
-strata pull --project my-project
+strata pull
 strata app --open
 ```
 

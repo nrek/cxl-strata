@@ -28,8 +28,8 @@ STRATA client installer
 
 Options (also pass after bash -s --):
   --org ORG           Organization slug (default: {default_org})
-  --project SLUG      Project slug for strata init (requires --init)
-  --repo NAME         Repo name for strata init (default: basename of cwd)
+  --project SLUG      Optional default project slug for memory capture
+  --repo NAME         Optional repo name for memory capture
   --actor-name NAME   Actor display name for strata init
   --actor-email EMAIL Actor email for strata init
   --init              Run strata init in the current directory
@@ -148,9 +148,9 @@ if ! command -v strata >/dev/null 2>&1; then
 fi
 
 if [[ "$DO_INIT" -eq 1 ]]; then
-  REPO="${{REPO:-$(basename "$(pwd)")}}"
-  PROJECT="${{PROJECT:-$REPO}}"
-  INIT_ARGS=(init --api "$STRATA_API_URL" --org "$STRATA_ORG" --project "$PROJECT" --repo "$REPO")
+  INIT_ARGS=(init --api "$STRATA_API_URL" --org "$STRATA_ORG")
+  [[ -n "$PROJECT" ]] && INIT_ARGS+=(--project "$PROJECT")
+  [[ -n "$REPO" ]] && INIT_ARGS+=(--repo "$REPO")
   [[ -n "$ACTOR_NAME" ]] && INIT_ARGS+=(--actor-name "$ACTOR_NAME")
   [[ -n "$ACTOR_EMAIL" ]] && INIT_ARGS+=(--actor-email "$ACTOR_EMAIL")
   echo "==> Running ${{STRATA_CMD[*]}} ${{INIT_ARGS[*]}}"
@@ -194,8 +194,8 @@ Next steps:
      (or: export STRATA_API_KEY=strata_live_...)
   2. If this is a fresh shell with the latest CLI: python3 -m cxl_strata.cli --init
   3. If --init is unavailable, run the installer bootstrap instead:
-     curl -fsSL {public_url}/install.sh | bash -s -- --init --project YOUR_PROJECT
-     — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}} --project SLUG --repo NAME
+     curl -fsSL {public_url}/install.sh | bash -s -- --init
+     — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}}
   4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
   5. --init initializes SQLite and installs .cursor/rules/strata-memory-capture.mdc
@@ -319,9 +319,9 @@ function Invoke-Strata {{
 }}
 
 if ($Init) {{
-  if (-not $Repo) {{ $Repo = Split-Path -Leaf (Get-Location) }}
-  if (-not $Project) {{ $Project = $Repo }}
-  $initArgs = @("init", "--api", $ApiUrl, "--org", $Org, "--project", $Project, "--repo", $Repo)
+  $initArgs = @("init", "--api", $ApiUrl, "--org", $Org)
+  if ($Project) {{ $initArgs += @("--project", $Project) }}
+  if ($Repo) {{ $initArgs += @("--repo", $Repo) }}
   if ($ActorName) {{ $initArgs += @("--actor-name", $ActorName) }}
   if ($ActorEmail) {{ $initArgs += @("--actor-email", $ActorEmail) }}
   Write-Host "==> Running strata $($initArgs -join ' ')"
@@ -368,11 +368,11 @@ Next steps:
      python -m cxl_strata.cli --init
      This hardens PATH, creates .md\\workspace_index.sqlite, and opens the local UI.
   3. If --init says 'No such option', use the installer bootstrap instead:
-     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org $Org -Init -Project YOUR_PROJECT
+     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org $Org -Init
   4. Verify (this session): Invoke-Strata whoami
      Or after opening a new terminal: strata whoami
-  5. Init this repo (pass switches to the scriptblock, NOT to iex):
-     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init -Project YOUR_PROJECT
+  5. Init this workspace (pass switches to the scriptblock, NOT to iex):
+     & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init
   6. -Init initializes SQLite and installs .cursor\\rules\\strata-memory-capture.mdc
   7. Refresh local index later with: strata index
   8. Open UI: strata app --open
@@ -424,7 +424,7 @@ def client_manifest() -> dict:
             "windows_one_liner": f"irm {base}/install.ps1 | iex",
             "windows_with_init": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
-                f"-Org {settings.strata_default_org} -Init -Project YOUR_PROJECT"
+                f"-Org {settings.strata_default_org} -Init"
             ),
             "windows_with_cursor": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) -Cursor"
@@ -453,14 +453,14 @@ def client_manifest() -> dict:
             "prune_project_execute": "strata prune YOUR_PROJECT --archive-handoffs --execute",
             "stash": "strata stash",
             "stash_project": "strata stash --project YOUR_PROJECT",
-            "pull": "strata pull --project YOUR_PROJECT",
+            "pull": "strata pull",
             "app": "strata app --open",
             "autostart": "strata app install-autostart",
             "cursor_rule": ".cursor/rules/strata-memory-capture.mdc",
             "post_key_bootstrap": "python -m cxl_strata.cli --init",
             "post_key_bootstrap_fallback_windows": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
-                f"-Org {settings.strata_default_org} -Init -Project YOUR_PROJECT"
+                f"-Org {settings.strata_default_org} -Init"
             ),
             "local_db": ".md/workspace_index.sqlite",
             "ui_port": 8765,

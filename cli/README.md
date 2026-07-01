@@ -6,7 +6,7 @@ Local capture, workspace knowledge indexing, and central sync for STRATA project
 
 ```bash
 pip install -e .
-strata init --api https://strata.craftxlogic.com --org craftxlogic --project example --repo example-repo
+strata init --api https://strata.craftxlogic.com --org craftxlogic
 export STRATA_API_KEY=strata_live_...
 python -m cxl_strata.cli --init
 strata whoami
@@ -35,6 +35,7 @@ strata stash --project synq-phalanx
 strata stash --path .md/handoff/synq-phalanx/2026-06-30T12-00-00Z.md
 
 # Pull shared docs into local SQLite for offline search
+strata pull
 strata pull --project synq-phalanx
 
 # Local UI on http://127.0.0.1:8765 — bootstraps SQLite if missing

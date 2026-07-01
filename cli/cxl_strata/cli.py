@@ -207,8 +207,8 @@ def org_remove_cmd(alias: str = typer.Argument(..., help="Profile alias to delet
 def init_cmd(
     api: str = typer.Option("http://127.0.0.1:8015", "--api", help="Central API base URL"),
     org: str = typer.Option(..., "--org", help="Organization slug"),
-    project: str = typer.Option(..., "--project", help="Default project slug"),
-    repo: str = typer.Option(..., "--repo", help="Repo name"),
+    project: Optional[str] = typer.Option(None, "--project", help="Optional default project slug"),
+    repo: Optional[str] = typer.Option(None, "--repo", help="Optional repo name"),
     workspace_id: Optional[str] = typer.Option(None, "--workspace-id"),
     actor_name: Optional[str] = typer.Option(None, "--actor-name"),
     actor_email: Optional[str] = typer.Option(None, "--actor-email"),
@@ -218,12 +218,17 @@ def init_cmd(
     cfg = {
         "api_base_url": api.rstrip("/"),
         "organization_slug": org,
-        "project_slug": project,
-        "repo_name": repo,
-        "workspace_id": workspace_id or f"{org}-{repo}",
         "actor_name": actor_name,
         "actor_email": actor_email,
     }
+    if project:
+        cfg["project_slug"] = project
+    if repo:
+        cfg["repo_name"] = repo
+    if workspace_id:
+        cfg["workspace_id"] = workspace_id
+    elif repo:
+        cfg["workspace_id"] = f"{org}-{repo}"
     local_store.CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     rule_result = cursor_rule.install_cursor_rule()
     rprint("[green]Initialized[/green] .strata/config.json")
@@ -251,7 +256,9 @@ def add_cmd(
 ) -> None:
     """Capture a memory note or handoff locally (queue for sync)."""
     cfg = local_store.load_config()
-    proj = project or cfg["project_slug"]
+    proj = project or cfg.get("project_slug")
+    if not proj:
+        raise typer.BadParameter("Project is required for memory capture. Pass --project to scope this note.")
     rep = repo or cfg.get("repo_name")
 
     if handoff_path:
@@ -300,7 +307,9 @@ def summary_cmd(
 ) -> None:
     """Upload an end-of-day or end-of-flow summary for the current project."""
     cfg = local_store.load_config()
-    proj = project or cfg["project_slug"]
+    proj = project or cfg.get("project_slug")
+    if not proj:
+        raise typer.BadParameter("Project is required for memory capture. Pass --project to scope this summary.")
     rep = repo or cfg.get("repo_name")
     body = text or Prompt.ask("What did you accomplish today for this project?")
     heading = title or f"Daily summary - {proj}"
@@ -377,8 +386,10 @@ def search_cmd(
 def recent_cmd(days: int = typer.Option(7, "--days")) -> None:
     """Show recent memory for the current project (local API list)."""
     cfg = local_store.load_config()
+    project = cfg.get("project_slug")
+    params = {"project": project} if project else {}
     with api_client._client() as client:  # noqa: SLF001 - v0 helper
-        r = client.get("/v1/memory-events", params={"project": cfg["project_slug"]})
+        r = client.get("/v1/memory-events", params=params)
         r.raise_for_status()
         data = r.json()
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)

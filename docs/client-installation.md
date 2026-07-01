@@ -7,7 +7,7 @@ The installer does three things:
 1. Installs the STRATA CLI (`strata`).
 2. Installs the STRATA MCP server package.
 3. Writes user-level defaults in `~/.strata/global.json` and `~/.strata/secrets.json`.
-4. When run with repo init, creates the local SQLite workspace index used by the localhost UI.
+4. When run with bootstrap init, creates the local SQLite workspace index used by the localhost UI.
 
 It does not grant access by itself. Each user still needs a personal token from an admin.
 
@@ -66,10 +66,10 @@ This command hardens PATH, installs `.cursor/rules/strata-memory-capture.mdc`, c
 If PowerShell reports `No such option: --init`, the installed CLI is older than the docs. Rerun the installer bootstrap instead:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
-That path uses the installer script itself to refresh the package, initialize the repo, create the SQLite cache, and open the UI.
+That path uses the installer script itself to refresh the package, initialize the workspace, create the SQLite cache, and open the UI.
 
 ## Linux, macOS, WSL, xTerm, Bash, Zsh
 
@@ -79,13 +79,12 @@ Use the Unix installer from any shell:
 curl -fsSL https://strata.example.com/install.sh | bash
 ```
 
-Install and initialize the current repo:
+Install and initialize the current workspace:
 
 ```bash
 curl -fsSL https://strata.example.com/install.sh | bash -s -- \
   --org example-org \
-  --init \
-  --project my-project
+  --init
 ```
 
 The installer persists PATH for future shells in `.profile`, `.bashrc`, and `.zshrc` when possible. If this shell was already open before install and `strata` is not found yet, open a new shell or use:
@@ -102,10 +101,10 @@ Install:
 irm https://strata.example.com/install.ps1 | iex
 ```
 
-Install and initialize the current repo:
+Install and initialize the current workspace:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 Ask for a Cursor MCP snippet:
@@ -140,18 +139,18 @@ python -m cxl_strata.cli --init
 
 This is the easiest all-in-one command: it adds STRATA to PATH for future terminals, creates the local SQLite database, indexes local Cursor/Claude/Codex context files, pulls shared docs when possible, and opens the localhost UI.
 
-If `--init` is not recognized, rerun the installer with `-Init -Project my-project`; the installer bootstrap is the compatibility fallback for older local CLI installs.
+If `--init` is not recognized, rerun the installer with `-Init`; the installer bootstrap is the compatibility fallback for older local CLI installs.
 
-When you install with repo initialization, STRATA now runs `strata index` automatically after `strata init`:
+When you install with workspace initialization, STRATA now runs `strata index` automatically after `strata init`:
 
 ```bash
-curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init --project my-project
+curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init
 ```
 
 PowerShell:
 
 ```powershell
-& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init -Project my-project
+& ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
 That creates `.md/workspace_index.sqlite` in the detected workspace/repo root and indexes local agent context files.
@@ -178,7 +177,7 @@ If the UI opens but looks empty, run:
 
 ```bash
 strata index
-strata pull --project my-project
+strata pull
 strata app --open
 ```
 
@@ -209,16 +208,14 @@ PowerShell:
 $env:STRATA_API_KEY = "strata_live_your_personal_token"
 ```
 
-## Initialize A Repo
+## Initialize A Workspace
 
-Run this from the repo root:
+Run this from the workspace root, for example the folder Cursor opens:
 
 ```bash
 strata init \
   --api https://strata.example.com \
   --org example-org \
-  --project my-project \
-  --repo my-repo \
   --actor-name "Your Name" \
   --actor-email you@example.com
 ```
@@ -226,8 +223,10 @@ strata init \
 PowerShell:
 
 ```powershell
-strata init --api https://strata.example.com --org example-org --project my-project --repo my-repo --actor-name "Your Name" --actor-email you@example.com
+strata init --api https://strata.example.com --org example-org --actor-name "Your Name" --actor-email you@example.com
 ```
+
+`--project` is only for choosing a default project for memory-capture commands. `--repo` is only for scoping those notes to one repo. Leave both off for all-project/all-repo workspace sync.
 
 This creates:
 

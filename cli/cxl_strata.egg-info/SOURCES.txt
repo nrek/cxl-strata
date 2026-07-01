@@ -20,6 +20,7 @@ cxl_strata/app/server.py
 cxl_strata/static/app.js
 cxl_strata/static/index.html
 cxl_strata/static/marked.min.js
+cxl_strata/static/strata-logo.png
 cxl_strata/static/style.css
 cxl_strata/workspace_index/__init__.py
 cxl_strata/workspace_index/db.py
@@ -35,4 +36,9 @@ cxl_strata/workspace_index/schema.sql
 cxl_strata/workspace_index/storage.py
 cxl_strata/workspace_index/sync_review.py
 cxl_strata/workspace_index/text_cleanup.py
+tests/test_app_health.py
+tests/test_cli_bootstrap.py
+tests/test_org_profiles.py
+tests/test_pull.py
+tests/test_static_assets.py
 tests/test_workspace_index.py

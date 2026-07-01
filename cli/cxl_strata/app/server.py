@@ -139,6 +139,22 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 )
             return
 
+        if path == "/api/documents/recent-local":
+            qs = parse_qs(parsed.query)
+            try:
+                limit = int((qs.get("limit") or ["200"])[0])
+            except ValueError:
+                limit = 200
+            try:
+                hours = int((qs.get("hours") or ["168"])[0])
+            except ValueError:
+                hours = 168
+            limit = max(1, min(limit, 500))
+            hours = max(1, min(hours, 24 * 30))
+            items = sync_review.scan_recent_locally_changed(hours=hours, limit=limit)
+            _json_response(self, {"items": items, "hours": hours})
+            return
+
         if path == "/api/doc":
             qs = parse_qs(parsed.query)
             doc_path = (qs.get("path") or [None])[0]

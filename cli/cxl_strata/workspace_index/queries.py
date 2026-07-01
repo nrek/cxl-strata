@@ -184,6 +184,19 @@ def knowledge_recent(
     return items
 
 
+def list_recent_local_files(
+    conn: sqlite3.Connection,
+    *,
+    hours: int = 168,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Locally changed on-disk files within the rolling window, newest first."""
+    from .sync_review import scan_recent_locally_changed
+
+    _ = conn  # caller may pass an open connection; scan uses filesystem mtimes
+    return scan_recent_locally_changed(hours=hours, limit=limit)
+
+
 def knowledge_search(
     conn: sqlite3.Connection,
     *,
@@ -238,7 +251,7 @@ def knowledge_get(conn: sqlite3.Connection, path: str) -> dict[str, Any] | None:
                 out[key] = json.loads(out[key])
             except json.JSONDecodeError:
                 pass
-    return out
+    return _with_sync_status(out)
 
 
 def knowledge_blueprint(

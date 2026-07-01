@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from cxl_strata.workspace_index import db, indexer, nl_query
+from cxl_strata.workspace_index import db, indexer, nl_query, queries, sync_review
 from cxl_strata.workspace_index.paths import set_workspace_root
 
 
@@ -114,6 +114,77 @@ def test_search_results_include_sync_status_for_local_documents(workspace: Path)
         row = next(r for r in changed["results"] if r["path"] == path)
         assert row["sync_status"] == "changed"
         assert row["syncable"] is True
+
+
+def test_knowledge_get_includes_sync_status(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        doc = queries.knowledge_get(conn, path)
+    assert doc is not None
+    assert doc["sync_status"] == "not_shared"
+    assert doc["syncable"] is True
+
+
+def test_list_recent_local_files_orders_newest_first(workspace: Path) -> None:
+    stats = indexer.index_all(prune=False)
+    assert stats["indexed"] >= 1
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        items = queries.list_recent_local_files(conn, limit=10)
+
+    assert items
+    assert items[0]["path"].endswith("2026-06-30T12-00-00Z.md")
+    assert "sync_status" in items[0]
+
+
+def test_scan_recent_locally_changed_keeps_recently_shared_files(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    stale = workspace / ".md" / "handoff" / "test-proj" / "2026-01-01T12-00-00Z.md"
+    stale.write_text("# Handoff — stale\n", encoding="utf-8")
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).timestamp()
+    os.utime(stale, (past, past))
+    indexer.index_all(prune=False)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+
+    items = sync_review.scan_recent_locally_changed(hours=168, limit=50)
+    paths = {item["path"] for item in items}
+    shared = next(item for item in items if item["path"] == path)
+
+    assert path in paths
+    assert shared["share_status"] == "shared"
+    assert shared["local_status"] == "indexed"
+    assert ".md/handoff/test-proj/2026-01-01T12-00-00Z.md" not in paths
+
+
+def test_scan_recent_locally_changed_excludes_stale_files(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+
+    stale = workspace / ".md" / "handoff" / "test-proj" / "2026-01-01T12-00-00Z.md"
+    stale.write_text("# Handoff — stale\n", encoding="utf-8")
+    past = (datetime.now(timezone.utc) - timedelta(days=30)).timestamp()
+    os.utime(stale, (past, past))
+    indexer.index_all(prune=False)
+
+    recent_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    stale_path = ".md/handoff/test-proj/2026-01-01T12-00-00Z.md"
+    items = sync_review.scan_recent_locally_changed(hours=168, limit=50)
+    paths = {item["path"] for item in items}
+
+    assert recent_path in paths
+    assert stale_path not in paths
 
 
 def test_project_timeline_events_include_sync_status(workspace: Path) -> None:

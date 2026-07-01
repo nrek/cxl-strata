@@ -73,38 +73,60 @@
           </section>
         </div>
 
-        <section id="sync-local-section" class="sync-section">
-          <div class="sync-head">
-            <div>
-              <h2>Upload Local to STRATA API</h2>
-              <p class="sync-subtitle">Sync unsent or changed local docs so teammates can search them centrally.</p>
-            </div>
-            <div class="sync-controls">
-              <select id="sync-filter-kind" class="strata-select" aria-label="Kind filter">
-                <option value="">All Types</option>
-                <option value="handoff">handoff</option>
-                <option value="blueprint">blueprint</option>
-                <option value="plan">plan</option>
-                <option value="rule">rule</option>
-              </select>
-              <button type="button" id="sync-all-btn" class="icon-btn" title="Upload all" aria-label="Upload all">
-                <i class="fa-solid fa-upload" aria-hidden="true"></i>
-              </button>
-              <button type="button" id="sync-refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh">
-                <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
-              </button>
-            </div>
-          </div>
-          <div id="sync-local-table" class="sync-table"></div>
-          <nav id="sync-pagination" class="sync-pagination hidden" aria-label="Sync Local pages">
-            <button type="button" id="sync-prev" class="icon-btn" aria-label="Previous page">
-              <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+        <section id="home-files-section" class="home-tabs-section">
+          <nav class="home-tabs" role="tablist" aria-label="Local files">
+            <button type="button" role="tab" id="tab-recent" class="home-tab active" aria-selected="true" aria-controls="panel-recent">
+              Recent Locally Changed Files
             </button>
-            <span id="sync-page-info" class="sync-page-info"></span>
-            <button type="button" id="sync-next" class="icon-btn" aria-label="Next page">
-              <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+            <button type="button" role="tab" id="tab-share" class="home-tab" aria-selected="false" aria-controls="panel-share">
+              Share to Team
             </button>
           </nav>
+
+          <div id="panel-recent" role="tabpanel" class="home-tab-panel" aria-labelledby="tab-recent">
+            <p class="sync-subtitle recent-tab-subtitle">Files you edited or shared locally in the last 7 days — sharing does not remove them from this list.</p>
+            <div id="recent-local-table" class="sync-table"></div>
+            <nav id="recent-pagination" class="sync-pagination hidden" aria-label="Recent locally changed files pages">
+              <button type="button" id="recent-prev" class="icon-btn" aria-label="Previous page">
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+              </button>
+              <span id="recent-page-info" class="sync-page-info"></span>
+              <button type="button" id="recent-next" class="icon-btn" aria-label="Next page">
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </button>
+            </nav>
+          </div>
+
+          <div id="panel-share" role="tabpanel" class="home-tab-panel hidden" aria-labelledby="tab-share">
+            <div class="sync-head">
+              <p class="sync-subtitle">Sync unsent or changed local docs so teammates can search them centrally.</p>
+              <div class="sync-controls">
+                <select id="sync-filter-kind" class="strata-select" aria-label="Kind filter">
+                  <option value="">All Types</option>
+                  <option value="handoff">handoff</option>
+                  <option value="blueprint">blueprint</option>
+                  <option value="plan">plan</option>
+                  <option value="rule">rule</option>
+                </select>
+                <button type="button" id="sync-all-btn" class="icon-btn" title="Share all pending local files with your team" aria-label="Share all pending">
+                  <i class="fa-solid fa-upload" aria-hidden="true"></i>
+                </button>
+                <button type="button" id="sync-refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh">
+                  <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div id="sync-local-table" class="sync-table"></div>
+            <nav id="sync-pagination" class="sync-pagination hidden" aria-label="Share to Team pages">
+              <button type="button" id="sync-prev" class="icon-btn" aria-label="Previous page">
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+              </button>
+              <span id="sync-page-info" class="sync-page-info"></span>
+              <button type="button" id="sync-next" class="icon-btn" aria-label="Next page">
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </button>
+            </nav>
+          </div>
         </section>
       </div>
     </div>
@@ -159,9 +181,16 @@
           <h2 id="doc-title"></h2>
           <p id="doc-subtitle" class="doc-subtitle"></p>
         </div>
-        <button type="button" id="doc-close" class="icon-btn" aria-label="Close">
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-        </button>
+        <div class="doc-header-actions">
+          <div id="doc-actions" class="doc-actions hidden">
+            <button type="button" id="doc-share-btn" class="cta-btn cta-share">Share to Team</button>
+            <span class="action-sep" aria-hidden="true">|</span>
+            <button type="button" id="doc-index-btn" class="cta-btn cta-index">Re-index Locally</button>
+          </div>
+          <button type="button" id="doc-close" class="icon-btn" aria-label="Close">
+            <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+          </button>
+        </div>
       </header>
       <div id="doc-body" class="markdown-body"></div>
     </article>

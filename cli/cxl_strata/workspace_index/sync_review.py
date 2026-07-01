@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from . import db
 from .indexer import discover_files, index_file
-from .paths import WORKSPACE_ROOT
+from . import paths
+from .queries import _with_sync_status
 
 
 def _mtime_iso(path: Path) -> str:
@@ -34,6 +35,39 @@ def _project_from_path(rel: str) -> str | None:
     if len(parts) >= 3 and parts[0] == ".md" and parts[1] == "blueprints":
         return parts[2].replace(".md", "")
     return None
+
+
+def _local_share_status(
+    db_row: dict[str, Any] | None,
+    *,
+    body_hash: str | None = None,
+) -> tuple[str, str]:
+    local_status = "indexed"
+    share_status = "not shared"
+    if db_row is None:
+        local_status = "new"
+    elif body_hash is not None and db_row.get("body_hash") != body_hash:
+        local_status = "changed"
+    elif db_row.get("storage") == "db_only":
+        local_status = "db_only"
+
+    if db_row and db_row.get("remote_id"):
+        share_status = "shared"
+        if local_status == "changed":
+            share_status = "remote changed"
+
+    return local_status, share_status
+
+
+def _activity_iso(mtime: str, db_row: dict[str, Any] | None) -> str:
+    """Latest local edit or share/index activity for recency sorting."""
+    candidates = [mtime]
+    if db_row:
+        for key in ("synced_at", "shared_at", "updated_at"):
+            val = db_row.get(key)
+            if val:
+                candidates.append(str(val))
+    return max(candidates)
 
 
 def scan_pending(
@@ -61,7 +95,8 @@ def scan_pending(
     for file_kind, path in discover_files():
         if kind and file_kind != kind:
             continue
-        rel = path.relative_to(WORKSPACE_ROOT).as_posix()
+        rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
+        db_row = indexed.get(rel)
         if project:
             doc_project = db_row.get("project") if db_row else _project_from_path(rel)
             if doc_project != project:
@@ -72,20 +107,7 @@ def scan_pending(
         except OSError:
             continue
 
-        db_row = indexed.get(rel)
-        local_status = "indexed"
-        share_status = "not shared"
-        if db_row is None:
-            local_status = "new"
-        elif db_row.get("body_hash") != body_hash:
-            local_status = "changed"
-        elif db_row.get("storage") == "db_only":
-            local_status = "db_only"
-
-        if db_row and db_row.get("remote_id"):
-            share_status = "shared"
-            if local_status == "changed":
-                share_status = "remote changed"
+        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
 
         if not show_all and local_status == "indexed" and share_status == "shared":
             continue
@@ -100,7 +122,7 @@ def scan_pending(
             {
                 "path": rel,
                 "kind": file_kind,
-                "project": db_row.get("project") if db_row else None,
+                "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
                 "updated_at": _mtime_iso(path),
                 "local_status": local_status,
                 "share_status": share_status,
@@ -113,8 +135,76 @@ def scan_pending(
     return rows
 
 
+def scan_recent_locally_changed(
+    *,
+    hours: int = 168,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """On-disk files with recent local edit or share activity, newest first."""
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat().replace(
+        "+00:00", "Z"
+    )
+    rows: list[dict[str, Any]] = []
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        indexed = {
+            r["path"]: dict(r)
+            for r in conn.execute(
+                """
+                SELECT path, kind, project, title, created_at, origin,
+                       remote_id, shared_at, synced_at, updated_at, body_hash,
+                       storage, substr(body, 1, 180) AS excerpt
+                FROM documents
+                """
+            ).fetchall()
+        }
+
+    for file_kind, path in discover_files():
+        rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
+        try:
+            mtime = _mtime_iso(path)
+            body_hash = _file_hash(path)
+        except OSError:
+            continue
+
+        db_row = indexed.get(rel)
+        activity_at = _activity_iso(mtime, db_row)
+        if activity_at < since:
+            continue
+
+        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
+        excerpt = db_row.get("excerpt") if db_row else ""
+        if not excerpt:
+            try:
+                excerpt = _preview(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                excerpt = ""
+
+        item = {
+            "path": rel,
+            "kind": file_kind,
+            "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
+            "title": db_row.get("title") if db_row else None,
+            "updated_at": activity_at,
+            "mtime": mtime,
+            "created_at": (db_row.get("created_at") if db_row else None) or mtime,
+            "origin": (db_row.get("origin") if db_row else None) or "local",
+            "remote_id": db_row.get("remote_id") if db_row else None,
+            "shared_at": db_row.get("shared_at") if db_row else None,
+            "synced_at": db_row.get("synced_at") if db_row else None,
+            "local_status": local_status,
+            "share_status": share_status,
+            "excerpt": excerpt,
+        }
+        rows.append(_with_sync_status(item))
+
+    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    return rows[:limit]
+
+
 def index_path_only(path: str) -> bool:
-    fp = WORKSPACE_ROOT / path.replace("\\", "/")
+    fp = paths.WORKSPACE_ROOT / path.replace("\\", "/")
     if not fp.is_file():
         return False
     with db.connect() as conn:
@@ -122,8 +212,8 @@ def index_path_only(path: str) -> bool:
         return index_file(conn, fp.resolve())
 
 
-def index_paths(paths: list[str]) -> dict[str, int]:
+def index_paths(file_paths: list[str]) -> dict[str, int]:
     from .indexer import index_paths as _index_paths
 
-    resolved = [WORKSPACE_ROOT / p.replace("\\", "/") for p in paths]
+    resolved = [paths.WORKSPACE_ROOT / p.replace("\\", "/") for p in file_paths]
     return _index_paths(resolved)

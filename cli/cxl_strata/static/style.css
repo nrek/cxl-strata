@@ -523,7 +523,8 @@ button:hover { filter: brightness(1.08); }
 
 .card-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem;
   margin-top: 0.55rem;
 }
 
@@ -556,6 +557,74 @@ dialog header {
   padding: 1rem 1.25rem;
   border-bottom: 1px solid var(--border);
   background: transparent;
+}
+
+.doc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.action-sep {
+  color: var(--border);
+  font-size: 0.82rem;
+  user-select: none;
+  line-height: 1;
+}
+
+.cta-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.38rem 0.62rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.cta-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.cta-share {
+  color: #dbeafe;
+  background: rgba(59, 130, 246, 0.14);
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.cta-share:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.24);
+  border-color: rgba(96, 165, 250, 0.75);
+}
+
+.cta-index {
+  color: #d1fae5;
+  background: rgba(16, 185, 129, 0.12);
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+.cta-index:hover:not(:disabled) {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(52, 211, 153, 0.65);
+}
+
+.cta-btn.hidden,
+.doc-actions.hidden {
+  display: none;
 }
 
 .doc-head-text {
@@ -762,6 +831,62 @@ dialog h2 {
   width: 100%;
 }
 
+.home-tabs-section {
+  width: 100%;
+}
+
+.home-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.home-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  padding: 0.55rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.home-tab:hover {
+  color: var(--text);
+}
+
+.home-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.home-tab-panel.hidden {
+  display: none;
+}
+
+.recent-row {
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.recent-row:hover,
+.recent-row:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.recent-tab-subtitle {
+  margin: 0 0 0.75rem;
+}
+
+.recent-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .sync-table {
   display: flex;
   flex-direction: column;
@@ -837,7 +962,8 @@ dialog h2 {
 
 .sync-actions {
   display: flex;
-  gap: 0.4rem;
+  align-items: center;
+  gap: 0.35rem;
   margin-top: 0.45rem;
 }
 

@@ -18,6 +18,18 @@ const EXAMPLES = [
 ];
 
 const SYNC_PAGE_SIZE = 6;
+const RECENT_PAGE_SIZE = 6;
+
+const ACTION = {
+  shareLabel: "Share to Team",
+  shareBusy: "Sharing…",
+  shareTooltip:
+    "Upload this file to the STRATA API so teammates can search and read it centrally.",
+  indexLabel: "Re-index Locally",
+  indexBusy: "Indexing…",
+  indexTooltip:
+    "Re-read this file from disk and refresh your local SQLite index without uploading.",
+};
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -31,6 +43,10 @@ const state = {
   apiOnline: false,
   syncItems: [],
   syncPage: 0,
+  recentItems: [],
+  recentPage: 0,
+  homeTab: "recent",
+  activeDocPath: null,
   hasSearched: false,
   remotePending: 0,
 };
@@ -358,6 +374,73 @@ function renderMeta(data) {
   el.classList.toggle("hidden", !parts.length);
 }
 
+function isLocalItem(item) {
+  return (item.source || item.origin || "local") === "local";
+}
+
+function canShareItem(item) {
+  return (
+    Boolean(item?.path) &&
+    isLocalItem(item) &&
+    (item.syncable === true ||
+      item.sync_status === "not_shared" ||
+      item.sync_status === "changed")
+  );
+}
+
+function shareButtonHtml(path, className = "result-share-btn") {
+  return `<button type="button" class="cta-btn cta-share ${className}" data-path="${esc(path)}" title="${esc(ACTION.shareTooltip)}">${ACTION.shareLabel}</button>`;
+}
+
+function indexButtonHtml(path, className = "result-index-btn") {
+  return `<button type="button" class="cta-btn cta-index ${className}" data-path="${esc(path)}" title="${esc(ACTION.indexTooltip)}">${ACTION.indexLabel}</button>`;
+}
+
+function localActionButtonsHtml(item, { shareClass = "result-share-btn", indexClass = "result-index-btn" } = {}) {
+  const path = item.path;
+  if (!path || !isLocalItem(item)) return "";
+
+  const share = canShareItem(item) ? shareButtonHtml(path, shareClass) : "";
+  const index = indexButtonHtml(path, indexClass);
+  const sep = share ? `<span class="action-sep" aria-hidden="true">|</span>` : "";
+  return `<div class="card-actions">${share}${sep}${index}</div>`;
+}
+
+function setActionBusy(btn, busyLabel) {
+  if (!btn) return;
+  btn.disabled = true;
+  btn.dataset.idleLabel = btn.textContent;
+  btn.textContent = busyLabel;
+}
+
+function setActionIdle(btn, idleLabel) {
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = idleLabel || btn.dataset.idleLabel || btn.textContent;
+}
+
+function updateDocModalActions(doc, path) {
+  const actions = $("#doc-actions");
+  const shareBtn = $("#doc-share-btn");
+  const indexBtn = $("#doc-index-btn");
+  const sep = actions?.querySelector(".action-sep");
+  if (!actions || !shareBtn || !indexBtn) return;
+
+  state.activeDocPath = path;
+  const local = isLocalItem(doc);
+  const showShare = local && canShareItem(doc);
+
+  actions.classList.toggle("hidden", !local);
+  shareBtn.classList.toggle("hidden", !showShare);
+  sep?.classList.toggle("hidden", !showShare);
+  indexBtn.classList.toggle("hidden", !local);
+
+  shareBtn.title = ACTION.shareTooltip;
+  indexBtn.title = ACTION.indexTooltip;
+  setActionIdle(shareBtn, ACTION.shareLabel);
+  setActionIdle(indexBtn, ACTION.indexLabel);
+}
+
 function cardHtml(item) {
   const type = item.type || item.kind || "search";
   const path = item.path || "";
@@ -367,9 +450,7 @@ function cardHtml(item) {
   const excerpt = stripMarkdown(item.excerpt || item.snippet || item.overview || item.body || "");
   const source = item.source || item.origin || "local";
   const author = item.author_name || "";
-  const syncButton = canSyncResult(item)
-    ? `<button type="button" class="ghost-btn result-sync-btn" data-path="${esc(path)}">Sync</button>`
-    : "";
+  const actionButtons = localActionButtonsHtml(item);
 
   return `
     <article class="card" data-path="${esc(path)}">
@@ -380,17 +461,12 @@ function cardHtml(item) {
       </div>
       <div class="card-meta">${esc(project)} · ${esc(fmtDate(at))}${author ? ` · ${esc(author)}` : ""}</div>
       ${excerpt ? `<p class="card-excerpt">${esc(excerpt)}</p>` : ""}
-      ${syncButton ? `<div class="card-actions">${syncButton}</div>` : ""}
+      ${actionButtons}
     </article>`;
 }
 
 function canSyncResult(item) {
-  const source = item.source || item.origin || "local";
-  return (
-    Boolean(item.path) &&
-    source === "local" &&
-    (item.syncable === true || item.sync_status === "not_shared" || item.sync_status === "changed")
-  );
+  return canShareItem(item);
 }
 
 function renderTimeline(events) {
@@ -446,14 +522,20 @@ function renderResults(data) {
 
   out.querySelectorAll(".card[data-path]").forEach((el) => {
     el.addEventListener("click", (event) => {
-      if (event.target.closest(".result-sync-btn")) return;
+      if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn")) return;
       openDoc(el.dataset.path);
     });
   });
-  out.querySelectorAll(".result-sync-btn").forEach((el) => {
+  out.querySelectorAll(".result-share-btn, .result-sync-btn").forEach((el) => {
     el.addEventListener("click", (event) => {
       event.stopPropagation();
-      syncSearchResult(el.dataset.path);
+      shareSearchResult(el.dataset.path);
+    });
+  });
+  out.querySelectorAll(".result-index-btn").forEach((el) => {
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      indexSearchResult(el.dataset.path);
     });
   });
 }
@@ -464,6 +546,7 @@ async function openDoc(path) {
   $("#doc-title").textContent = displayDocTitle(doc, path);
   $("#doc-subtitle").textContent = path.replace(/^\.md\//, "");
   $("#doc-body").innerHTML = renderMarkdown(prepareBodyForDisplay(doc.body));
+  updateDocModalActions(doc, path);
   $("#doc-modal").showModal();
 }
 
@@ -472,13 +555,21 @@ function cssEscape(value) {
   return String(value).replace(/["\\]/g, "\\$&");
 }
 
-async function syncSearchResult(path) {
-  if (!path) return;
-  const btn = document.querySelector(`.result-sync-btn[data-path="${cssEscape(path)}"]`);
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Syncing…";
+async function refreshActiveProjectResults() {
+  const q = $("#scoped-q").value.trim();
+  if (q) {
+    await runScopedSearch(q);
+  } else if (state.activeProject) {
+    await browseProject(state.activeProject);
   }
+}
+
+async function shareSearchResult(path) {
+  if (!path) return;
+  const btn = document.querySelector(
+    `.result-share-btn[data-path="${cssEscape(path)}"], .result-sync-btn[data-path="${cssEscape(path)}"]`
+  );
+  if (btn) setActionBusy(btn, ACTION.shareBusy);
 
   const result = await api("/api/sync/upload", {
     method: "POST",
@@ -487,21 +578,58 @@ async function syncSearchResult(path) {
   });
   if (result.failed?.length) {
     alert(result.failed.map((f) => `${f.path}: ${f.error}`).join("\n"));
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Sync";
-    }
+    if (btn) setActionIdle(btn, ACTION.shareLabel);
     return;
   }
 
-  const q = $("#scoped-q").value.trim();
-  if (q) {
-    await runScopedSearch(q);
-  } else if (state.activeProject) {
-    await browseProject(state.activeProject);
-  }
+  await refreshActiveProjectResults();
   await loadSyncLocal();
+  await loadRecentLocal({ resetPage: false });
   await refreshRemotePending();
+
+  if (state.activeDocPath === path && $("#doc-modal")?.open) {
+    const doc = await api(`/api/doc?path=${encodeURIComponent(path)}`);
+    updateDocModalActions(doc, path);
+  }
+}
+
+async function syncSearchResult(path) {
+  return shareSearchResult(path);
+}
+
+async function indexSearchResult(path) {
+  if (!path) return;
+  const btn = document.querySelector(`.result-index-btn[data-path="${cssEscape(path)}"]`);
+  if (btn) setActionBusy(btn, ACTION.indexBusy);
+  await indexPaths([path]);
+  if (btn) setActionIdle(btn, ACTION.indexLabel);
+  await refreshActiveProjectResults();
+  await loadRecentLocal({ resetPage: false });
+}
+
+async function shareDocFromModal() {
+  const path = state.activeDocPath;
+  if (!path) return;
+  const btn = $("#doc-share-btn");
+  setActionBusy(btn, ACTION.shareBusy);
+  try {
+    await shareSearchResult(path);
+  } finally {
+    setActionIdle(btn, ACTION.shareLabel);
+  }
+}
+
+async function indexDocFromModal() {
+  const path = state.activeDocPath;
+  if (!path) return;
+  const btn = $("#doc-index-btn");
+  setActionBusy(btn, ACTION.indexBusy);
+  try {
+    await indexPaths([path]);
+    await loadRecentLocal({ resetPage: false });
+  } finally {
+    setActionIdle(btn, ACTION.indexLabel);
+  }
 }
 
 async function runScopedSearch(q) {
@@ -560,45 +688,163 @@ function syncRowHtml(item) {
       </div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
       <div class="sync-actions">
-        <button type="button" class="ghost-btn sync-one" data-path="${esc(item.path)}">Sync</button>
-        <button type="button" class="ghost-btn index-one" data-path="${esc(item.path)}">Index Only</button>
+        ${shareButtonHtml(item.path, "sync-one")}
+        <span class="action-sep" aria-hidden="true">|</span>
+        ${indexButtonHtml(item.path, "index-one")}
       </div>
     </article>`;
 }
 
-function renderSyncPage() {
-  const el = $("#sync-local-table");
-  const pager = $("#sync-pagination");
-  const items = state.syncItems;
+function recentRowHtml(item) {
+  const title = item.title || titleFromPath(item.path);
+  const localStatus = item.local_status || "indexed";
+  const shareStatus = item.share_status || (item.sync_status === "shared" ? "shared" : "not shared");
+  return `
+    <article class="sync-row recent-row" data-path="${esc(item.path)}" data-project="${esc(item.project || "")}" role="button" tabindex="0">
+      <div class="sync-row-head">
+        <span class="badge badge-${esc(item.kind)}">${esc(item.kind)}</span>
+        <span class="recent-title">${esc(title)}</span>
+      </div>
+      <div class="sync-meta">
+        ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)} · ${esc(fmtDate(item.updated_at || item.created_at))}
+      </div>
+      <div class="sync-path">${esc(item.path)}</div>
+      ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
+    </article>`;
+}
+
+function renderPagedList({
+  items,
+  page,
+  pageSize,
+  tableId,
+  pagerId,
+  pageInfoId,
+  prevId,
+  nextId,
+  rowHtml,
+  emptyMessage,
+  onPageChange,
+  onRowActivate,
+}) {
+  const el = $(tableId);
+  const pager = $(pagerId);
 
   if (!items.length) {
-    el.innerHTML = '<p class="empty">All local artifacts are indexed and shared.</p>';
+    el.innerHTML = `<p class="empty">${emptyMessage}</p>`;
     pager?.classList.add("hidden");
     return;
   }
 
-  const totalPages = Math.max(1, Math.ceil(items.length / SYNC_PAGE_SIZE));
-  if (state.syncPage >= totalPages) state.syncPage = totalPages - 1;
-  if (state.syncPage < 0) state.syncPage = 0;
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  let currentPage = page;
+  if (currentPage >= totalPages) currentPage = totalPages - 1;
+  if (currentPage < 0) currentPage = 0;
+  if (currentPage !== page) onPageChange(currentPage);
 
-  const start = state.syncPage * SYNC_PAGE_SIZE;
-  const pageItems = items.slice(start, start + SYNC_PAGE_SIZE);
+  const start = currentPage * pageSize;
+  const pageItems = items.slice(start, start + pageSize);
 
-  el.innerHTML = pageItems.map(syncRowHtml).join("");
-  el.querySelectorAll(".sync-one").forEach((btn) => {
-    btn.addEventListener("click", () => syncPaths([btn.dataset.path]));
-  });
-  el.querySelectorAll(".index-one").forEach((btn) => {
-    btn.addEventListener("click", () => indexPaths([btn.dataset.path]));
-  });
+  el.innerHTML = pageItems.map(rowHtml).join("");
+
+  if (onRowActivate) {
+    el.querySelectorAll(".recent-row").forEach((row) => {
+      const activate = () => onRowActivate(row.dataset);
+      row.addEventListener("click", activate);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activate();
+        }
+      });
+    });
+  }
 
   if (pager) {
-    const showPager = items.length > SYNC_PAGE_SIZE;
+    const showPager = items.length > pageSize;
     pager.classList.toggle("hidden", !showPager);
-    $("#sync-page-info").textContent = `${state.syncPage + 1} / ${totalPages}`;
-    $("#sync-prev").disabled = state.syncPage <= 0;
-    $("#sync-next").disabled = state.syncPage >= totalPages - 1;
+    $(pageInfoId).textContent = `${currentPage + 1} / ${totalPages}`;
+    $(prevId).disabled = currentPage <= 0;
+    $(nextId).disabled = currentPage >= totalPages - 1;
   }
+}
+
+function renderRecentPage() {
+  renderPagedList({
+    items: state.recentItems,
+    page: state.recentPage,
+    pageSize: RECENT_PAGE_SIZE,
+    tableId: "#recent-local-table",
+    pagerId: "#recent-pagination",
+    pageInfoId: "#recent-page-info",
+    prevId: "#recent-prev",
+    nextId: "#recent-next",
+    rowHtml: recentRowHtml,
+    emptyMessage: "No local edits or shares in the last 7 days.",
+    onPageChange: (page) => {
+      state.recentPage = page;
+    },
+    onRowActivate: (dataset) => openRecentFile(dataset.path, dataset.project),
+  });
+}
+
+async function openRecentFile(path, project) {
+  if (!path) return;
+  if (project) {
+    enterProject(project, { browse: true });
+  }
+  await openDoc(path);
+}
+
+function switchHomeTab(tab) {
+  state.homeTab = tab;
+  const isRecent = tab === "recent";
+  $("#tab-recent")?.classList.toggle("active", isRecent);
+  $("#tab-share")?.classList.toggle("active", !isRecent);
+  $("#tab-recent")?.setAttribute("aria-selected", isRecent ? "true" : "false");
+  $("#tab-share")?.setAttribute("aria-selected", isRecent ? "false" : "true");
+  $("#panel-recent")?.classList.toggle("hidden", !isRecent);
+  $("#panel-share")?.classList.toggle("hidden", isRecent);
+  if (isRecent) loadRecentLocal({ resetPage: false });
+}
+
+async function loadRecentLocal({ resetPage = true } = {}) {
+  const data = await api("/api/documents/recent-local");
+  state.recentItems = data.items || [];
+  if (resetPage) state.recentPage = 0;
+  renderRecentPage();
+}
+
+function renderSyncPage() {
+  const el = $("#sync-local-table");
+  renderPagedList({
+    items: state.syncItems,
+    page: state.syncPage,
+    pageSize: SYNC_PAGE_SIZE,
+    tableId: "#sync-local-table",
+    pagerId: "#sync-pagination",
+    pageInfoId: "#sync-page-info",
+    prevId: "#sync-prev",
+    nextId: "#sync-next",
+    rowHtml: syncRowHtml,
+    emptyMessage: "All local artifacts are indexed and shared.",
+    onPageChange: (page) => {
+      state.syncPage = page;
+    },
+  });
+
+  el.querySelectorAll(".sync-one, .result-share-btn").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      shareSearchResult(btn.dataset.path);
+    });
+  });
+  el.querySelectorAll(".index-one, .result-index-btn").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      indexSearchResult(btn.dataset.path);
+    });
+  });
 }
 
 async function loadSyncLocal() {
@@ -621,6 +867,7 @@ async function syncPaths(paths) {
     alert(result.failed.map((f) => `${f.path}: ${f.error}`).join("\n"));
   }
   await loadSyncLocal();
+  await loadRecentLocal({ resetPage: false });
 }
 
 async function indexPaths(paths) {
@@ -630,6 +877,7 @@ async function indexPaths(paths) {
     body: JSON.stringify({ paths }),
   });
   await loadSyncLocal();
+  await loadRecentLocal({ resetPage: false });
 }
 
 function renderApiStatus(cfg) {
@@ -704,7 +952,7 @@ async function refreshDashboard() {
   state.remotePending = remotePending.pending || 0;
   renderStatsLine(stats, remotePending);
   renderProjectPanels(summary);
-  await loadSyncLocal();
+  await Promise.all([loadRecentLocal(), loadSyncLocal()]);
 }
 
 function handleHomeSearch(rawQ) {
@@ -757,7 +1005,10 @@ async function init() {
 
   renderProjectPanels(summary);
   renderSidebar();
-  await loadSyncLocal();
+  await Promise.all([loadRecentLocal(), loadSyncLocal()]);
+
+  $("#tab-recent")?.addEventListener("click", () => switchHomeTab("recent"));
+  $("#tab-share")?.addEventListener("click", () => switchHomeTab("share"));
 
   $("#sync-refresh-btn")?.addEventListener("click", () => loadSyncLocal());
   $("#sync-filter-kind")?.addEventListener("change", () => loadSyncLocal());
@@ -777,6 +1028,22 @@ async function init() {
       renderSyncPage();
     }
   });
+
+  $("#recent-prev")?.addEventListener("click", () => {
+    if (state.recentPage > 0) {
+      state.recentPage -= 1;
+      renderRecentPage();
+    }
+  });
+  $("#recent-next")?.addEventListener("click", () => {
+    const totalPages = Math.ceil(state.recentItems.length / RECENT_PAGE_SIZE);
+    if (state.recentPage < totalPages - 1) {
+      state.recentPage += 1;
+      renderRecentPage();
+    }
+  });
+
+  switchHomeTab("recent");
 
   const chips = $("#example-chips");
   chips.innerHTML = EXAMPLES.map(
@@ -807,6 +1074,8 @@ async function init() {
   $("#home-btn").addEventListener("click", goHome);
 
   $("#doc-close").addEventListener("click", () => $("#doc-modal").close());
+  $("#doc-share-btn")?.addEventListener("click", () => shareDocFromModal());
+  $("#doc-index-btn")?.addEventListener("click", () => indexDocFromModal());
   $("#doc-modal").addEventListener("click", (e) => {
     if (e.target === $("#doc-modal")) $("#doc-modal").close();
   });

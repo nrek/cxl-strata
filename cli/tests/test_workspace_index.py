@@ -55,13 +55,18 @@ def test_indexes_cursor_claude_and_codex_instruction_files(tmp_path: Path) -> No
         "# Cursor STRATA rule\n",
         encoding="utf-8",
     )
+    (tmp_path / ".cursor" / "skills" / "strata").mkdir(parents=True)
+    (tmp_path / ".cursor" / "skills" / "strata" / "SKILL.md").write_text(
+        "# Cursor STRATA skill\n",
+        encoding="utf-8",
+    )
     (tmp_path / "CLAUDE.md").write_text("# Claude instructions\n", encoding="utf-8")
     (tmp_path / "AGENTS.md").write_text("# Codex instructions\n", encoding="utf-8")
     set_workspace_root(tmp_path)
 
     stats = indexer.index_all(prune=False)
 
-    assert stats["indexed"] == 3
+    assert stats["indexed"] == 4
     with db.connect() as conn:
         db.init_db(conn)
         rows = conn.execute(
@@ -69,6 +74,7 @@ def test_indexes_cursor_claude_and_codex_instruction_files(tmp_path: Path) -> No
         ).fetchall()
     assert [(row["path"], row["kind"]) for row in rows] == [
         (".cursor/rules/strata-memory.mdc", "rule"),
+        (".cursor/skills/strata/SKILL.md", "rule"),
         ("AGENTS.md", "rule"),
         ("CLAUDE.md", "rule"),
     ]

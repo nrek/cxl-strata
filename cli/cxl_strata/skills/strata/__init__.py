@@ -1,0 +1,1 @@
+"""STRATA Cursor skill package."""

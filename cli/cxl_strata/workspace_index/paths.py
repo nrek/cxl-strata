@@ -12,6 +12,7 @@ BLUEPRINT_GLOB = ".md/blueprints/*.md"
 PLAN_GLOB = ".cursor/plans/**/*.md"
 PLAN_GLOB_MDC = ".cursor/plans/**/*.plan.md"
 RULE_GLOB = ".cursor/rules/*.mdc"
+CURSOR_SKILL_GLOB = ".cursor/skills/**/SKILL.md"
 
 PLAN_STATUSES = frozenset({"draft", "backlog", "in_queue", "in_progress", "done"})
 PLAN_STATUS_FOLDERS = PLAN_STATUSES

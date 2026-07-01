@@ -94,7 +94,7 @@ def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) ->
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
-    cursor_rule.install_cursor_rule()
+    cursor_rule.install_cursor_integration()
 
     result = setup_status()
     checks = {item["id"]: item for item in result["checks"]}
@@ -103,7 +103,7 @@ def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) ->
     assert checks["config"]["ok"] is True
     assert checks["api_key"]["ok"] is True
     assert checks["sqlite"]["ok"] is True
-    assert checks["cursor_rule"]["ok"] is True
+    assert checks["cursor_skill"]["ok"] is True
 
 
 def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkeypatch) -> None:
@@ -122,7 +122,7 @@ def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkey
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
-    cursor_rule.install_cursor_rule()
+    cursor_rule.install_cursor_integration()
 
     result = setup_status()
     checks = {item["id"]: item for item in result["checks"]}
@@ -131,6 +131,61 @@ def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkey
     assert checks["config"]["ok"] is True
     assert checks["config"]["label"] == "STRATA config"
     assert checks["config"]["path"] == str(local_store.USER_GLOBAL_FILE)
+
+
+def test_setup_status_checks_cursor_skill_at_workspace_root(tmp_path: Path, monkeypatch) -> None:
+    app_cwd = tmp_path / "cxl-strata" / "cli"
+    app_cwd.mkdir(parents=True)
+    monkeypatch.chdir(app_cwd)
+    monkeypatch.setenv("STRATA_API_KEY", "strata_live_test")
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    set_workspace_root(tmp_path)
+    local_store.USER_GLOBAL_FILE.write_text(
+        json.dumps(
+            {
+                "api_base_url": "https://strata.example.com",
+                "organization_slug": "example-org",
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths.DB_PATH.parent.mkdir(parents=True)
+    paths.DB_PATH.write_text("", encoding="utf-8")
+    cursor_rule.install_cursor_skill(dest=tmp_path / cursor_rule.SKILL_DEST)
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is True
+    assert checks["cursor_skill"]["ok"] is True
+    assert checks["cursor_skill"]["path"] == str(tmp_path / cursor_rule.SKILL_DEST)
+
+
+def test_setup_status_does_not_require_cursor_skill_for_non_cursor_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("STRATA_API_KEY", "strata_live_test")
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    set_workspace_root(tmp_path)
+    local_store.USER_GLOBAL_FILE.write_text(
+        json.dumps(
+            {
+                "api_base_url": "https://strata.example.com",
+                "organization_slug": "example-org",
+            }
+        ),
+        encoding="utf-8",
+    )
+    paths.DB_PATH.parent.mkdir(parents=True)
+    paths.DB_PATH.write_text("", encoding="utf-8")
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is True
+    assert "cursor_skill" not in checks
 
 
 def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None:
@@ -152,5 +207,4 @@ def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None
     assert "STRATA_API_KEY" in checks["api_key"]["fix"]
     assert checks["sqlite"]["ok"] is False
     assert "strata index" in checks["sqlite"]["fix"]
-    assert checks["cursor_rule"]["ok"] is False
-    assert "python -m cxl_strata.cli --init" in checks["cursor_rule"]["fix"]
+    assert "cursor_skill" not in checks

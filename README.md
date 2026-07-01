@@ -110,7 +110,7 @@ Run the post-key bootstrap:
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, installs `.cursor/rules/strata-memory-capture.mdc`, creates `.md/workspace_index.sqlite`, and opens the local UI.
+This hardens PATH, creates `.md/workspace_index.sqlite`, opens the local UI, and installs `.cursor/skills/strata/SKILL.md` when a Cursor workspace is detected.
 
 If that returns `No such option: --init`, the workstation still has an older CLI. On Windows, rerun the installer bootstrap instead:
 
@@ -154,7 +154,7 @@ strata pull
 strata app --open
 ```
 
-`strata index` creates `.md/workspace_index.sqlite` if it does not exist. The app also initializes this SQLite cache on startup, and indexes Cursor (`.cursor/rules/*.mdc`), Claude (`CLAUDE.md`, `.claude/**/*.md`), and Codex (`AGENTS.md`, `.codex/**/*.md`) instruction files as local rules.
+`strata index` creates `.md/workspace_index.sqlite` if it does not exist. The app also initializes this SQLite cache on startup, and indexes Cursor (`.cursor/rules/*.mdc`, `.cursor/skills/**/SKILL.md`), Claude (`CLAUDE.md`, `.claude/**/*.md`), and Codex (`AGENTS.md`, `.codex/**/*.md`) instruction files as local rules.
 
 See [Quick Start](docs/quickstart.md) for the full local workflow.
 
@@ -284,8 +284,8 @@ STRATA has two integration layers:
 Cursor:
 
 - Install the CLI.
-- Run `python -m cxl_strata.cli --init` to install the project Cursor rule.
-- Use `/strata add`, `/strata summary`, and `/strata prune` from Cursor once the rule is installed.
+- Run `python -m cxl_strata.cli --init` from a Cursor workspace to install the project Cursor skill.
+- Use `/strata` from Cursor once `.cursor/skills/strata/SKILL.md` is installed.
 - Configure the MCP server if you want AI context retrieval.
 
 Claude:

@@ -15,6 +15,7 @@ from rich.prompt import Prompt
 
 from . import api_client, cursor_rule, local_store
 from .content_safety import find_secret_markers
+from .workspace_index import paths
 from .workspace_cmds import register as register_workspace_cmds
 
 app = typer.Typer(
@@ -121,8 +122,13 @@ def bootstrap_client_environment() -> None:
     """Post-install bootstrap: PATH, SQLite cache, and localhost UI."""
     path_result = harden_user_path()
     rprint(f"[green]PATH includes[/green] {path_result['scripts_dir']}")
-    rule_result = cursor_rule.install_cursor_rule()
-    rprint(f"[green]Cursor rule {rule_result['status']}[/green] {rule_result['path']}")
+    integration_result = cursor_rule.install_supported_agent_integrations(paths.WORKSPACE_ROOT)
+    cursor_result = integration_result.get("cursor")
+    if cursor_result:
+        skill_result = cursor_result["skill"]
+        rprint(f"[green]Cursor skill {skill_result['status']}[/green] {skill_result['path']}")
+    else:
+        rprint("[dim]No Cursor workspace detected; skipping Cursor skill install.[/dim]")
 
     project: str | None = None
     try:
@@ -230,9 +236,14 @@ def init_cmd(
     elif repo:
         cfg["workspace_id"] = f"{org}-{repo}"
     local_store.CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    rule_result = cursor_rule.install_cursor_rule()
+    integration_result = cursor_rule.install_supported_agent_integrations(paths.WORKSPACE_ROOT)
     rprint("[green]Initialized[/green] .strata/config.json")
-    rprint(f"[green]Cursor rule {rule_result['status']}[/green] {rule_result['path']}")
+    cursor_result = integration_result.get("cursor")
+    if cursor_result:
+        skill_result = cursor_result["skill"]
+        rprint(f"[green]Cursor skill {skill_result['status']}[/green] {skill_result['path']}")
+    else:
+        rprint("[dim]No Cursor workspace detected; skipping Cursor skill install.[/dim]")
     rprint("Set access token: export STRATA_API_KEY=strata_dev_...  or  .strata/secrets.json")
 
 

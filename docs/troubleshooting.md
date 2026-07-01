@@ -349,7 +349,7 @@ strata app --open
 
 STRATA indexes these local agent/project instruction files when present:
 
-- Cursor: `.cursor/rules/*.mdc`
+- Cursor: `.cursor/skills/**/SKILL.md`, `.cursor/rules/*.mdc`
 - Claude: `CLAUDE.md`, `.claude/**/*.md`
 - Codex: `AGENTS.md`, `.codex/**/*.md`
 

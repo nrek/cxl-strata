@@ -23,4 +23,4 @@ where = ["."]
 include = ["cxl_strata*"]
 
 [tool.setuptools.package-data]
-cxl_strata = ["workspace_index/schema.sql", "static/*", "rules/*.mdc"]
+cxl_strata = ["workspace_index/schema.sql", "static/*", "rules/*.mdc", "skills/strata/SKILL.md"]

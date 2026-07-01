@@ -69,11 +69,11 @@ def _api_online() -> dict:
         return {"online": False, "error": str(exc)}
 
 
-def _cursor_rule_ok(path: Path) -> bool:
+def _cursor_skill_ok(path: Path) -> bool:
     if not path.is_file():
         return False
     text = path.read_text(encoding="utf-8")
-    return all(marker in text for marker in cursor_rule.REQUIRED_MARKERS)
+    return "name: strata" in text and all(marker in text for marker in cursor_rule.REQUIRED_MARKERS)
 
 
 def setup_status() -> dict:
@@ -81,7 +81,8 @@ def setup_status() -> dict:
     global_config_path = local_store.USER_GLOBAL_FILE
     active_config_path = config_path if config_path.is_file() else global_config_path
     sqlite_path = paths.DB_PATH
-    rule_path = cursor_rule.RULE_DEST
+    skill_path = paths.WORKSPACE_ROOT / cursor_rule.SKILL_DEST
+    is_cursor_workspace = cursor_rule.cursor_workspace_detected(paths.WORKSPACE_ROOT)
     checks = [
         {
             "id": "config",
@@ -104,14 +105,15 @@ def setup_status() -> dict:
             "path": str(sqlite_path),
             "fix": "strata index",
         },
-        {
-            "id": "cursor_rule",
-            "label": "Cursor slash-command rule",
-            "ok": _cursor_rule_ok(rule_path),
-            "path": str(rule_path),
-            "fix": "python -m cxl_strata.cli --init",
-        },
     ]
+    if is_cursor_workspace:
+        checks.append({
+            "id": "cursor_skill",
+            "label": "Cursor STRATA skill",
+            "ok": _cursor_skill_ok(skill_path),
+            "path": str(skill_path),
+            "fix": "python -m cxl_strata.cli --init",
+        })
     return {
         "ok": all(item["ok"] for item in checks),
         "workspace_root": str(paths.WORKSPACE_ROOT),

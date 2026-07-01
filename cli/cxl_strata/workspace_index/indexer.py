@@ -51,6 +51,11 @@ def discover_files() -> list[tuple[str, Path]]:
         for p in rules_root.glob("*.mdc"):
             out.append(("rule", p))
 
+    skills_root = root / ".cursor" / "skills"
+    if skills_root.is_dir():
+        for p in skills_root.rglob("SKILL.md"):
+            out.append(("rule", p))
+
     for p in (root / "CLAUDE.md", root / "AGENTS.md"):
         if p.is_file():
             out.append(("rule", p))
@@ -73,7 +78,7 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
             kind = "blueprint"
         elif rel.startswith(".cursor/plans/"):
             kind = "plan"
-        elif rel.startswith(".cursor/rules/"):
+        elif rel.startswith(".cursor/rules/") or rel.startswith(".cursor/skills/"):
             kind = "rule"
         elif rel in {"CLAUDE.md", "AGENTS.md"}:
             kind = "rule"

@@ -10,7 +10,7 @@ STRATA has three local surfaces:
 
 The central API is separate. It stores team memory in PostgreSQL and serves search/MCP requests.
 
-Fresh installs create the SQLite cache during bootstrap (`--init`) and again when the app starts if it is missing. `--init` also installs `.cursor/rules/strata-memory-capture.mdc` so Cursor can recognize `/strata add`, `/strata summary`, and `/strata prune`.
+Fresh installs create the SQLite cache during bootstrap (`--init`) and again when the app starts if it is missing. In Cursor workspaces, `--init` also installs `.cursor/skills/strata/SKILL.md` so Cursor can suggest `/strata`.
 
 After installing and setting your API key, run the post-key bootstrap:
 
@@ -18,7 +18,7 @@ After installing and setting your API key, run the post-key bootstrap:
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, installs the Cursor rule, creates `.md/workspace_index.sqlite`, and opens `http://127.0.0.1:8765`.
+This hardens PATH, creates `.md/workspace_index.sqlite`, installs Cursor skill support when a Cursor workspace is detected, and opens `http://127.0.0.1:8765`.
 
 If this returns `No such option: --init`, refresh through the installer bootstrap instead:
 

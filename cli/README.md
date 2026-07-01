@@ -12,7 +12,7 @@ python -m cxl_strata.cli --init
 strata whoami
 ```
 
-`strata init` and `python -m cxl_strata.cli --init` install `.cursor/rules/strata-memory-capture.mdc` so Cursor can use `/strata add`, `/strata summary`, and `/strata prune`.
+`strata init` and `python -m cxl_strata.cli --init` install `.cursor/skills/strata/SKILL.md` when a Cursor workspace is detected. Claude Code and Codex users can use the same CLI commands directly from their agent shells.
 
 ## Workspace knowledge (hybrid local + shared)
 
@@ -20,7 +20,7 @@ Local SQLite (`.md/workspace_index.sqlite`) is the fast offline cache. Shared fu
 
 ```bash
 # Create/refresh .md/workspace_index.sqlite from workspace root
-# Includes handoffs, blueprints, plans, Cursor rules, CLAUDE.md, and AGENTS.md
+# Includes handoffs, blueprints, plans, Cursor skills/rules, CLAUDE.md, and AGENTS.md
 strata index
 
 # Archive old handoffs into SQLite (dry-run by default)

@@ -198,7 +198,7 @@ Next steps:
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}}
   4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
-  5. --init initializes SQLite and installs .cursor/rules/strata-memory-capture.mdc
+  5. --init initializes SQLite and installs .cursor/skills/strata/SKILL.md when a Cursor workspace is detected
   6. Refresh local index later with: strata index
   7. Open local UI: strata app --open
   8. Optional autostart (never installed silently): strata app install-autostart
@@ -373,7 +373,7 @@ Next steps:
      Or after opening a new terminal: strata whoami
   5. Init this workspace (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init
-  6. -Init initializes SQLite and installs .cursor\\rules\\strata-memory-capture.mdc
+  6. -Init initializes SQLite and installs .cursor\\skills\\strata\\SKILL.md when a Cursor workspace is detected
   7. Refresh local index later with: strata index
   8. Open UI: strata app --open
   9. Optional autostart: strata app install-autostart
@@ -456,6 +456,7 @@ def client_manifest() -> dict:
             "pull": "strata pull",
             "app": "strata app --open",
             "autostart": "strata app install-autostart",
+            "cursor_skill": ".cursor/skills/strata/SKILL.md",
             "cursor_rule": ".cursor/rules/strata-memory-capture.mdc",
             "post_key_bootstrap": "python -m cxl_strata.cli --init",
             "post_key_bootstrap_fallback_windows": (

@@ -212,20 +212,22 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if path == "/api/documents/recent-local":
             qs = parse_qs(parsed.query)
             try:
-                limit = int((qs.get("limit") or ["200"])[0])
+                limit = int((qs.get("limit") or ["500"])[0])
             except ValueError:
-                limit = 200
+                limit = 500
             try:
                 hours = int((qs.get("hours") or ["168"])[0])
             except ValueError:
                 hours = 168
             kind = (qs.get("kind") or [None])[0]
             author = (qs.get("author") or [None])[0]
-            limit = max(1, min(limit, 500))
+            limit = max(1, min(limit, 2000))
             hours = max(1, min(hours, 24 * 30))
-            items = sync_review.scan_recent_locally_changed(
-                hours=hours, limit=limit, kind=kind, author=author
-            )
+            with db.connect() as conn:
+                db.init_db(conn)
+                items = queries.list_recent_local_documents(
+                    conn, hours=hours, limit=limit, kind=kind, author=author
+                )
             _json_response(self, {"items": items, "hours": hours})
             return
 
@@ -342,18 +344,42 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             limit = int(body.get("limit", 50))
             project = body.get("project")
             author = body.get("author")
+            all_time = bool(body.get("all_time"))
+            hours_raw = body.get("hours")
+            hours: int | None
+            if all_time or hours_raw == 0:
+                hours = 0
+            elif hours_raw is None:
+                hours = None
+            else:
+                try:
+                    hours = int(hours_raw)
+                except (TypeError, ValueError):
+                    hours = None
             source = str(body.get("source", "local")).lower()
             if project is not None:
                 project = str(project).strip() or None
             if author is not None:
                 author = str(author).strip() or None
 
+            # Project library browse can return many rows; cap to protect the UI.
+            if not q and project:
+                limit = max(1, min(limit, 2000))
+            else:
+                limit = max(1, min(limit, 500))
+
             local_result: dict = {"results": []}
             if source in ("local", "both"):
                 with db.connect() as conn:
                     db.init_db(conn)
                     local_result = nl_query.parse_and_run(
-                        conn, q, limit=limit, project=project, author=author
+                        conn,
+                        q,
+                        limit=limit,
+                        project=project,
+                        author=author,
+                        hours=hours,
+                        all_time=all_time or (not q and bool(project)),
                     )
                 for row in local_result.get("results") or []:
                     row["source"] = "local"

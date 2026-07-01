@@ -33,7 +33,8 @@ def test_home_tabs_recent_local_and_share_to_team() -> None:
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
     index = (root / "static" / "index.html").read_text(encoding="utf-8")
 
-    assert "Recent Locally Changed Files" in index
+    assert "Recent Local Files" in index
+    assert "Recent Locally Changed Files" not in index
     assert "Share to Team" in index
     assert 'id="tab-recent"' in index
     assert 'id="tab-share"' in index
@@ -41,7 +42,8 @@ def test_home_tabs_recent_local_and_share_to_team() -> None:
     assert "function switchHomeTab(tab)" in app_js
     assert "async function openRecentFile(path, project)" in app_js
     assert "/api/documents/recent-local" in app_js
-    assert "RECENT_PAGE_SIZE = 6" in app_js
+    assert 'hours: "168"' in app_js
+    assert "RECENT_PAGE_SIZE = 12" in app_js
 
 
 def test_author_filter_controls() -> None:
@@ -94,7 +96,7 @@ def test_tool_drawer_static_wiring() -> None:
     assert 'id="tool-drawer-toggle"' in index
     assert "fa-wrench" in index
     assert "Quick Commands" in index
-    assert "Setup Status" in index
+    assert "SETUP STATUS" in index
     assert 'id="setup-status-list"' in index
     assert 'id="setup-status-refresh"' in index
     assert "Sync From Remote" in index
@@ -109,6 +111,9 @@ def test_tool_drawer_static_wiring() -> None:
     assert "async function runToolCommand(command)" in app_js
     assert "async function copyToolPrompt(promptKey, btn)" in app_js
     assert "async function loadSetupStatus()" in app_js
+    assert "function setupStatusHeading(checks)" in app_js
+    assert "SETUP STATUS (${ready}/${total})" in app_js
+    assert 'el.classList.toggle("collapsed", data?.ok === true && checks.length > 0)' in app_js
     assert "/api/setup/status" in app_js
     assert "TOOL_PROMPTS" in app_js
     assert 'prune: "/strata prune"' in app_js
@@ -118,8 +123,17 @@ def test_tool_drawer_static_wiring() -> None:
     assert "/strata prune" in index
     assert "fa-times" in app_js
 
+    assert "--tool-drawer-width: min(22.75rem, calc(100vw - 1rem))" in style
+    assert "width: 36px" in style
+    assert "height: 36px" in style
+    assert "height: 75vh" in style
+    assert "border-radius: 24px 0 0 24px" in style
+    assert "transform: translate(100%, -50%)" in style
+    assert "transform: translate(0, -50%)" in style
+    assert "right: calc(var(--tool-drawer-width) - 18px)" in style
     assert ".tool-drawer" in style
     assert ".setup-status-list" in style
+    assert ".setup-status-list.collapsed" in style
     assert ".setup-status-item" in style
     assert ".setup-status-dot" in style
     assert ".tool-drawer.open" in style

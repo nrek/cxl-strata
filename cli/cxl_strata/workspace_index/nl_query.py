@@ -11,7 +11,7 @@ from . import queries
 from .paths import DB_PATH, WORKSPACE_ROOT
 from .text_cleanup import fix_mojibake
 
-Intent = Literal["timeline", "search", "recent", "plans"]
+Intent = Literal["timeline", "search", "recent", "plans", "library"]
 
 # Keyword → project slugs (folder names under .md/handoff/)
 PROJECT_ALIASES: dict[str, list[str]] = {
@@ -263,21 +263,23 @@ def timeline(
     conn: sqlite3.Connection,
     *,
     projects: list[str] | None = None,
-    hours: int = 168,
+    hours: int | None = 168,
     limit: int = 80,
     include_sections: bool = True,
     author: str | None = None,
 ) -> dict[str, Any]:
-    since = _iso_since_hours(hours)
-    events: list[dict[str, Any]] = []
-
-    doc_clauses = ["kind = 'handoff'", "(updated_at >= ? OR created_at >= ?)"]
-    doc_params: list[Any] = [since, since]
+    doc_clauses = ["kind = 'handoff'"]
+    doc_params: list[Any] = []
+    if hours is not None:
+        since = _iso_since_hours(hours)
+        doc_clauses.append("(updated_at >= ? OR created_at >= ?)")
+        doc_params.extend([since, since])
     if projects:
         placeholders = ",".join("?" * len(projects))
         doc_clauses.append(f"project IN ({placeholders})")
         doc_params.extend(projects)
 
+    events: list[dict[str, Any]] = []
     rows = conn.execute(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
@@ -306,11 +308,12 @@ def timeline(
         )
 
     if include_sections and projects:
-        sec_clauses = [
-            "d.kind = 'handoff'",
-            "(s.section_at >= ? OR d.updated_at >= ?)",
-        ]
-        sec_params: list[Any] = [since, since]
+        sec_clauses = ["d.kind = 'handoff'"]
+        sec_params: list[Any] = []
+        if hours is not None:
+            since = _iso_since_hours(hours)
+            sec_clauses.append("(s.section_at >= ? OR d.updated_at >= ?)")
+            sec_params.extend([since, since])
         placeholders = ",".join("?" * len(projects))
         sec_clauses.append(f"d.project IN ({placeholders})")
         sec_params.extend(projects)
@@ -364,6 +367,64 @@ def timeline(
     }
 
 
+def project_library(
+    conn: sqlite3.Connection,
+    *,
+    project: str,
+    limit: int = 500,
+    author: str | None = None,
+) -> dict[str, Any]:
+    """All indexed documents for a project — no time window (knowledge library browse)."""
+    rows = conn.execute(
+        """
+        SELECT path, kind, project, title, updated_at, created_at,
+               origin, remote_id, shared_at, synced_at, author_name,
+               substr(body, 1, 500) AS excerpt
+        FROM documents
+        WHERE project = ?
+        ORDER BY COALESCE(updated_at, created_at) DESC
+        LIMIT ?
+        """,
+        (project, limit),
+    ).fetchall()
+
+    events: list[dict[str, Any]] = []
+    for row in rows:
+        ts = normalize_event_at(row["updated_at"] or row["created_at"], row["path"])
+        events.append(
+            {
+                "type": row["kind"],
+                "kind": row["kind"],
+                "at": ts,
+                "project": row["project"],
+                "title": fix_mojibake(row["title"] or PathStem(row["path"])),
+                "path": row["path"],
+                "excerpt": fix_mojibake(row["excerpt"]),
+                **_sync_meta(row),
+            }
+        )
+
+    events = sort_events_newest_first(events)
+    if author:
+        events = queries.filter_by_author(events, author)
+
+    total = conn.execute(
+        "SELECT COUNT(*) AS n FROM documents WHERE project = ?",
+        (project,),
+    ).fetchone()["n"]
+
+    return {
+        "intent": "library",
+        "hours": None,
+        "all_time": True,
+        "projects": [project],
+        "event_count": len(events),
+        "total_in_index": total,
+        "truncated": total > len(events),
+        "events": events,
+    }
+
+
 def PathStem(path: str) -> str:
     return path.rsplit("/", 1)[-1].replace(".md", "")
 
@@ -375,17 +436,31 @@ def parse_and_run(
     limit: int = 50,
     project: str | None = None,
     author: str | None = None,
+    hours: int | None = None,
+    all_time: bool = False,
 ) -> dict[str, Any]:
     text = query.strip()
 
     if not text and project:
-        out = timeline(conn, projects=[project], hours=336, limit=limit, include_sections=True, author=author)
+        if all_time or hours == 0:
+            out = project_library(conn, project=project, limit=limit, author=author)
+        else:
+            browse_hours = hours if hours is not None else 168
+            out = timeline(
+                conn,
+                projects=[project],
+                hours=browse_hours,
+                limit=limit,
+                include_sections=True,
+                author=author,
+            )
         return {
             "query": "",
-            "intent": "timeline",
+            "intent": out.get("intent", "library"),
             "projects": [project],
             "scoped_project": project,
-            "hours": 336,
+            "all_time": bool(out.get("all_time")),
+            "hours": out.get("hours"),
             **out,
         }
 
@@ -397,7 +472,10 @@ def parse_and_run(
     projects = [scoped] if scoped else detected
 
     has_time = _has_time_phrase(text)
-    hours = parse_hours(text, default=168 if projects else 720)
+    parsed_hours = parse_hours(text, default=168 if projects else 720)
+    effective_hours = hours if hours is not None else parsed_hours
+    if all_time or hours == 0:
+        effective_hours = None
     intent = detect_intent(text, has_projects=bool(projects), has_time=has_time)
     last_time = is_last_time_query(text)
 
@@ -406,17 +484,25 @@ def parse_and_run(
         "intent": intent,
         "projects": projects,
         "scoped_project": scoped,
-        "hours": hours,
+        "hours": effective_hours,
+        "all_time": effective_hours is None,
         "last_time": last_time,
     }
 
     if intent == "timeline" or (projects and intent == "search" and "timeline" in text.lower()):
-        out = timeline(conn, projects=projects or None, hours=hours, limit=limit, author=author)
+        out = timeline(
+            conn,
+            projects=projects or None,
+            hours=effective_hours,
+            limit=limit,
+            author=author,
+        )
         return {**meta, **out}
 
     if intent == "recent" and projects:
+        recent_hours = effective_hours if effective_hours is not None else 168
         payload = queries.handoffs_recent_available(
-            conn, projects[0], hours=hours, limit=limit
+            conn, projects[0], hours=recent_hours, limit=limit
         )
         handoffs = sort_events_newest_first(payload.get("handoffs", []))
         for row in handoffs:
@@ -467,7 +553,13 @@ def parse_and_run(
         results = results[: min(limit, 8)]
 
     if not results and projects and not last_time:
-        out = timeline(conn, projects=projects, hours=hours, limit=limit, author=author)
+        out = timeline(
+            conn,
+            projects=projects,
+            hours=effective_hours,
+            limit=limit,
+            author=author,
+        )
         return {**meta, **out}
 
     return {**meta, "intent": "search", "fts_query": fts_query, "results": results}

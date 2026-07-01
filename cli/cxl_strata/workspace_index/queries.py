@@ -232,17 +232,87 @@ def knowledge_recent(
     return items
 
 
+def list_recent_local_documents(
+    conn: sqlite3.Connection,
+    *,
+    hours: int = 168,
+    limit: int = 500,
+    kind: str | None = None,
+    author: str | None = None,
+) -> list[dict[str, Any]]:
+    """Indexed local documents with activity in the rolling window — all projects."""
+    since = _iso_since_hours(hours)
+    clauses = [
+        "(updated_at >= ? OR created_at >= ? OR shared_at >= ? OR synced_at >= ?)"
+    ]
+    params: list[Any] = [since, since, since, since]
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+
+    rows = conn.execute(
+        f"""
+        SELECT path, kind, project, title, created_at, updated_at, origin,
+               remote_id, shared_at, synced_at, author_name, storage,
+               substr(body, 1, 180) AS excerpt
+        FROM documents
+        WHERE {" AND ".join(clauses)}
+        ORDER BY COALESCE(updated_at, synced_at, shared_at, created_at) DESC
+        LIMIT ?
+        """,
+        (*params, limit),
+    ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = _with_sync_status(row)
+        storage = item.get("storage") or "file"
+        rel = item["path"]
+        fp = WORKSPACE_ROOT / rel.replace("\\", "/")
+        if storage == "db_only" or not fp.is_file():
+            local_status = "archived" if storage == "db_only" else "indexed"
+        else:
+            local_status = "indexed"
+        share_status = "shared" if item.get("remote_id") else "not shared"
+        if item.get("sync_status") == "changed":
+            share_status = "remote changed"
+            local_status = "changed"
+        activity_at = max(
+            str(v)
+            for v in (
+                item.get("updated_at"),
+                item.get("synced_at"),
+                item.get("shared_at"),
+                item.get("created_at"),
+            )
+            if v
+        )
+        item.update(
+            {
+                "updated_at": activity_at,
+                "local_status": local_status,
+                "share_status": share_status,
+                "author_name": effective_author_name(item),
+                "excerpt": item.get("excerpt") or "",
+            }
+        )
+        items.append(item)
+
+    return filter_by_author(items, author)
+
+
 def list_recent_local_files(
     conn: sqlite3.Connection,
     *,
     hours: int = 168,
-    limit: int = 200,
+    limit: int = 500,
+    kind: str | None = None,
+    author: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Locally changed on-disk files within the rolling window, newest first."""
-    from .sync_review import scan_recent_locally_changed
-
-    _ = conn  # caller may pass an open connection; scan uses filesystem mtimes
-    return scan_recent_locally_changed(hours=hours, limit=limit)
+    """Locally active indexed documents within the rolling window, newest first."""
+    return list_recent_local_documents(
+        conn, hours=hours, limit=limit, kind=kind, author=author
+    )
 
 
 def knowledge_search(

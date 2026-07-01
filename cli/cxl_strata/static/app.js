@@ -18,7 +18,7 @@ const EXAMPLES = [
 ];
 
 const SYNC_PAGE_SIZE = 6;
-const RECENT_PAGE_SIZE = 6;
+const RECENT_PAGE_SIZE = 12;
 
 const ACTION = {
   shareLabel: "Share to Team",
@@ -294,14 +294,24 @@ function setupStatusHtml(item) {
     </article>`;
 }
 
+function setupStatusHeading(checks) {
+  const total = checks.length || 4;
+  const ready = checks.filter((item) => item.ok).length;
+  return `SETUP STATUS (${ready}/${total})`;
+}
+
 function renderSetupStatus(data) {
   const el = $("#setup-status-list");
+  const heading = $("#tool-setup-title");
   if (!el) return;
   const checks = data?.checks || [];
+  if (heading) heading.textContent = setupStatusHeading(checks);
   if (!checks.length) {
+    el.classList.remove("collapsed");
     el.innerHTML = '<p class="tool-muted">No setup checks returned.</p>';
     return;
   }
+  el.classList.toggle("collapsed", data?.ok === true && checks.length > 0);
   el.innerHTML = checks.map(setupStatusHtml).join("");
   el.querySelectorAll(".setup-fix-copy").forEach((btn) => {
     btn.addEventListener("click", () => copySetupFix(btn));
@@ -310,6 +320,8 @@ function renderSetupStatus(data) {
 
 async function loadSetupStatus() {
   const el = $("#setup-status-list");
+  const heading = $("#tool-setup-title");
+  if (heading) heading.textContent = "SETUP STATUS";
   if (el) el.innerHTML = '<p class="tool-muted">Checking local setup…</p>';
   try {
     const data = await api("/api/setup/status");
@@ -581,7 +593,11 @@ function renderMeta(data) {
     data.fts_query && data.fts_query !== data.query
       ? `Searching: ${esc(data.fts_query)}`
       : null,
-    data.hours ? `${data.hours}h window` : null,
+    data.all_time
+      ? `All time${data.total_in_index != null ? ` · ${data.total_in_index} indexed` : ""}${data.truncated ? " · showing newest subset" : ""}`
+      : data.hours
+        ? `${data.hours}h window`
+        : null,
   ].filter(Boolean);
   el.innerHTML = parts.join(" · ");
   el.classList.toggle("hidden", !parts.length);
@@ -682,9 +698,9 @@ function canSyncResult(item) {
   return canShareItem(item);
 }
 
-function renderTimeline(events) {
+function renderTimeline(events, { emptyMessage } = {}) {
   if (!events?.length) {
-    return '<p class="empty">No activity in this window. Try a broader search or longer range.</p>';
+    return `<p class="empty">${esc(emptyMessage || "No documents found. Try a search or run strata index.")}</p>`;
   }
   const sorted = sortEventsNewestFirst(events);
   const byDay = new Map();
@@ -711,8 +727,12 @@ function renderResults(data) {
   const out = $("#output");
   renderMeta(data);
 
-  if (data.intent === "timeline" && data.events) {
-    out.innerHTML = renderTimeline(data.events);
+  if ((data.intent === "timeline" || data.intent === "library") && data.events) {
+    out.innerHTML = renderTimeline(data.events, {
+      emptyMessage: data.intent === "library"
+        ? "No indexed documents for this project. Run strata index --full."
+        : undefined,
+    });
   } else if (data.intent === "recent" && data.handoffs) {
     out.innerHTML = renderTimeline(
       data.handoffs.map((h) => ({ ...h, type: "handoff", at: h.updated_at }))
@@ -861,7 +881,7 @@ async function loadAuthors() {
 }
 
 function filesFilterParams() {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ hours: "168", limit: "500" });
   const kind = ($("#files-filter-kind") || {}).value || "";
   const author = ($("#files-filter-author") || {}).value || "";
   if (kind) params.set("kind", kind);
@@ -917,8 +937,9 @@ async function browseProject(project) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       q: "",
-      limit: 80,
+      limit: 500,
       project,
+      all_time: true,
       source,
       author: author || undefined,
     }),
@@ -1032,7 +1053,7 @@ function renderRecentPage() {
     prevId: "#recent-prev",
     nextId: "#recent-next",
     rowHtml: recentRowHtml,
-    emptyMessage: "No local edits or shares in the last 7 days.",
+    emptyMessage: "No local documents in the last 7 days.",
     onPageChange: (page) => {
       state.recentPage = page;
     },

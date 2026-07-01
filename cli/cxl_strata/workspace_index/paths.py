@@ -73,6 +73,27 @@ def _looks_like_workspace(root: Path) -> bool:
     )
 
 
+def _workspace_score(root: Path) -> int:
+    score = 0
+    if (root / ".md" / "handoff").is_dir():
+        score += 100
+    if (root / ".md" / "blueprints").is_dir():
+        score += 80
+    if (root / ".md" / "workspace_index.sqlite").is_file():
+        score += 60
+    if (root / ".cursor" / "plans").is_dir():
+        score += 30
+    if (root / ".cursor" / "rules").is_dir():
+        score += 20
+    if (root / ".strata" / "config.json").is_file():
+        score += 10
+    if (root / ".claude").is_dir() or (root / ".codex").is_dir():
+        score += 5
+    if (root / "CLAUDE.md").is_file() or (root / "AGENTS.md").is_file():
+        score += 5
+    return score
+
+
 @lru_cache(maxsize=1)
 def resolve_workspace_root(start: Path | None = None) -> Path:
     env = os.environ.get("STRATA_WORKSPACE_ROOT", "").strip()
@@ -85,16 +106,20 @@ def resolve_workspace_root(start: Path | None = None) -> Path:
     candidates: list[Path] = []
     if start is not None:
         candidates.append(start.resolve())
-    candidates.append(Path.cwd().resolve())
+    else:
+        candidates.append(Path.cwd().resolve())
 
+    matches: list[Path] = []
     for base in candidates:
         current = base
         for _ in range(12):
             if _looks_like_workspace(current):
-                return current
+                matches.append(current)
             if current.parent == current:
                 break
             current = current.parent
+    if matches:
+        return max(matches, key=_workspace_score)
 
     # Fallback: parent of projects/ orchestration root when indexing from repo checkout.
     fallback = _PKG.parents[4]

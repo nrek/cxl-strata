@@ -10,6 +10,7 @@ from cxl_strata import local_store
 
 @pytest.fixture()
 def strata_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(local_store, "USER_STRATA_DIR", tmp_path)
     monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
     monkeypatch.setattr(local_store, "USER_SECRETS_FILE", tmp_path / "secrets.json")

@@ -13,6 +13,7 @@
   --section: #fbbf24;
   --plan: #a78bfa;
   --search: #38bdf8;
+  --tool-drawer-width: min(22.75rem, calc(100vw - 1rem));
   font-family: "Segoe UI", system-ui, sans-serif;
 }
 
@@ -240,8 +241,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 3rem;
-  height: 3rem;
+  width: 36px;
+  height: 36px;
   border: none;
   border-radius: 999px;
   background:
@@ -259,27 +260,28 @@ body {
 }
 
 .tool-drawer-toggle.open {
-  right: min(23.75rem, calc(100vw - 4.25rem));
+  right: calc(var(--tool-drawer-width) - 18px);
   background: var(--accent);
   color: #0b1020;
 }
 
 .tool-drawer {
   position: fixed;
-  top: 0;
+  top: 50%;
   right: 0;
   z-index: 40;
-  width: min(22.75rem, calc(100vw - 1rem));
-  height: 100vh;
+  width: var(--tool-drawer-width);
+  height: 75vh;
   background: rgba(18, 20, 26, 0.98);
   border-left: 1px solid var(--border);
+  border-radius: 24px 0 0 24px;
   box-shadow: -28px 0 70px rgba(0, 0, 0, 0.36);
-  transform: translateX(100%);
+  transform: translate(100%, -50%);
   transition: transform 0.22s ease;
 }
 
 .tool-drawer.open {
-  transform: translateX(0);
+  transform: translate(0, -50%);
 }
 
 .tool-drawer-inner {
@@ -404,6 +406,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.45rem;
+}
+
+.setup-status-list.collapsed {
+  display: none;
 }
 
 .setup-status-item {
@@ -741,6 +747,8 @@ button:hover { filter: brightness(1.08); }
 }
 
 .badge-handoff { background: #14532d; color: var(--handoff); }
+.badge-blueprint { background: #1e3a5f; color: #93c5fd; }
+.badge-rule { background: #374151; color: #d1d5db; }
 .badge-section { background: #422006; color: var(--section); }
 .badge-plan { background: #2e1065; color: var(--plan); }
 .badge-search { background: #0c4a6e; color: var(--search); }
@@ -1007,16 +1015,12 @@ dialog h2 {
 .markdown-body strong { color: #f3f4f6; }
 
 @media (max-width: 768px) {
+  :root {
+    --tool-drawer-width: min(19rem, calc(100vw - 1rem));
+  }
+
   .home-panels {
     grid-template-columns: 1fr;
-  }
-
-  .tool-drawer-toggle.open {
-    right: min(20rem, calc(100vw - 4.25rem));
-  }
-
-  .tool-drawer {
-    width: min(19rem, calc(100vw - 1rem));
   }
 
   #view-app {

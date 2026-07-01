@@ -56,6 +56,13 @@ def test_client_manifest(client: TestClient) -> None:
     assert "-Init -Project YOUR_PROJECT" in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
 
 
+def test_strata_large_logo_asset_served(client: TestClient) -> None:
+    response = client.get("/assets/strata_large.png")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert response.content.startswith(b"\x89PNG")
+
+
 def test_strata_logo_asset_served(client: TestClient) -> None:
     response = client.get("/assets/strata-logo.png")
     assert response.status_code == 200

@@ -69,6 +69,14 @@ def strata_logo() -> FileResponse:
     return FileResponse(logo, media_type="image/png")
 
 
+@app.get("/assets/strata_large.png", response_class=FileResponse)
+def strata_large_logo() -> FileResponse:
+    logo = STATIC_DIR / "strata_large.png"
+    if not logo.is_file():
+        raise HTTPException(status_code=404, detail="asset not found")
+    return FileResponse(logo, media_type="image/png")
+
+
 @app.get("/favicon.ico", response_class=FileResponse)
 def favicon() -> FileResponse:
     icon = ICONS_DIR / "favicon.ico"

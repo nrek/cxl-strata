@@ -15,7 +15,7 @@ def test_landing_page(client: TestClient) -> None:
     assert response.headers["content-type"].startswith("text/html")
     body = response.text
     assert 'href="https://github.com/nrek/cxl-strata"' in body
-    assert 'src="/assets/strata-logo.png"' in body
+    assert 'src="/assets/strata_large.png"' in body
     assert 'target=' not in body
 
 

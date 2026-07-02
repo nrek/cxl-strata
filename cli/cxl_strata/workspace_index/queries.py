@@ -28,6 +28,8 @@ def _snippet(text: str, max_len: int = 400) -> str:
 
 
 def _sync_status(row: dict[str, Any]) -> str:
+    if row.get("sync_ignored_at"):
+        return "ignored"
     if not row.get("remote_id"):
         return "not_shared"
     updated_at = str(row.get("updated_at") or "")
@@ -253,7 +255,8 @@ def list_recent_local_documents(
     rows = conn.execute(
         f"""
         SELECT path, kind, project, title, created_at, updated_at, origin,
-               remote_id, shared_at, synced_at, author_name, storage,
+               remote_id, shared_at, synced_at, sync_ignored_at,
+               sync_ignore_reason, author_name, storage,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}
@@ -273,7 +276,12 @@ def list_recent_local_documents(
             local_status = "archived" if storage == "db_only" else "indexed"
         else:
             local_status = "indexed"
-        share_status = "shared" if item.get("remote_id") else "not shared"
+        if item.get("sync_status") == "ignored":
+            share_status = "ignored"
+        elif item.get("remote_id"):
+            share_status = "shared"
+        else:
+            share_status = "not shared"
         if item.get("sync_status") == "changed":
             share_status = "remote changed"
             local_status = "changed"
@@ -343,7 +351,8 @@ def knowledge_search(
         f"""
         SELECT d.path, d.kind, d.project, d.title, d.plan_status,
                d.updated_at, d.created_at, d.origin, d.remote_id,
-               d.shared_at, d.synced_at, d.author_name,
+               d.shared_at, d.synced_at, d.sync_ignored_at,
+               d.sync_ignore_reason, d.author_name,
                snippet(documents_fts, 1, '**', '**', '…', 32) AS snippet,
                bm25(documents_fts) AS rank
         FROM documents_fts

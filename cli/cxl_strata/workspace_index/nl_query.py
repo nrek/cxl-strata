@@ -153,6 +153,15 @@ def sort_events_newest_first(events: list[dict[str, Any]]) -> list[dict[str, Any
 
 
 def _sync_status(row: sqlite3.Row | dict[str, Any]) -> str:
+    sync_ignored_at = (
+        row["sync_ignored_at"]
+        if isinstance(row, sqlite3.Row) and "sync_ignored_at" in row.keys()
+        else row.get("sync_ignored_at")
+        if not isinstance(row, sqlite3.Row)
+        else None
+    )
+    if sync_ignored_at:
+        return "ignored"
     remote_id = row["remote_id"] if isinstance(row, sqlite3.Row) else row.get("remote_id")
     if not remote_id:
         return "not_shared"
@@ -283,7 +292,8 @@ def timeline(
     rows = conn.execute(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
-               origin, remote_id, shared_at, synced_at, author_name,
+               origin, remote_id, shared_at, synced_at, sync_ignored_at,
+               sync_ignore_reason, author_name,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
@@ -321,7 +331,8 @@ def timeline(
         sec_rows = conn.execute(
             f"""
             SELECT d.path, d.project, d.title, d.updated_at, d.created_at,
-                   d.origin, d.remote_id, d.shared_at, d.synced_at, d.author_name,
+                   d.origin, d.remote_id, d.shared_at, d.synced_at,
+                   d.sync_ignored_at, d.sync_ignore_reason, d.author_name,
                    s.heading, s.section_at,
                    substr(s.body, 1, 400) AS excerpt, s.ordinal
             FROM sections s
@@ -378,7 +389,8 @@ def project_library(
     rows = conn.execute(
         """
         SELECT path, kind, project, title, updated_at, created_at,
-               origin, remote_id, shared_at, synced_at, author_name,
+               origin, remote_id, shared_at, synced_at, sync_ignored_at,
+               sync_ignore_reason, author_name,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE project = ?

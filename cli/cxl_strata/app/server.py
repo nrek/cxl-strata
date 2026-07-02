@@ -13,8 +13,7 @@ from urllib import request
 from urllib.parse import parse_qs, urlparse
 
 from .. import cursor_rule, local_store
-from ..content_safety import find_secret_markers
-from ..documents import stash_paths
+from ..documents import delete_remote_path, stash_paths
 from ..local_store import load_config
 from ..workspace_index import db, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
@@ -191,6 +190,22 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             show_all = (qs.get("all") or ["0"])[0] in ("1", "true", "yes")
             rows = sync_review.scan_pending(
                 project=project, kind=kind, author=author, show_all=show_all
+            )
+            _json_response(self, {"items": rows})
+            return
+
+        if path == "/api/sync/potential-secrets":
+            qs = parse_qs(parsed.query)
+            kind = (qs.get("kind") or [None])[0]
+            author = (qs.get("author") or [None])[0]
+            try:
+                limit = int((qs.get("limit") or ["500"])[0])
+            except ValueError:
+                limit = 500
+            rows = sync_review.scan_potential_secret_files(
+                kind=kind,
+                author=author,
+                limit=max(1, min(limit, 2000)),
             )
             _json_response(self, {"items": rows})
             return
@@ -420,19 +435,22 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/sync/upload":
             body = _read_json(self)
             paths = [str(p) for p in (body.get("paths") or [])]
-            for rel in paths:
-                with db.connect() as conn:
-                    db.init_db(conn)
-                    doc = queries.knowledge_get(conn, rel)
-                    if doc and find_secret_markers(doc.get("body") or ""):
-                        _json_response(
-                            self,
-                            {"error": f"secrets detected in {rel}"},
-                            HTTPStatus.UNPROCESSABLE_ENTITY,
-                        )
-                        return
             result = stash_paths(paths)
             _json_response(self, result)
+            return
+
+        if parsed.path == "/api/sync/delete-remote":
+            body = _read_json(self)
+            path = str(body.get("path") or "").strip()
+            if not path:
+                _json_response(self, {"error": "path required"}, HTTPStatus.BAD_REQUEST)
+                return
+            try:
+                result = delete_remote_path(path)
+                status = HTTPStatus.OK if result.get("deleted") else HTTPStatus.BAD_REQUEST
+                _json_response(self, result, status)
+            except Exception as exc:  # noqa: BLE001
+                _json_response(self, {"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
             return
 
         if parsed.path == "/api/pull":

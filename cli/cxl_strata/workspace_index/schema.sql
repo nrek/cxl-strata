@@ -22,7 +22,9 @@ CREATE TABLE IF NOT EXISTS documents (
     tags TEXT,
     folder_status TEXT,
     status_mismatch INTEGER NOT NULL DEFAULT 0,
-    storage TEXT NOT NULL DEFAULT 'file'
+    storage TEXT NOT NULL DEFAULT 'file',
+    sync_ignored_at TEXT,
+    sync_ignore_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plans (

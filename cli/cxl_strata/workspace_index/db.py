@@ -40,6 +40,8 @@ _MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("shared_at", "TEXT"),
     ("synced_at", "TEXT"),
     ("remote_updated_at", "TEXT"),
+    ("sync_ignored_at", "TEXT"),
+    ("sync_ignore_reason", "TEXT"),
 )
 
 
@@ -91,6 +93,8 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         "shared_at": None,
         "synced_at": None,
         "remote_updated_at": None,
+        "sync_ignored_at": None,
+        "sync_ignore_reason": None,
         **row,
     }
     conn.execute(
@@ -100,14 +104,15 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             body, body_hash, plan_status, linear_task_id, files_changed,
             deploy_commands, tags, folder_status, status_mismatch, storage,
             origin, remote_id, author_name, author_email, shared_at, synced_at,
-            remote_updated_at
+            remote_updated_at, sync_ignored_at, sync_ignore_reason
         ) VALUES (
             :id, :kind, :project, :path, :title, :created_at, :updated_at,
             :body, :body_hash, :plan_status, :linear_task_id, :files_changed,
             :deploy_commands, :tags, :folder_status, :status_mismatch,
             COALESCE(:storage, 'file'),
             COALESCE(:origin, 'local'), :remote_id, :author_name, :author_email,
-            :shared_at, :synced_at, :remote_updated_at
+            :shared_at, :synced_at, :remote_updated_at, :sync_ignored_at,
+            :sync_ignore_reason
         )
         ON CONFLICT(path) DO UPDATE SET
             kind = excluded.kind,
@@ -133,6 +138,12 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             synced_at = COALESCE(excluded.synced_at, documents.synced_at),
             remote_updated_at = COALESCE(
                 excluded.remote_updated_at, documents.remote_updated_at
+            ),
+            sync_ignored_at = COALESCE(
+                documents.sync_ignored_at, excluded.sync_ignored_at
+            ),
+            sync_ignore_reason = COALESCE(
+                documents.sync_ignore_reason, excluded.sync_ignore_reason
             )
         """,
         payload,
@@ -215,10 +226,35 @@ def mark_shared(
             author_name = COALESCE(?, author_name),
             author_email = COALESCE(?, author_email),
             shared_at = ?,
-            synced_at = ?
+            synced_at = ?,
+            sync_ignored_at = NULL,
+            sync_ignore_reason = NULL
         WHERE path = ?
         """,
         (remote_id, author_name, author_email, now, now, path.replace("\\", "/")),
+    )
+
+
+def mark_remote_deleted(
+    conn: sqlite3.Connection,
+    *,
+    path: str,
+    reason: str = "deleted_remote",
+    ignored_at: str | None = None,
+) -> None:
+    now = ignored_at or utc_now()
+    conn.execute(
+        """
+        UPDATE documents SET
+            origin = 'local',
+            remote_id = NULL,
+            shared_at = NULL,
+            synced_at = NULL,
+            sync_ignored_at = ?,
+            sync_ignore_reason = ?
+        WHERE path = ?
+        """,
+        (now, reason, path.replace("\\", "/")),
     )
 
 

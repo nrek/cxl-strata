@@ -93,6 +93,9 @@
             <button type="button" role="tab" id="tab-share" class="home-tab" aria-selected="false" aria-controls="panel-share">
               Share to Team
             </button>
+            <button type="button" role="tab" id="tab-secrets" class="home-tab" aria-selected="false" aria-controls="panel-secrets">
+              Potential Secrets
+            </button>
           </nav>
 
           <div id="panel-recent" role="tabpanel" class="home-tab-panel" aria-labelledby="tab-recent">
@@ -128,6 +131,27 @@
               </button>
               <span id="sync-page-info" class="sync-page-info"></span>
               <button type="button" id="sync-next" class="icon-btn" aria-label="Next page">
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </button>
+            </nav>
+          </div>
+
+          <div id="panel-secrets" role="tabpanel" class="home-tab-panel hidden" aria-labelledby="tab-secrets">
+            <div class="sync-head">
+              <p class="sync-subtitle">Files with secret-like values. STRATA redacts matched values before sync; deployment runbooks and scripts are not listed unless they contain actual secret-like assignments.</p>
+              <div class="sync-controls">
+                <button type="button" id="secrets-refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh potential secrets">
+                  <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div id="secrets-local-table" class="sync-table"></div>
+            <nav id="secrets-pagination" class="sync-pagination hidden" aria-label="Potential secrets pages">
+              <button type="button" id="secrets-prev" class="icon-btn" aria-label="Previous page">
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+              </button>
+              <span id="secrets-page-info" class="sync-page-info"></span>
+              <button type="button" id="secrets-next" class="icon-btn" aria-label="Next page">
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </button>
             </nav>
@@ -257,6 +281,8 @@
       <p id="tool-drawer-status" class="tool-drawer-status" role="status" aria-live="polite"></p>
     </div>
   </aside>
+
+  <p id="app-toast" class="app-toast" role="status" aria-live="polite" hidden></p>
 
   <button
     type="button"

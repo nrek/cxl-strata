@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from . import db
+from ..content_safety import find_secret_markers, redact_secret_markers
 from .indexer import discover_files, index_file
 from . import paths
 from .queries import _with_sync_status, effective_author_name, filter_by_author
@@ -44,6 +45,8 @@ def _local_share_status(
 ) -> tuple[str, str]:
     local_status = "indexed"
     share_status = "not shared"
+    if db_row and db_row.get("sync_ignored_at"):
+        return "ignored", "ignored"
     if db_row is None:
         local_status = "new"
     elif body_hash is not None and db_row.get("body_hash") != body_hash:
@@ -87,7 +90,7 @@ def scan_pending(
             for r in conn.execute(
                 """
                 SELECT path, body_hash, storage, origin, remote_id, shared_at,
-                       author_name, updated_at
+                       author_name, updated_at, sync_ignored_at, sync_ignore_reason
                 FROM documents
                 """
             ).fetchall()
@@ -98,6 +101,8 @@ def scan_pending(
             continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         db_row = indexed.get(rel)
+        if db_row and db_row.get("sync_ignored_at"):
+            continue
         if project:
             doc_project = db_row.get("project") if db_row else _project_from_path(rel)
             if doc_project != project:
@@ -157,7 +162,8 @@ def scan_recent_locally_changed(
                 """
                 SELECT path, kind, project, title, created_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
-                       storage, author_name, substr(body, 1, 180) AS excerpt
+                       storage, author_name, sync_ignored_at, sync_ignore_reason,
+                       substr(body, 1, 180) AS excerpt
                 FROM documents
                 """
             ).fetchall()
@@ -198,10 +204,79 @@ def scan_recent_locally_changed(
             "remote_id": db_row.get("remote_id") if db_row else None,
             "shared_at": db_row.get("shared_at") if db_row else None,
             "synced_at": db_row.get("synced_at") if db_row else None,
+            "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
+            "sync_ignore_reason": db_row.get("sync_ignore_reason") if db_row else None,
             "local_status": local_status,
             "share_status": share_status,
             "author_name": effective_author_name(db_row),
             "excerpt": excerpt,
+        }
+        rows.append(_with_sync_status(item))
+
+    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    filtered = filter_by_author(rows, author)
+    return filtered[:limit]
+
+
+def scan_potential_secret_files(
+    *,
+    kind: str | None = None,
+    author: str | None = None,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Local docs containing secret-like values that STRATA will redact before sync."""
+    rows: list[dict[str, Any]] = []
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        indexed = {
+            r["path"]: dict(r)
+            for r in conn.execute(
+                """
+                SELECT path, kind, project, title, created_at, origin,
+                       remote_id, shared_at, synced_at, updated_at, body_hash,
+                       storage, author_name, sync_ignored_at, sync_ignore_reason
+                FROM documents
+                """
+            ).fetchall()
+        }
+
+    for file_kind, path in discover_files():
+        if kind and file_kind != kind:
+            continue
+        rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+            body_hash = hashlib.sha256(text.encode()).hexdigest()
+            mtime = _mtime_iso(path)
+        except OSError:
+            continue
+
+        markers = find_secret_markers(text)
+        if not markers:
+            continue
+
+        db_row = indexed.get(rel)
+        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
+        item = {
+            "path": rel,
+            "kind": file_kind,
+            "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
+            "title": db_row.get("title") if db_row else None,
+            "updated_at": _activity_iso(mtime, db_row),
+            "mtime": mtime,
+            "created_at": (db_row.get("created_at") if db_row else None) or mtime,
+            "origin": (db_row.get("origin") if db_row else None) or "local",
+            "remote_id": db_row.get("remote_id") if db_row else None,
+            "shared_at": db_row.get("shared_at") if db_row else None,
+            "synced_at": db_row.get("synced_at") if db_row else None,
+            "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
+            "sync_ignore_reason": db_row.get("sync_ignore_reason") if db_row else None,
+            "local_status": local_status,
+            "share_status": share_status,
+            "author_name": effective_author_name(db_row),
+            "excerpt": _preview(redact_secret_markers(text)),
+            "redaction_count": len(markers),
         }
         rows.append(_with_sync_status(item))
 

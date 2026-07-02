@@ -12,10 +12,27 @@ SECRET_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:api[_-]?key|secret|password|token)\s*[:=]\s*[^\s,;]{8,}", re.I),
 )
 
+REDACTION_TEXT = "[REDACTED_SECRET]"
+
 
 def find_secret_markers(value: Any) -> list[str]:
     text = _flatten(value)
     return [pattern.pattern for pattern in SECRET_PATTERNS if pattern.search(text)]
+
+
+def redact_secret_markers(value: str) -> str:
+    redacted = value
+    for pattern in SECRET_PATTERNS:
+        redacted = pattern.sub(_redaction_for_match, redacted)
+    return redacted
+
+
+def _redaction_for_match(match: re.Match[str]) -> str:
+    text = match.group(0)
+    prefix = re.match(r"(?P<key>\b(?:api[_-]?key|secret|password|token)\s*[:=]\s*)", text, re.I)
+    if prefix:
+        return f"{prefix.group('key')}{REDACTION_TEXT}"
+    return REDACTION_TEXT
 
 
 def _flatten(value: Any) -> str:

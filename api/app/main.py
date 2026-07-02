@@ -348,6 +348,19 @@ def get_document(
     return document_to_dict(row)
 
 
+@app.delete("/v1/documents/{document_id}")
+def delete_document(
+    document_id: str,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:sync", "memory:write")
+    service = DocumentService(db, auth)
+    if not service.delete(document_id):
+        raise HTTPException(status_code=404, detail="not found")
+    return {"id": document_id, "deleted": True}
+
+
 @app.post("/v1/documents/import-batch", response_model=SharedDocumentImportBatchOut)
 def import_documents_batch(
     body: SharedDocumentImportBatchIn,

@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.core.content_safety import reject_if_secrets
+from app.core.content_safety import redact_secret_markers
 from app.core.types import AuthContext, utcnow
 from app.models import Project, SharedDocument, SharedDocumentSection
 from app.schemas.shared_document import SharedDocumentCreate
@@ -84,9 +84,9 @@ class DocumentService:
         return project.id
 
     def upsert(self, body: SharedDocumentCreate) -> SharedDocument:
-        reject_if_secrets(body.body)
+        redacted_body = redact_secret_markers(body.body)
         author_name, author_email = self._author()
-        digest = body.body_hash or _body_hash(body.body)
+        digest = _body_hash(redacted_body)
         project_id = self._ensure_project(body.project_slug)
 
         stmt = select(SharedDocument).where(
@@ -110,7 +110,7 @@ class DocumentService:
                 kind=body.kind,
                 title=body.title,
                 path=body.path,
-                body=body.body,
+                body=redacted_body,
                 body_hash=digest,
                 source=body.source,
                 storage_state=body.storage_state,
@@ -128,7 +128,7 @@ class DocumentService:
             row.repo_name = body.repo_name
             row.kind = body.kind
             row.title = body.title
-            row.body = body.body
+            row.body = redacted_body
             row.body_hash = digest
             row.storage_state = body.storage_state
             row.visibility = body.visibility
@@ -163,6 +163,14 @@ class DocumentService:
         if row is None or row.organization_id != self.auth.organization_id:
             return None
         return row
+
+    def delete(self, document_id: str) -> bool:
+        row = self.get(document_id)
+        if row is None:
+            return False
+        self.db.delete(row)
+        self.db.commit()
+        return True
 
     def list_documents(
         self,

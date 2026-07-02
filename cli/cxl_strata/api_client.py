@@ -98,3 +98,10 @@ def documents_import_batch(documents: list[dict[str, Any]]) -> dict[str, Any]:
         r = client.post("/v1/documents/import-batch", json={"documents": documents})
         r.raise_for_status()
         return r.json()
+
+
+def delete_document(document_id: str) -> dict[str, Any]:
+    with _client() as client:
+        r = client.delete(f"/v1/documents/{document_id}")
+        r.raise_for_status()
+        return r.json()

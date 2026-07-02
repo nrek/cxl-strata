@@ -6,7 +6,12 @@ from pathlib import Path
 from threading import Thread
 
 from cxl_strata import cursor_rule, local_store
-from cxl_strata.app.server import bootstrap_workspace_index, is_strata_app_healthy, setup_status
+from cxl_strata.app.server import (
+    StrataAppHandler,
+    bootstrap_workspace_index,
+    is_strata_app_healthy,
+    setup_status,
+)
 from cxl_strata.workspace_index import paths
 from cxl_strata.workspace_index.paths import set_workspace_root
 
@@ -208,3 +213,29 @@ def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None
     assert checks["sqlite"]["ok"] is False
     assert "strata index" in checks["sqlite"]["fix"]
     assert "cursor_skill" not in checks
+
+
+def test_potential_secrets_endpoint_returns_redacted_rows(tmp_path: Path) -> None:
+    (tmp_path / ".cursor" / "plans" / "draft").mkdir(parents=True)
+    (tmp_path / ".cursor" / "plans" / "draft" / "secret-plan.md").write_text(
+        "# Plan\n\npassword=supersecret123\n",
+        encoding="utf-8",
+    )
+    set_workspace_root(tmp_path)
+    bootstrap_workspace_index()
+    server, port = _serve_once(StrataAppHandler)
+    try:
+        import urllib.request
+
+        with urllib.request.urlopen(  # noqa: S310 - local test server
+            f"http://127.0.0.1:{port}/api/sync/potential-secrets",
+            timeout=3,
+        ) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["path"] == ".cursor/plans/draft/secret-plan.md"
+    assert "supersecret123" not in payload["items"][0]["excerpt"]

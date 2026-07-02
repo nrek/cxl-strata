@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from cxl_strata import documents
 from cxl_strata.workspace_index import db, indexer, nl_query, prune, queries, sync_review
 from cxl_strata.workspace_index.paths import resolve_workspace_root, set_workspace_root
 
@@ -45,7 +46,14 @@ def test_schema_migration_columns(workspace: Path) -> None:
     with db.connect() as conn:
         db.init_db(conn)
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
-    for name in ("remote_id", "author_name", "shared_at", "synced_at"):
+    for name in (
+        "remote_id",
+        "author_name",
+        "shared_at",
+        "synced_at",
+        "sync_ignored_at",
+        "sync_ignore_reason",
+    ):
         assert name in cols
 
 
@@ -120,6 +128,90 @@ def test_search_results_include_sync_status_for_local_documents(workspace: Path)
         row = next(r for r in changed["results"] if r["path"] == path)
         assert row["sync_status"] == "changed"
         assert row["syncable"] is True
+
+
+def test_stash_paths_redacts_secret_markers_in_payload(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = workspace / ".cursor" / "plans" / "draft" / "secret-plan.md"
+    plan.write_text(
+        "# Plan\n\nUse password=supersecret123 only as a placeholder in docs.\n",
+        encoding="utf-8",
+    )
+    indexer.index_all(prune=False)
+    captured: list[dict] = []
+
+    def fake_import_batch(payload: list[dict]) -> dict:
+        captured.extend(payload)
+        return {"synced": [{"path": payload[0]["path"], "remote_id": "remote-1"}], "failed": []}
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: (None, None))
+    monkeypatch.setattr(documents.api_client, "documents_import_batch", fake_import_batch)
+
+    result = documents.stash_paths([".cursor/plans/draft/secret-plan.md"])
+
+    assert not result["failed"]
+    assert captured
+    assert "supersecret123" not in captured[0]["body"]
+    assert "password=[REDACTED_SECRET]" in captured[0]["body"]
+
+
+def test_delete_remote_path_marks_local_doc_ignored(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    deleted: list[str] = []
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+
+    monkeypatch.setattr(documents.api_client, "delete_document", lambda remote_id: deleted.append(remote_id) or {"deleted": True})
+
+    result = documents.delete_remote_path(path)
+
+    assert result == {"path": path, "remote_id": "remote-1", "deleted": True}
+    assert deleted == ["remote-1"]
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT remote_id, sync_ignored_at, sync_ignore_reason FROM documents WHERE path = ?",
+            (path,),
+        ).fetchone()
+    assert row["remote_id"] is None
+    assert row["sync_ignored_at"]
+    assert row["sync_ignore_reason"] == "deleted_remote"
+
+
+def test_scan_potential_secret_files_returns_redacted_previews(workspace: Path) -> None:
+    plan = workspace / ".cursor" / "plans" / "draft" / "secret-plan.md"
+    plan.write_text(
+        "# Plan\n\nDeployment runbook is okay, but password=supersecret123 is redacted.\n",
+        encoding="utf-8",
+    )
+    runbook = workspace / ".cursor" / "plans" / "draft" / "runbook-plan.md"
+    runbook.write_text(
+        "# Plan\n\nRun python scripts/deploy.py and follow Apache deployment instructions.\n",
+        encoding="utf-8",
+    )
+    indexer.index_all(prune=False)
+
+    rows = sync_review.scan_potential_secret_files()
+
+    paths = {row["path"] for row in rows}
+    assert ".cursor/plans/draft/secret-plan.md" in paths
+    assert ".cursor/plans/draft/runbook-plan.md" not in paths
+    row = next(row for row in rows if row["path"] == ".cursor/plans/draft/secret-plan.md")
+    assert "supersecret123" not in row["excerpt"]
+    assert "password=[REDACTED_SECRET]" in row["excerpt"]
 
 
 def test_list_authors_and_filter_by_author(workspace: Path) -> None:
@@ -221,6 +313,40 @@ def test_scan_recent_locally_changed_keeps_recently_shared_files(workspace: Path
     assert shared["share_status"] == "shared"
     assert shared["local_status"] == "indexed"
     assert ".md/handoff/test-proj/2026-01-01T12-00-00Z.md" not in paths
+
+
+def test_remote_deleted_files_are_hidden_from_future_sync_prompts(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+        db.mark_remote_deleted(conn, path=path, reason="deleted_remote")
+
+    handoff = workspace / path
+    handoff.write_text(
+        "# Handoff — 2026-06-30T12-00-00Z\n\n- **Changed:** changed after delete\n",
+        encoding="utf-8",
+    )
+    future = (datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()
+    os.utime(handoff, (future, future))
+    indexer.index_all(prune=False)
+
+    pending = sync_review.scan_pending()
+    assert path not in {item["path"] for item in pending}
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        doc = queries.knowledge_get(conn, path)
+    assert doc is not None
+    assert doc["sync_status"] == "ignored"
+    assert doc["syncable"] is False
 
 
 def test_scan_recent_locally_changed_excludes_stale_files(workspace: Path) -> None:

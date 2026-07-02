@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from . import api_client, local_store
-from .content_safety import find_secret_markers
+from .content_safety import redact_secret_markers
 from .workspace_index import db, queries
 from .workspace_index.indexer import index_file
 from .workspace_index.paths import WORKSPACE_ROOT
@@ -22,23 +22,32 @@ def _document_payload(rel_path: str, body: str, kind: str | None = None) -> dict
         db.init_db(conn)
         doc = queries.knowledge_get(conn, rel_path)
     if doc:
+        body = redact_secret_markers(doc.get("body") or body)
         return {
             "path": rel_path,
             "kind": doc.get("kind") or kind or "handoff",
             "project_slug": doc.get("project"),
             "title": doc.get("title"),
-            "body": doc.get("body") or body,
-            "body_hash": doc.get("body_hash"),
+            "body": body,
+            "body_hash": _body_hash(body),
             "plan_status": doc.get("plan_status"),
             "linear_task_id": doc.get("linear_task_id"),
             "storage_state": doc.get("storage") or "file",
         }
+    body = redact_secret_markers(body)
     return {
         "path": rel_path,
         "kind": kind or "handoff",
         "title": Path(rel_path).stem,
         "body": body,
+        "body_hash": _body_hash(body),
     }
+
+
+def _body_hash(body: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(body.encode()).hexdigest()
 
 
 def stash_paths(
@@ -66,9 +75,6 @@ def stash_paths(
                 errors.append({"path": rel, "error": "not indexed"})
                 continue
             body = doc.get("body") or ""
-            if find_secret_markers(body):
-                errors.append({"path": rel, "error": "secrets detected"})
-                continue
             documents.append(_document_payload(rel, body, doc.get("kind")))
 
     if not documents:
@@ -92,6 +98,28 @@ def stash_paths(
     return {"synced": synced, "failed": failed}
 
 
+def delete_remote_path(path: str) -> dict[str, Any]:
+    rel = path.replace("\\", "/")
+    with db.connect() as conn:
+        db.init_db(conn)
+        doc = queries.knowledge_get(conn, rel)
+    if not doc:
+        return {"path": rel, "deleted": False, "error": "not indexed"}
+
+    remote_id = doc.get("remote_id")
+    if not remote_id:
+        with db.connect() as conn:
+            db.init_db(conn)
+            db.mark_remote_deleted(conn, path=rel)
+        return {"path": rel, "deleted": True, "remote_id": None}
+
+    api_client.delete_document(str(remote_id))
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_remote_deleted(conn, path=rel)
+    return {"path": rel, "remote_id": remote_id, "deleted": True}
+
+
 def stash_filtered(
     *,
     kind: str | None = None,
@@ -105,7 +133,10 @@ def stash_filtered(
 
     with db.connect() as conn:
         db.init_db(conn)
-        clauses = ["COALESCE(origin, 'local') != 'shared' OR remote_id IS NULL"]
+        clauses = [
+            "(COALESCE(origin, 'local') != 'shared' OR remote_id IS NULL)",
+            "sync_ignored_at IS NULL",
+        ]
         params: list[Any] = []
         if kind:
             clauses.append("kind = ?")

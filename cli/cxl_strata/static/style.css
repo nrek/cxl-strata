@@ -32,6 +32,31 @@ body {
   display: none !important;
 }
 
+.app-toast {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 60;
+  max-width: min(24rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  color: var(--text);
+  background: rgba(18, 20, 26, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.35);
+  font-size: 0.84rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.5rem);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.app-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
 #view-app.pre-search {
   grid-template-columns: 1fr;
 }
@@ -1188,9 +1213,10 @@ dialog h2 {
 }
 
 .sync-subtitle {
-  margin: 0.2rem 0 0;
+  margin: 0.5rem 0 0.75rem;
   color: var(--muted);
   font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .sync-controls {

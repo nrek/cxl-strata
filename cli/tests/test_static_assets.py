@@ -32,18 +32,39 @@ def test_home_tabs_recent_local_and_share_to_team() -> None:
     root = _package_root()
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
     index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
 
     assert "Recent Local Files" in index
     assert "Recent Locally Changed Files" not in index
     assert "Share to Team" in index
+    assert "Potential Secrets" in index
     assert 'id="tab-recent"' in index
     assert 'id="tab-share"' in index
+    assert 'id="tab-secrets"' in index
+    assert 'id="panel-secrets"' in index
+    assert 'id="secrets-local-table"' in index
     assert "Upload Local to STRATA API" not in index
     assert "function switchHomeTab(tab)" in app_js
     assert "async function openRecentFile(path, project)" in app_js
+    assert "async function loadPotentialSecrets" in app_js
     assert "/api/documents/recent-local" in app_js
+    assert "/api/sync/potential-secrets" in app_js
     assert 'hours: "168"' in app_js
     assert "RECENT_PAGE_SIZE = 12" in app_js
+    assert "line-height: 1.45" in style
+    assert "margin: 0.5rem 0 0.75rem" in style
+
+
+def test_potential_secrets_rows_do_not_offer_share_to_team() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    secret_row = app_js.split("function secretRowHtml(item)", 1)[1].split(
+        "function renderPagedList", 1
+    )[0]
+
+    assert "shareButtonHtml" not in secret_row
+    assert "sync-one" not in secret_row
+    assert "indexButtonHtml" in secret_row
 
 
 def test_author_filter_controls() -> None:
@@ -84,6 +105,35 @@ def test_search_cards_include_sync_button_wiring() -> None:
     assert "shareSearchResult(el.dataset.path)" in app_js
     assert "async function shareSearchResult(path)" in app_js
     assert "Share to Team" in index
+
+
+def test_shared_rows_offer_remote_delete_action() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    sync_row = app_js.split("function syncRowHtml(item)", 1)[1].split(
+        "function recentRowHtml", 1
+    )[0]
+
+    assert "deleteRemoteButtonHtml" in app_js
+    assert "async function deleteRemotePath(path)" in app_js
+    assert "/api/sync/delete-remote" in app_js
+    assert "item.remote_id" in sync_row
+    assert "deleteRemoteButtonHtml" in sync_row
+    assert "shareButtonHtml" in sync_row
+
+
+def test_sync_uses_non_blocking_redaction_toast() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="app-toast"' in index
+    assert "function showToast(message" in app_js
+    assert 'showToast("redacting secrets from sync..."' in app_js
+    assert "alert(result.failed" not in app_js
+    assert ".app-toast" in style
+    assert ".app-toast.visible" in style
 
 
 def test_tool_drawer_static_wiring() -> None:

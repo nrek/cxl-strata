@@ -200,3 +200,20 @@ def test_quickstart_leads_with_workspace_defaults() -> None:
     assert "--repo my-repo" not in quickstart
     assert "strata pull --project my-project" not in quickstart
     assert "strata stash --project my-project" not in quickstart
+
+
+def test_public_docs_use_neutral_org_and_workspace_examples() -> None:
+    repo_root = _package_root().parents[1]
+    public_docs = [
+        repo_root / "README.md",
+        repo_root / "cli" / "README.md",
+        repo_root / "cli" / "cxl_strata.egg-info" / "PKG-INFO",
+        repo_root / "docs" / "quickstart.md",
+        repo_root / "docs" / "client-installation.md",
+        repo_root / "docs" / "troubleshooting.md",
+    ]
+
+    for path in public_docs:
+        text = path.read_text(encoding="utf-8")
+        assert "commonspace" not in text.lower(), path
+        assert "D:\\projects" not in text, path

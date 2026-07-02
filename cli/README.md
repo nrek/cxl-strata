@@ -70,12 +70,12 @@ To talk to a **separate** STRATA org/installation with its own API key (without 
 
 ```bash
 # One-time: save a named profile
-strata org add commonspace --key strata_live_... --org commonspace
+strata org add team-a --key strata_live_... --org example-org
 
 # Use it for any command
-strata -org commonspace whoami
-strata -org commonspace search "deploy apache"
-strata -org commonspace stash --project commonspace-app
+strata -org team-a whoami
+strata -org team-a search "deploy apache"
+strata -org team-a stash --project example-project
 
 strata org list
 ```
@@ -85,7 +85,7 @@ Profile files live at `~/.strata/orgs/{alias}.json`:
 ```json
 {
   "api_key": "strata_live_...",
-  "org": "commonspace",
+  "org": "example-org",
   "api_base_url": "https://strata.craftxlogic.com"
 }
 ```

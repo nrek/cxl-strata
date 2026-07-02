@@ -52,7 +52,7 @@ The module command proves STRATA is installed even if your shell has not picked 
 
 ## 2. Initialize The Workspace
 
-From the workspace root, for example `D:\projects` when Cursor is opened there:
+From the workspace root, for example the folder where your agent/editor is opened:
 
 ```bash
 strata init \
@@ -148,7 +148,7 @@ export STRATA_WORKSPACE_ROOT=/path/to/workspace
 PowerShell:
 
 ```powershell
-$env:STRATA_WORKSPACE_ROOT = "D:\projects"
+$env:STRATA_WORKSPACE_ROOT = "C:\path\to\workspace"
 ```
 
 ## 7. Open The Localhost App

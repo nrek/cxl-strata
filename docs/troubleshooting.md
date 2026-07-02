@@ -331,7 +331,7 @@ strata index
 PowerShell:
 
 ```powershell
-$env:STRATA_WORKSPACE_ROOT = "D:\projects"
+$env:STRATA_WORKSPACE_ROOT = "C:\path\to\workspace"
 strata index
 ```
 

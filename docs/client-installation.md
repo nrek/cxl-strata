@@ -373,8 +373,8 @@ The one-line installers install the MCP package automatically.
 Use named profiles when one workstation talks to more than one STRATA installation:
 
 ```bash
-strata org add commonspace --key strata_live_... --org commonspace --api https://strata.example.com
-strata -org commonspace whoami
-strata -org commonspace search "deploy apache"
+strata org add team-a --key strata_live_... --org example-org --api https://strata.example.com
+strata -org team-a whoami
+strata -org team-a search "deploy apache"
 strata org list
 ```

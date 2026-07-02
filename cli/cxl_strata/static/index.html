@@ -91,7 +91,10 @@
               Recent Local Files
             </button>
             <button type="button" role="tab" id="tab-share" class="home-tab" aria-selected="false" aria-controls="panel-share">
-              Share to Team
+              Shared to Team
+            </button>
+            <button type="button" role="tab" id="tab-received" class="home-tab" aria-selected="false" aria-controls="panel-received">
+              Shared from Team
             </button>
             <button type="button" role="tab" id="tab-secrets" class="home-tab" aria-selected="false" aria-controls="panel-secrets">
               Potential Secrets
@@ -125,12 +128,33 @@
               </div>
             </div>
             <div id="sync-local-table" class="sync-table"></div>
-            <nav id="sync-pagination" class="sync-pagination hidden" aria-label="Share to Team pages">
+            <nav id="sync-pagination" class="sync-pagination hidden" aria-label="Shared to Team pages">
               <button type="button" id="sync-prev" class="icon-btn" aria-label="Previous page">
                 <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
               </button>
               <span id="sync-page-info" class="sync-page-info"></span>
               <button type="button" id="sync-next" class="icon-btn" aria-label="Next page">
+                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+              </button>
+            </nav>
+          </div>
+
+          <div id="panel-received" role="tabpanel" class="home-tab-panel hidden" aria-labelledby="tab-received">
+            <div class="sync-head">
+              <p class="sync-subtitle">Documents pulled from the STRATA API into your local index — searchable offline with contributor attribution.</p>
+              <div class="sync-controls">
+                <button type="button" id="received-refresh-btn" class="icon-btn" title="Refresh" aria-label="Refresh shared from team">
+                  <i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i>
+                </button>
+              </div>
+            </div>
+            <div id="received-from-team-table" class="sync-table"></div>
+            <nav id="received-pagination" class="sync-pagination hidden" aria-label="Shared from Team pages">
+              <button type="button" id="received-prev" class="icon-btn" aria-label="Previous page">
+                <i class="fa-solid fa-chevron-left" aria-hidden="true"></i>
+              </button>
+              <span id="received-page-info" class="sync-page-info"></span>
+              <button type="button" id="received-next" class="icon-btn" aria-label="Next page">
                 <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
               </button>
             </nav>

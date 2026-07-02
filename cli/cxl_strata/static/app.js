@@ -57,6 +57,8 @@ const state = {
   secretPage: 0,
   recentItems: [],
   recentPage: 0,
+  receivedItems: [],
+  receivedPage: 0,
   homeTab: "recent",
   activeDocPath: null,
   authors: [],
@@ -942,6 +944,14 @@ async function deleteRemotePath(path) {
   }
 }
 
+function syncHomeAuthorToScoped() {
+  const homeAuthor = ($("#files-filter-author") || {}).value || "";
+  const scoped = $("#scoped-filter-author");
+  if (scoped && homeAuthor && state.authors.includes(homeAuthor)) {
+    scoped.value = homeAuthor;
+  }
+}
+
 async function loadAuthors() {
   const data = await api("/api/authors").catch(() => ({ authors: [] }));
   state.authors = data.authors || [];
@@ -974,6 +984,7 @@ function reloadHomeFileTabs() {
   return Promise.all([
     loadRecentLocal({ resetPage: true }),
     loadSyncLocal({ resetPage: true }),
+    loadSharedFromTeam({ resetPage: true }),
     loadPotentialSecrets({ resetPage: true }),
   ]);
 }
@@ -1061,6 +1072,23 @@ function recentRowHtml(item) {
       </div>
       <div class="sync-meta">
         ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)}${item.author_name ? ` · ${esc(item.author_name)}` : ""} · ${esc(fmtDate(item.updated_at || item.created_at))}
+      </div>
+      <div class="sync-path">${esc(item.path)}</div>
+      ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
+    </article>`;
+}
+
+function sharedFromRowHtml(item) {
+  const title = item.title || titleFromPath(item.path);
+  const author = item.author_name || "";
+  return `
+    <article class="sync-row recent-row" data-path="${esc(item.path)}" data-project="${esc(item.project || "")}" role="button" tabindex="0">
+      <div class="sync-row-head">
+        <span class="badge badge-${esc(item.kind)}">${esc(item.kind)}</span>
+        <span class="recent-title">${esc(title)}</span>
+      </div>
+      <div class="sync-meta">
+        ${item.project ? `${esc(item.project)} · ` : ""}${author ? `${esc(author)} · ` : ""}received · ${esc(fmtDate(item.updated_at || item.synced_at || item.created_at))}
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
@@ -1173,18 +1201,23 @@ function switchHomeTab(tab) {
   state.homeTab = tab;
   const isRecent = tab === "recent";
   const isShare = tab === "share";
+  const isReceived = tab === "received";
   const isSecrets = tab === "secrets";
   $("#tab-recent")?.classList.toggle("active", isRecent);
   $("#tab-share")?.classList.toggle("active", isShare);
+  $("#tab-received")?.classList.toggle("active", isReceived);
   $("#tab-secrets")?.classList.toggle("active", isSecrets);
   $("#tab-recent")?.setAttribute("aria-selected", isRecent ? "true" : "false");
   $("#tab-share")?.setAttribute("aria-selected", isShare ? "true" : "false");
+  $("#tab-received")?.setAttribute("aria-selected", isReceived ? "true" : "false");
   $("#tab-secrets")?.setAttribute("aria-selected", isSecrets ? "true" : "false");
   $("#panel-recent")?.classList.toggle("hidden", !isRecent);
   $("#panel-share")?.classList.toggle("hidden", !isShare);
+  $("#panel-received")?.classList.toggle("hidden", !isReceived);
   $("#panel-secrets")?.classList.toggle("hidden", !isSecrets);
   if (isRecent) loadRecentLocal({ resetPage: false });
   if (isShare) loadSyncLocal({ resetPage: false });
+  if (isReceived) loadSharedFromTeam({ resetPage: false });
   if (isSecrets) loadPotentialSecrets({ resetPage: false });
 }
 
@@ -1194,6 +1227,36 @@ async function loadRecentLocal({ resetPage = true } = {}) {
   state.recentItems = data.items || [];
   if (resetPage) state.recentPage = 0;
   renderRecentPage();
+}
+
+async function loadSharedFromTeam({ resetPage = true } = {}) {
+  const params = filesFilterParams();
+  params.delete("hours");
+  const data = await api(`/api/documents/shared-from-team?${params.toString()}`).catch(() => ({
+    items: [],
+  }));
+  state.receivedItems = data.items || [];
+  if (resetPage) state.receivedPage = 0;
+  renderReceivedPage();
+}
+
+function renderReceivedPage() {
+  renderPagedList({
+    items: state.receivedItems,
+    page: state.receivedPage,
+    pageSize: RECENT_PAGE_SIZE,
+    tableId: "#received-from-team-table",
+    pagerId: "#received-pagination",
+    pageInfoId: "#received-page-info",
+    prevId: "#received-prev",
+    nextId: "#received-next",
+    rowHtml: sharedFromRowHtml,
+    emptyMessage: "No team documents pulled locally yet. Use Sync From Remote in the tool drawer or run strata pull.",
+    onPageChange: (page) => {
+      state.receivedPage = page;
+    },
+    onRowActivate: (dataset) => openRecentFile(dataset.path, dataset.project),
+  });
 }
 
 function renderSyncPage() {
@@ -1385,13 +1448,20 @@ async function refreshDashboard() {
   state.remotePending = remotePending.pending || 0;
   renderStatsLine(stats, remotePending);
   renderProjectPanels(summary);
-  await Promise.all([loadRecentLocal(), loadSyncLocal(), loadPotentialSecrets()]);
+  await loadAuthors();
+  await Promise.allSettled([
+    loadRecentLocal(),
+    loadSyncLocal(),
+    loadSharedFromTeam(),
+    loadPotentialSecrets(),
+  ]);
 }
 
 function handleHomeSearch(rawQ) {
   const q = rawQ.trim();
   if (!q) return;
 
+  syncHomeAuthorToScoped();
   const source = ($("#home-source") || {}).value || "local";
   if (source !== "local" && q) {
     enterProject(state.latestProjects[0]?.project || state.allProjects[0]?.project || "—", q);
@@ -1415,47 +1485,23 @@ function handleHomeSearch(rawQ) {
   }
 }
 
-async function init() {
-  const [stats, summary, projects, cfg] = await Promise.all([
-    api("/api/stats"),
-    api("/api/projects/summary"),
-    api("/api/projects"),
-    api("/api/config").catch(() => ({ online: false })),
-  ]);
-
-  renderApiStatus(cfg);
-  state.allProjects = projects;
-
-  let remotePending = { online: false, pending: 0 };
-  if (state.apiOnline) {
-    remotePending = await api("/api/sync/remote-pending").catch(() => ({
-      online: false,
-      pending: 0,
-    }));
-  }
-  state.remotePending = remotePending.pending || 0;
-  renderStatsLine(stats, remotePending);
-
-  renderProjectPanels(summary);
-  renderSidebar();
-  await loadAuthors();
-  await Promise.all([loadRecentLocal(), loadSyncLocal(), loadPotentialSecrets()]);
+function bindHomeTabControls() {
+  if (bindHomeTabControls.bound) return;
+  bindHomeTabControls.bound = true;
 
   $("#tab-recent")?.addEventListener("click", () => switchHomeTab("recent"));
   $("#tab-share")?.addEventListener("click", () => switchHomeTab("share"));
+  $("#tab-received")?.addEventListener("click", () => switchHomeTab("received"));
   $("#tab-secrets")?.addEventListener("click", () => switchHomeTab("secrets"));
 
   $("#files-filter-kind")?.addEventListener("change", () => reloadHomeFileTabs());
-  $("#files-filter-author")?.addEventListener("change", () => reloadHomeFileTabs());
-  $("#scoped-filter-author")?.addEventListener("change", () => {
-    if (state.view === "app" && state.activeProject) {
-      const q = $("#scoped-q").value.trim();
-      if (q) runScopedSearch(q);
-      else browseProject(state.activeProject);
-    }
+  $("#files-filter-author")?.addEventListener("change", () => {
+    syncHomeAuthorToScoped();
+    reloadHomeFileTabs();
   });
 
   $("#sync-refresh-btn")?.addEventListener("click", () => loadSyncLocal({ resetPage: false }));
+  $("#received-refresh-btn")?.addEventListener("click", () => loadSharedFromTeam({ resetPage: false }));
   $("#secrets-refresh-btn")?.addEventListener("click", () => loadPotentialSecrets({ resetPage: false }));
   $("#sync-all-btn")?.addEventListener("click", () => {
     syncPaths(state.syncItems.map((i) => i.path));
@@ -1487,6 +1533,19 @@ async function init() {
       renderRecentPage();
     }
   });
+  $("#received-prev")?.addEventListener("click", () => {
+    if (state.receivedPage > 0) {
+      state.receivedPage -= 1;
+      renderReceivedPage();
+    }
+  });
+  $("#received-next")?.addEventListener("click", () => {
+    const totalPages = Math.ceil(state.receivedItems.length / RECENT_PAGE_SIZE);
+    if (state.receivedPage < totalPages - 1) {
+      state.receivedPage += 1;
+      renderReceivedPage();
+    }
+  });
   $("#secrets-prev")?.addEventListener("click", () => {
     if (state.secretPage > 0) {
       state.secretPage -= 1;
@@ -1500,8 +1559,50 @@ async function init() {
       renderPotentialSecretsPage();
     }
   });
+}
+bindHomeTabControls.bound = false;
 
+async function init() {
+  bindHomeTabControls();
   switchHomeTab("recent");
+
+  const [stats, summary, projects, cfg] = await Promise.all([
+    api("/api/stats"),
+    api("/api/projects/summary"),
+    api("/api/projects"),
+    api("/api/config").catch(() => ({ online: false })),
+  ]);
+
+  renderApiStatus(cfg);
+  state.allProjects = projects;
+
+  let remotePending = { online: false, pending: 0 };
+  if (state.apiOnline) {
+    remotePending = await api("/api/sync/remote-pending").catch(() => ({
+      online: false,
+      pending: 0,
+    }));
+  }
+  state.remotePending = remotePending.pending || 0;
+  renderStatsLine(stats, remotePending);
+
+  renderProjectPanels(summary);
+  renderSidebar();
+  await loadAuthors();
+  await Promise.allSettled([
+    loadRecentLocal(),
+    loadSyncLocal(),
+    loadSharedFromTeam(),
+    loadPotentialSecrets(),
+  ]);
+
+  $("#scoped-filter-author")?.addEventListener("change", () => {
+    if (state.view === "app" && state.activeProject) {
+      const q = $("#scoped-q").value.trim();
+      if (q) runScopedSearch(q);
+      else browseProject(state.activeProject);
+    }
+  });
 
   const chips = $("#example-chips");
   chips.innerHTML = EXAMPLES.map(

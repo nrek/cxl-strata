@@ -236,6 +236,53 @@ def test_list_authors_and_filter_by_author(workspace: Path) -> None:
     assert not any(item["path"] == path for item in other)
 
 
+def test_list_shared_from_team_documents_and_authors(workspace: Path) -> None:
+    shared_path = "shared/remote-handoff-1"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.upsert_document(
+            conn,
+            {
+                "id": "shared-remote-handoff-1",
+                "kind": "handoff",
+                "project": "test-proj",
+                "path": shared_path,
+                "title": "Team handoff",
+                "created_at": "2026-07-01T12:00:00Z",
+                "updated_at": "2026-07-01T12:00:00Z",
+                "body": "# Handoff\n\nShared by teammate.",
+                "body_hash": "abc123",
+                "plan_status": None,
+                "linear_task_id": None,
+                "files_changed": None,
+                "deploy_commands": None,
+                "tags": None,
+                "folder_status": None,
+                "status_mismatch": 0,
+                "storage": "db_only",
+                "origin": "shared",
+                "remote_id": "remote-handoff-1",
+                "author_name": "Teammate",
+                "author_email": "teammate@example.com",
+                "shared_at": "2026-07-01T12:00:00Z",
+                "synced_at": "2026-07-02T12:00:00Z",
+                "remote_updated_at": "2026-07-01T12:00:00Z",
+            },
+        )
+        items = queries.list_shared_from_team_documents(conn, limit=50)
+        authors = queries.list_authors(conn)
+        filtered = queries.list_shared_from_team_documents(conn, limit=50, author="Teammate")
+        empty = queries.list_shared_from_team_documents(conn, limit=50, author="Nobody")
+
+    assert any(item["path"] == shared_path for item in items)
+    row = next(item for item in items if item["path"] == shared_path)
+    assert row["author_name"] == "Teammate"
+    assert row["local_status"] == "received"
+    assert "Teammate" in authors
+    assert any(item["path"] == shared_path for item in filtered)
+    assert not any(item["path"] == shared_path for item in empty)
+
+
 def test_knowledge_get_includes_sync_status(workspace: Path) -> None:
     indexer.index_all(prune=False)
     path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"

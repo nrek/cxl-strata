@@ -250,6 +250,23 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             _json_response(self, {"items": items, "hours": hours})
             return
 
+        if path == "/api/documents/shared-from-team":
+            qs = parse_qs(parsed.query)
+            try:
+                limit = int((qs.get("limit") or ["500"])[0])
+            except ValueError:
+                limit = 500
+            kind = (qs.get("kind") or [None])[0]
+            author = (qs.get("author") or [None])[0]
+            limit = max(1, min(limit, 2000))
+            with db.connect() as conn:
+                db.init_db(conn)
+                items = queries.list_shared_from_team_documents(
+                    conn, limit=limit, kind=kind, author=author
+                )
+            _json_response(self, {"items": items})
+            return
+
         if path == "/api/doc":
             qs = parse_qs(parsed.query)
             doc_path = (qs.get("path") or [None])[0]

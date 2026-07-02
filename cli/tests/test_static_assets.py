@@ -36,18 +36,25 @@ def test_home_tabs_recent_local_and_share_to_team() -> None:
 
     assert "Recent Local Files" in index
     assert "Recent Locally Changed Files" not in index
-    assert "Share to Team" in index
+    assert "Shared to Team" in index
+    assert "Shared from Team" in index
     assert "Potential Secrets" in index
     assert 'id="tab-recent"' in index
     assert 'id="tab-share"' in index
+    assert 'id="tab-received"' in index
     assert 'id="tab-secrets"' in index
+    assert 'id="panel-received"' in index
+    assert 'id="received-from-team-table"' in index
     assert 'id="panel-secrets"' in index
     assert 'id="secrets-local-table"' in index
     assert "Upload Local to STRATA API" not in index
     assert "function switchHomeTab(tab)" in app_js
+    assert "function bindHomeTabControls()" in app_js
     assert "async function openRecentFile(path, project)" in app_js
     assert "async function loadPotentialSecrets" in app_js
+    assert "async function loadSharedFromTeam" in app_js
     assert "/api/documents/recent-local" in app_js
+    assert "/api/documents/shared-from-team" in app_js
     assert "/api/sync/potential-secrets" in app_js
     assert 'hours: "168"' in app_js
     assert "RECENT_PAGE_SIZE = 12" in app_js
@@ -77,6 +84,7 @@ def test_author_filter_controls() -> None:
     assert "/api/authors" in app_js
     assert "async function loadAuthors()" in app_js
     assert "function filesFilterParams()" in app_js
+    assert "function syncHomeAuthorToScoped()" in app_js
 
 
 def test_modal_and_action_ctas() -> None:

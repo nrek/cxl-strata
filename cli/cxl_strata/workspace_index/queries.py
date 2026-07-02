@@ -309,6 +309,60 @@ def list_recent_local_documents(
     return filter_by_author(items, author)
 
 
+def list_shared_from_team_documents(
+    conn: sqlite3.Connection,
+    *,
+    limit: int = 500,
+    kind: str | None = None,
+    author: str | None = None,
+) -> list[dict[str, Any]]:
+    """Documents ingested from the central API into local SQLite (origin=shared)."""
+    clauses = ["origin = 'shared'"]
+    params: list[Any] = []
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+
+    rows = conn.execute(
+        f"""
+        SELECT path, kind, project, title, created_at, updated_at, origin,
+               remote_id, shared_at, synced_at, author_name, storage,
+               substr(body, 1, 180) AS excerpt
+        FROM documents
+        WHERE {" AND ".join(clauses)}
+        ORDER BY COALESCE(synced_at, updated_at, shared_at, created_at) DESC
+        LIMIT ?
+        """,
+        (*params, limit),
+    ).fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        activity_at = max(
+            str(v)
+            for v in (
+                item.get("synced_at"),
+                item.get("updated_at"),
+                item.get("shared_at"),
+                item.get("created_at"),
+            )
+            if v
+        )
+        item.update(
+            {
+                "updated_at": activity_at,
+                "local_status": "received",
+                "share_status": "from team",
+                "author_name": effective_author_name(item),
+                "excerpt": item.get("excerpt") or "",
+            }
+        )
+        items.append(item)
+
+    return filter_by_author(items, author)
+
+
 def list_recent_local_files(
     conn: sqlite3.Connection,
     *,

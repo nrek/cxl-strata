@@ -33,6 +33,9 @@ const ACTION = {
   deleteRemoteBusy: "Deleting…",
   deleteRemoteTooltip:
     "Delete the shared copy from STRATA and ignore this local file in future sync prompts.",
+  deleteStrataTooltip: "Delete your shared copy from STRATA (local file is kept).",
+  lockUnlockedTooltip: "Unlocked — included in batch sync to STRATA API.",
+  lockLockedTooltip: "Locked — excluded from batch sync to STRATA API.",
 };
 
 const TOOL_PROMPTS = {
@@ -61,7 +64,9 @@ const state = {
   receivedPage: 0,
   homeTab: "recent",
   activeDocPath: null,
+  pendingDeletePath: null,
   authors: [],
+  localActorName: "",
   hasSearched: false,
   remotePending: 0,
 };
@@ -442,9 +447,9 @@ async function runToolCommand(command) {
 
     if (command === "sync-local") {
       if (!state.syncItems.length) await loadSyncLocal({ resetPage: false });
-      const paths = uniquePaths(state.syncItems);
+      const paths = batchSyncPaths(state.syncItems);
       if (!paths.length) {
-        setToolStatus("All local artifacts are already shared.");
+        setToolStatus("All local artifacts are already shared or locked.");
         return;
       }
       await syncPaths(paths);
@@ -636,14 +641,75 @@ function isLocalItem(item) {
   return (item.source || item.origin || "local") === "local";
 }
 
+function isActionableLocalDoc(item) {
+  if (!item?.path) return false;
+  const storage = item.storage || "file";
+  return storage !== "db_only";
+}
+
 function canShareItem(item) {
   return (
-    Boolean(item?.path) &&
-    isLocalItem(item) &&
+    isActionableLocalDoc(item) &&
     (item.syncable === true ||
       item.sync_status === "not_shared" ||
       item.sync_status === "changed")
   );
+}
+
+function canShowLockItem(item) {
+  return canShareItem(item);
+}
+
+function isDocumentAuthor(item) {
+  const author = (item?.author_name || "").trim();
+  if (!author) return false;
+  const actor = (state.localActorName || "").trim();
+  if (actor) return author.toLowerCase() === actor.toLowerCase();
+  if (state.authors.length === 1) {
+    return state.authors[0].trim().toLowerCase() === author.toLowerCase();
+  }
+  return false;
+}
+
+function canDeleteFromStrata(item) {
+  return (
+    isActionableLocalDoc(item) &&
+    !canShareItem(item) &&
+    isDocumentAuthor(item) &&
+    Boolean(item.remote_id)
+  );
+}
+
+function isSyncLocked(item) {
+  return Boolean(item?.sync_locked);
+}
+
+function renderLockButtonState(btn, locked) {
+  if (!btn) return;
+  btn.dataset.locked = locked ? "1" : "0";
+  btn.classList.toggle("lock-btn-locked", locked);
+  btn.classList.toggle("lock-btn-unlocked", !locked);
+  btn.title = locked ? ACTION.lockLockedTooltip : ACTION.lockUnlockedTooltip;
+  btn.setAttribute(
+    "aria-label",
+    locked ? "Locked — excluded from batch sync" : "Unlocked — included in batch sync"
+  );
+  const icon = btn.querySelector("i");
+  if (icon) {
+    icon.className = locked ? "fa-solid fa-lock" : "fa-solid fa-lock-open";
+  }
+}
+
+function lockButtonHtml(path, locked, className = "result-lock-btn") {
+  const stateClass = locked ? "lock-btn-locked" : "lock-btn-unlocked";
+  const icon = locked ? "fa-lock" : "fa-lock-open";
+  const title = locked ? ACTION.lockLockedTooltip : ACTION.lockUnlockedTooltip;
+  const label = locked ? "Locked — excluded from batch sync" : "Unlocked — included in batch sync";
+  return `<button type="button" class="icon-btn lock-btn ${stateClass} ${className}" data-path="${esc(path)}" data-locked="${locked ? "1" : "0"}" aria-label="${esc(label)}" title="${esc(title)}"><i class="fa-solid ${icon}" aria-hidden="true"></i></button>`;
+}
+
+function deleteStrataButtonHtml(path, className = "result-delete-strata-btn") {
+  return `<button type="button" class="icon-btn delete-strata-btn ${className}" data-path="${esc(path)}" aria-label="Delete from STRATA" title="${esc(ACTION.deleteStrataTooltip)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 }
 
 function shareButtonHtml(path, className = "result-share-btn") {
@@ -654,18 +720,15 @@ function indexButtonHtml(path, className = "result-index-btn") {
   return `<button type="button" class="cta-btn cta-index ${className}" data-path="${esc(path)}" title="${esc(ACTION.indexTooltip)}">${ACTION.indexLabel}</button>`;
 }
 
-function deleteRemoteButtonHtml(path, className = "result-delete-remote-btn") {
-  return `<button type="button" class="cta-btn cta-index ${className}" data-path="${esc(path)}" title="${esc(ACTION.deleteRemoteTooltip)}">${ACTION.deleteRemoteLabel}</button>`;
-}
-
 function localActionButtonsHtml(item, { shareClass = "result-share-btn", indexClass = "result-index-btn" } = {}) {
   const path = item.path;
-  if (!path || !isLocalItem(item)) return "";
+  if (!isActionableLocalDoc(item)) return "";
 
   const share = canShareItem(item) ? shareButtonHtml(path, shareClass) : "";
-  const deleteRemote = item.remote_id ? deleteRemoteButtonHtml(path) : "";
+  const lock = canShowLockItem(item) ? lockButtonHtml(path, isSyncLocked(item)) : "";
+  const deleteStrata = canDeleteFromStrata(item) ? deleteStrataButtonHtml(path) : "";
   const index = indexButtonHtml(path, indexClass);
-  const actions = [share, deleteRemote, index].filter(Boolean);
+  const actions = [share, lock, deleteStrata, index].filter(Boolean);
   return `<div class="card-actions">${actions.join('<span class="action-sep" aria-hidden="true">|</span>')}</div>`;
 }
 
@@ -686,22 +749,48 @@ function updateDocModalActions(doc, path) {
   const actions = $("#doc-actions");
   const shareBtn = $("#doc-share-btn");
   const indexBtn = $("#doc-index-btn");
+  const lockBtn = $("#doc-lock-btn");
+  const deleteBtn = $("#doc-delete-strata-btn");
   const sep = actions?.querySelector(".action-sep");
-  if (!actions || !shareBtn || !indexBtn) return;
+  if (!actions || !shareBtn || !indexBtn || !lockBtn || !deleteBtn) return;
 
   state.activeDocPath = path;
-  const local = isLocalItem(doc);
-  const showShare = local && canShareItem(doc);
+  const actionable = isActionableLocalDoc(doc);
+  const showShare = actionable && canShareItem(doc);
+  const showLock = showShare;
+  const showDelete = actionable && canDeleteFromStrata(doc);
 
-  actions.classList.toggle("hidden", !local);
+  actions.classList.toggle("hidden", !actionable);
   shareBtn.classList.toggle("hidden", !showShare);
   sep?.classList.toggle("hidden", !showShare);
-  indexBtn.classList.toggle("hidden", !local);
+  indexBtn.classList.toggle("hidden", !actionable);
+  lockBtn.classList.toggle("hidden", !showLock);
+  deleteBtn.classList.toggle("hidden", !showDelete);
 
   shareBtn.title = ACTION.shareTooltip;
   indexBtn.title = ACTION.indexTooltip;
   setActionIdle(shareBtn, ACTION.shareLabel);
   setActionIdle(indexBtn, ACTION.indexLabel);
+  lockBtn.dataset.path = path;
+  deleteBtn.dataset.path = path;
+  if (showLock) renderLockButtonState(lockBtn, isSyncLocked(doc));
+}
+
+function patchItemLockState(path, locked) {
+  for (const items of [state.recentItems, state.syncItems, state.secretItems]) {
+    const item = items.find((row) => row.path === path);
+    if (item) item.sync_locked = locked;
+  }
+}
+
+function syncLockButtonsForPath(path, locked, sourceBtn) {
+  renderLockButtonState(sourceBtn, locked);
+  document.querySelectorAll(`.result-lock-btn[data-path="${cssEscape(path)}"]`).forEach((el) => {
+    if (el !== sourceBtn) renderLockButtonState(el, locked);
+  });
+  if (state.activeDocPath === path) {
+    renderLockButtonState($("#doc-lock-btn"), locked);
+  }
 }
 
 function cardHtml(item) {
@@ -789,7 +878,7 @@ function renderResults(data) {
 
   out.querySelectorAll(".card[data-path]").forEach((el) => {
     el.addEventListener("click", (event) => {
-      if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn")) return;
+      if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn")) return;
       openDoc(el.dataset.path);
     });
   });
@@ -805,12 +894,13 @@ function renderResults(data) {
       indexSearchResult(el.dataset.path);
     });
   });
-  out.querySelectorAll(".result-delete-remote-btn").forEach((el) => {
+  out.querySelectorAll(".result-lock-btn").forEach((el) => {
     el.addEventListener("click", (event) => {
       event.stopPropagation();
-      deleteRemotePath(el.dataset.path);
+      toggleSyncLock(el.dataset.path, el);
     });
   });
+  bindDeleteStrataButtons(out);
 }
 
 async function openDoc(path) {
@@ -851,7 +941,7 @@ async function shareSearchResult(path) {
     result = await api("/api/sync/upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paths: [path] }),
+      body: JSON.stringify({ paths: [path], allow_locked: true }),
     });
   } catch (err) {
     showToast(`Sync failed: ${err.message}`);
@@ -907,6 +997,41 @@ async function shareDocFromModal() {
   }
 }
 
+async function toggleSyncLock(path, btn) {
+  if (!path || !btn || btn.disabled) return;
+  const locked = btn.dataset.locked === "1";
+  const nextLocked = !locked;
+  btn.disabled = true;
+  try {
+    const result = await api("/api/sync/lock", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, locked: nextLocked }),
+    });
+    const syncLocked = Boolean(result.sync_locked);
+    patchItemLockState(path, syncLocked);
+    syncLockButtonsForPath(path, syncLocked, btn);
+    showToast(syncLocked ? "Locked — excluded from batch sync." : "Unlocked — included in batch sync.");
+    if (state.homeTab === "recent") renderRecentPage();
+    else if (state.homeTab === "share") renderSyncPage();
+    else if (state.homeTab === "secrets") renderPotentialSecretsPage();
+    if (state.view === "app" && state.activeProject) {
+      await refreshActiveProjectResults();
+    }
+  } catch (err) {
+    showToast(`Lock update failed: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleDocLockFromModal() {
+  const path = state.activeDocPath;
+  const btn = $("#doc-lock-btn");
+  if (!path || !btn) return;
+  await toggleSyncLock(path, btn);
+}
+
 async function indexDocFromModal() {
   const path = state.activeDocPath;
   if (!path) return;
@@ -921,27 +1046,99 @@ async function indexDocFromModal() {
   }
 }
 
-async function deleteRemotePath(path) {
+function deleteRemotePath(path) {
+  openDeleteStrataConfirm(path);
+}
+
+function openDeleteStrataConfirm(path) {
+  if (!path) return;
+  state.pendingDeletePath = path;
+  const modal = $("#delete-strata-modal");
+  const input = $("#delete-strata-confirm-input");
+  const confirmBtn = $("#delete-strata-confirm");
+  if (!modal || !input || !confirmBtn) return;
+  $("#delete-strata-path").textContent = path;
+  input.value = "";
+  confirmBtn.disabled = true;
+  modal.showModal();
+  input.focus();
+}
+
+function closeDeleteStrataConfirm() {
+  state.pendingDeletePath = null;
+  $("#delete-strata-modal")?.close();
+}
+
+async function confirmDeleteFromStrata() {
+  const path = state.pendingDeletePath;
+  const input = $("#delete-strata-confirm-input");
+  if (!path || !input || input.value.trim() !== "DELETE") return;
+  closeDeleteStrataConfirm();
+  await executeDeleteFromStrata(path);
+}
+
+async function executeDeleteFromStrata(path) {
   if (!path) return;
   const btn = document.querySelector(
-    `.result-delete-remote-btn[data-path="${cssEscape(path)}"], .delete-remote-one[data-path="${cssEscape(path)}"]`
+    `.result-delete-strata-btn[data-path="${cssEscape(path)}"], .delete-strata-one[data-path="${cssEscape(path)}"], #doc-delete-strata-btn`
   );
-  if (btn) setActionBusy(btn, ACTION.deleteRemoteBusy);
+  if (btn) btn.disabled = true;
   try {
-    await api("/api/sync/delete-remote", {
+    const result = await api("/api/sync/delete-remote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path }),
+      body: JSON.stringify({ path, actor_name: state.localActorName || undefined }),
     });
-    showToast("Remote item deleted. Future sync prompts will ignore it.");
-    setToolStatus("Remote item deleted and ignored locally.");
-    await refreshActiveProjectResults();
-    await loadSyncLocal({ resetPage: false });
-    await loadRecentLocal({ resetPage: false });
-    await loadPotentialSecrets({ resetPage: false });
+    if (!result.deleted) {
+      showToast(result.error ? `Delete failed: ${result.error}` : "Delete failed.");
+      return;
+    }
+    showToast("Removed from STRATA. Local file kept.");
+    setToolStatus("Removed from STRATA. Local file kept.");
+    if (state.activeDocPath === path) {
+      $("#doc-modal")?.close();
+    }
+    if (state.homeTab === "recent") await loadRecentLocal({ resetPage: false });
+    else if (state.homeTab === "share") await loadSyncLocal({ resetPage: false });
+    if (state.view === "app" && state.activeProject) {
+      await refreshActiveProjectResults();
+    }
+  } catch (err) {
+    showToast(`Delete failed: ${err.message}`);
   } finally {
-    if (btn) setActionIdle(btn, ACTION.deleteRemoteLabel);
+    if (btn) btn.disabled = false;
   }
+}
+
+function bindDeleteStrataButtons(container) {
+  container.querySelectorAll(".result-delete-strata-btn, .delete-strata-one").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openDeleteStrataConfirm(btn.dataset.path);
+    });
+  });
+}
+
+function initDeleteStrataModal() {
+  const modal = $("#delete-strata-modal");
+  const input = $("#delete-strata-confirm-input");
+  const confirmBtn = $("#delete-strata-confirm");
+  if (!modal || !input || !confirmBtn) return;
+
+  input.addEventListener("input", () => {
+    confirmBtn.disabled = input.value.trim() !== "DELETE";
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !confirmBtn.disabled) {
+      event.preventDefault();
+      confirmDeleteFromStrata();
+    }
+  });
+  $("#delete-strata-cancel")?.addEventListener("click", closeDeleteStrataConfirm);
+  confirmBtn.addEventListener("click", () => confirmDeleteFromStrata());
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) closeDeleteStrataConfirm();
+  });
 }
 
 function syncHomeAuthorToScoped() {
@@ -953,8 +1150,12 @@ function syncHomeAuthorToScoped() {
 }
 
 async function loadAuthors() {
-  const data = await api("/api/authors").catch(() => ({ authors: [] }));
+  const data = await api("/api/authors").catch(() => ({ authors: [], local_actor: "" }));
   state.authors = data.authors || [];
+  if (data.local_actor) state.localActorName = String(data.local_actor).trim();
+  else if (!state.localActorName && state.authors.length === 1) {
+    state.localActorName = state.authors[0].trim();
+  }
   const options =
     '<option value="">All Authors</option>' +
     state.authors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
@@ -1039,7 +1240,8 @@ async function browseProject(project) {
 function syncRowHtml(item) {
   const actions = [
     canShareItem(item) ? shareButtonHtml(item.path, "sync-one") : "",
-    item.remote_id ? deleteRemoteButtonHtml(item.path, "delete-remote-one") : "",
+    canShowLockItem(item) ? lockButtonHtml(item.path, isSyncLocked(item)) : "",
+    canDeleteFromStrata(item) ? deleteStrataButtonHtml(item.path, "delete-strata-one") : "",
     indexButtonHtml(item.path, "index-one"),
   ].filter(Boolean);
   return `
@@ -1064,6 +1266,10 @@ function recentRowHtml(item) {
   const title = item.title || titleFromPath(item.path);
   const localStatus = item.local_status || "indexed";
   const shareStatus = item.share_status || (item.sync_status === "shared" ? "shared" : "not shared");
+  const actionButtons = localActionButtonsHtml(item, {
+    shareClass: "sync-one",
+    indexClass: "index-one",
+  });
   return `
     <article class="sync-row recent-row" data-path="${esc(item.path)}" data-project="${esc(item.project || "")}" role="button" tabindex="0">
       <div class="sync-row-head">
@@ -1075,6 +1281,7 @@ function recentRowHtml(item) {
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
+      ${actionButtons}
     </article>`;
 }
 
@@ -1110,8 +1317,36 @@ function secretRowHtml(item) {
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
       <div class="sync-actions">
         ${indexButtonHtml(item.path, "index-one")}
+        ${canShowLockItem(item) ? lockButtonHtml(item.path, isSyncLocked(item)) : ""}
+        ${canDeleteFromStrata(item) ? deleteStrataButtonHtml(item.path, "delete-strata-one") : ""}
       </div>
     </article>`;
+}
+
+function bindRecentRowActions(container) {
+  container.querySelectorAll(".sync-one, .result-share-btn").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      shareSearchResult(btn.dataset.path);
+    });
+  });
+  container.querySelectorAll(".index-one, .result-index-btn").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      indexSearchResult(btn.dataset.path);
+    });
+  });
+  bindLockButtons(container);
+  bindDeleteStrataButtons(container);
+}
+
+function bindLockButtons(container) {
+  container.querySelectorAll(".result-lock-btn, .lock-one").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSyncLock(btn.dataset.path, btn);
+    });
+  });
 }
 
 function renderPagedList({
@@ -1151,7 +1386,12 @@ function renderPagedList({
   if (onRowActivate) {
     el.querySelectorAll(".recent-row").forEach((row) => {
       const activate = () => onRowActivate(row.dataset);
-      row.addEventListener("click", activate);
+      row.addEventListener("click", (event) => {
+        if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn, .sync-one, .index-one, .delete-strata-one")) {
+          return;
+        }
+        activate();
+      });
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -1171,6 +1411,7 @@ function renderPagedList({
 }
 
 function renderRecentPage() {
+  const el = $("#recent-local-table");
   renderPagedList({
     items: state.recentItems,
     page: state.recentPage,
@@ -1187,6 +1428,7 @@ function renderRecentPage() {
     },
     onRowActivate: (dataset) => openRecentFile(dataset.path, dataset.project),
   });
+  bindRecentRowActions(el);
 }
 
 async function openRecentFile(path, project) {
@@ -1289,12 +1531,8 @@ function renderSyncPage() {
       indexSearchResult(btn.dataset.path);
     });
   });
-  el.querySelectorAll(".delete-remote-one, .result-delete-remote-btn").forEach((btn) => {
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      deleteRemotePath(btn.dataset.path);
-    });
-  });
+  bindLockButtons(el);
+  bindDeleteStrataButtons(el);
 }
 
 function renderPotentialSecretsPage() {
@@ -1327,6 +1565,8 @@ function renderPotentialSecretsPage() {
       indexSearchResult(btn.dataset.path);
     });
   });
+  bindLockButtons(el);
+  bindDeleteStrataButtons(el);
 }
 
 async function loadSyncLocal({ resetPage = true } = {}) {
@@ -1345,14 +1585,24 @@ async function loadPotentialSecrets({ resetPage = true } = {}) {
   renderPotentialSecretsPage();
 }
 
+function batchSyncPaths(items) {
+  return items.filter((item) => !isSyncLocked(item)).map((item) => item.path);
+}
+
 async function syncPaths(paths) {
   showToast("redacting secrets from sync...", { timeout: 1800 });
   setToolStatus("redacting secrets from sync...");
   const result = await api("/api/sync/upload", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ paths }),
+    body: JSON.stringify({ paths, allow_locked: false }),
   });
+  if (result.skipped?.length) {
+    const lockedCount = result.skipped.filter((row) => row.reason === "sync_locked").length;
+    if (lockedCount) {
+      showToast(`${lockedCount} locked file${lockedCount === 1 ? "" : "s"} skipped from batch sync.`);
+    }
+  }
   if (result.failed?.length) {
     showToast("Some files could not be shared. Check sync details.");
     setToolStatus("Some files could not be shared. Check sync details.");
@@ -1504,7 +1754,7 @@ function bindHomeTabControls() {
   $("#received-refresh-btn")?.addEventListener("click", () => loadSharedFromTeam({ resetPage: false }));
   $("#secrets-refresh-btn")?.addEventListener("click", () => loadPotentialSecrets({ resetPage: false }));
   $("#sync-all-btn")?.addEventListener("click", () => {
-    syncPaths(state.syncItems.map((i) => i.path));
+    syncPaths(batchSyncPaths(state.syncItems));
   });
   $("#sync-prev")?.addEventListener("click", () => {
     if (state.syncPage > 0) {
@@ -1562,30 +1812,34 @@ function bindHomeTabControls() {
 }
 bindHomeTabControls.bound = false;
 
+async function loadRemoteConfig(stats) {
+  const cfg = await api("/api/config").catch(() => ({ online: false }));
+  if (cfg.actor_name) state.localActorName = String(cfg.actor_name).trim();
+  else if (cfg.actor) state.localActorName = String(cfg.actor).trim();
+  else if (state.authors.length === 1) state.localActorName = state.authors[0].trim();
+  renderApiStatus(cfg);
+  if (!state.apiOnline) return;
+  const remotePending = await api("/api/sync/remote-pending").catch(() => ({
+    online: false,
+    pending: 0,
+  }));
+  state.remotePending = remotePending.pending || 0;
+  renderStatsLine(stats, remotePending);
+}
+
 async function init() {
   bindHomeTabControls();
   switchHomeTab("recent");
 
-  const [stats, summary, projects, cfg] = await Promise.all([
+  const [stats, summary, projects] = await Promise.all([
     api("/api/stats"),
     api("/api/projects/summary"),
     api("/api/projects"),
-    api("/api/config").catch(() => ({ online: false })),
   ]);
 
-  renderApiStatus(cfg);
   state.allProjects = projects;
-
-  let remotePending = { online: false, pending: 0 };
-  if (state.apiOnline) {
-    remotePending = await api("/api/sync/remote-pending").catch(() => ({
-      online: false,
-      pending: 0,
-    }));
-  }
-  state.remotePending = remotePending.pending || 0;
-  renderStatsLine(stats, remotePending);
-
+  state.remotePending = 0;
+  renderStatsLine(stats, { online: false, pending: 0 });
   renderProjectPanels(summary);
   renderSidebar();
   await loadAuthors();
@@ -1595,6 +1849,8 @@ async function init() {
     loadSharedFromTeam(),
     loadPotentialSecrets(),
   ]);
+
+  void loadRemoteConfig(stats);
 
   $("#scoped-filter-author")?.addEventListener("change", () => {
     if (state.view === "app" && state.activeProject) {
@@ -1635,11 +1891,14 @@ async function init() {
   $("#doc-close").addEventListener("click", () => $("#doc-modal").close());
   $("#doc-share-btn")?.addEventListener("click", () => shareDocFromModal());
   $("#doc-index-btn")?.addEventListener("click", () => indexDocFromModal());
+  $("#doc-lock-btn")?.addEventListener("click", () => toggleDocLockFromModal());
+  $("#doc-delete-strata-btn")?.addEventListener("click", () => openDeleteStrataConfirm(state.activeDocPath));
   $("#doc-modal").addEventListener("click", (e) => {
     if (e.target === $("#doc-modal")) $("#doc-modal").close();
   });
 
   initToolDrawer();
+  initDeleteStrataModal();
   showView("home");
 }
 

@@ -175,10 +175,14 @@ def _sync_status(row: sqlite3.Row | dict[str, Any]) -> str:
 def _sync_meta(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     status = _sync_status(row)
     data = dict(row) if isinstance(row, sqlite3.Row) else row
+    locked = bool(data.get("sync_locked"))
     return {
         "sync_status": status,
-        "syncable": status in {"not_shared", "changed"},
+        "sync_locked": locked,
+        "syncable": status in {"not_shared", "changed"} and not locked,
         "author_name": queries.effective_author_name(data),
+        "remote_id": data.get("remote_id"),
+        "origin": data.get("origin") or "local",
     }
 
 
@@ -293,7 +297,7 @@ def timeline(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
-               sync_ignore_reason, author_name,
+               sync_ignore_reason, sync_locked, author_name,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
@@ -332,7 +336,8 @@ def timeline(
             f"""
             SELECT d.path, d.project, d.title, d.updated_at, d.created_at,
                    d.origin, d.remote_id, d.shared_at, d.synced_at,
-                   d.sync_ignored_at, d.sync_ignore_reason, d.author_name,
+                   d.sync_ignored_at, d.sync_ignore_reason, d.sync_locked,
+                   d.author_name,
                    s.heading, s.section_at,
                    substr(s.body, 1, 400) AS excerpt, s.ordinal
             FROM sections s
@@ -390,7 +395,7 @@ def project_library(
         """
         SELECT path, kind, project, title, updated_at, created_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
-               sync_ignore_reason, author_name,
+               sync_ignore_reason, sync_locked, author_name,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE project = ?

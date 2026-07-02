@@ -90,7 +90,8 @@ def scan_pending(
             for r in conn.execute(
                 """
                 SELECT path, body_hash, storage, origin, remote_id, shared_at,
-                       author_name, updated_at, sync_ignored_at, sync_ignore_reason
+                       author_name, updated_at, sync_ignored_at, sync_ignore_reason,
+                       sync_locked
                 FROM documents
                 """
             ).fetchall()
@@ -124,18 +125,24 @@ def scan_pending(
         except OSError:
             pass
 
-        rows.append(
-            {
-                "path": rel,
-                "kind": file_kind,
-                "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
-                "updated_at": _mtime_iso(path),
-                "local_status": local_status,
-                "share_status": share_status,
-                "author_name": effective_author_name(db_row),
-                "excerpt": excerpt,
-            }
-        )
+        row_dict = {
+            "path": rel,
+            "kind": file_kind,
+            "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
+            "updated_at": _mtime_iso(path),
+            "local_status": local_status,
+            "share_status": share_status,
+            "author_name": effective_author_name(db_row),
+            "excerpt": excerpt,
+            "remote_id": db_row.get("remote_id") if db_row else None,
+            "synced_at": db_row.get("synced_at") if db_row else None,
+            "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
+            "sync_locked": bool(db_row.get("sync_locked")) if db_row else False,
+        }
+        enriched = _with_sync_status(row_dict)
+        enriched["local_status"] = local_status
+        enriched["share_status"] = share_status
+        rows.append(enriched)
 
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
     return filter_by_author(rows, author)
@@ -163,7 +170,7 @@ def scan_recent_locally_changed(
                 SELECT path, kind, project, title, created_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
                        storage, author_name, sync_ignored_at, sync_ignore_reason,
-                       substr(body, 1, 180) AS excerpt
+                       sync_locked, substr(body, 1, 180) AS excerpt
                 FROM documents
                 """
             ).fetchall()
@@ -206,6 +213,7 @@ def scan_recent_locally_changed(
             "synced_at": db_row.get("synced_at") if db_row else None,
             "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
             "sync_ignore_reason": db_row.get("sync_ignore_reason") if db_row else None,
+            "sync_locked": bool(db_row.get("sync_locked")) if db_row else False,
             "local_status": local_status,
             "share_status": share_status,
             "author_name": effective_author_name(db_row),
@@ -235,7 +243,8 @@ def scan_potential_secret_files(
                 """
                 SELECT path, kind, project, title, created_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
-                       storage, author_name, sync_ignored_at, sync_ignore_reason
+                       storage, author_name, sync_ignored_at, sync_ignore_reason,
+                       sync_locked
                 FROM documents
                 """
             ).fetchall()
@@ -272,6 +281,7 @@ def scan_potential_secret_files(
             "synced_at": db_row.get("synced_at") if db_row else None,
             "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
             "sync_ignore_reason": db_row.get("sync_ignore_reason") if db_row else None,
+            "sync_locked": bool(db_row.get("sync_locked")) if db_row else False,
             "local_status": local_status,
             "share_status": share_status,
             "author_name": effective_author_name(db_row),

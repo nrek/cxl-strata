@@ -43,18 +43,27 @@ def _with_sync_status(row: sqlite3.Row) -> dict[str, Any]:
     item = dict(row)
     status = _sync_status(item)
     item["sync_status"] = status
-    item["syncable"] = status in {"not_shared", "changed"}
+    locked = bool(item.get("sync_locked"))
+    item["sync_locked"] = locked
+    item["syncable"] = status in {"not_shared", "changed"} and not locked
     return item
 
 
 def local_default_author() -> str | None:
     try:
-        from ..local_store import load_config
+        from ..local_store import USER_GLOBAL_FILE, load_config, load_global_config
 
-        name = (load_config().get("actor_name") or "").strip()
-        return name or None
+        cfg = load_config()
+        name = (cfg.get("actor_name") or "").strip()
+        if name:
+            return name
+        if USER_GLOBAL_FILE.is_file():
+            name = (load_global_config().get("actor_name") or "").strip()
+            if name:
+                return name
     except FileNotFoundError:
         return None
+    return None
 
 
 def effective_author_name(row: dict[str, Any] | None) -> str | None:
@@ -256,7 +265,7 @@ def list_recent_local_documents(
         f"""
         SELECT path, kind, project, title, created_at, updated_at, origin,
                remote_id, shared_at, synced_at, sync_ignored_at,
-               sync_ignore_reason, author_name, storage,
+               sync_ignore_reason, author_name, storage, sync_locked,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}

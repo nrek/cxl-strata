@@ -66,7 +66,7 @@ def test_potential_secrets_rows_do_not_offer_share_to_team() -> None:
     root = _package_root()
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
     secret_row = app_js.split("function secretRowHtml(item)", 1)[1].split(
-        "function renderPagedList", 1
+        "function bindRecentRowActions", 1
     )[0]
 
     assert "shareButtonHtml" not in secret_row
@@ -91,14 +91,30 @@ def test_modal_and_action_ctas() -> None:
     root = _package_root()
     app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
     index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
 
     assert 'id="doc-share-btn"' in index
     assert 'id="doc-index-btn"' in index
+    assert 'id="doc-lock-btn"' in index
+    assert 'id="doc-delete-strata-btn"' in index
+    assert 'id="delete-strata-modal"' in index
+    assert "fa-lock-open" in index
+    assert "fa-trash" in index
     assert "Share to Team" in app_js
     assert "Re-index Locally" in app_js
+    assert "canShowLockItem" in app_js
+    assert "canDeleteFromStrata" in app_js
+    assert "isActionableLocalDoc" in app_js
+    assert "lockButtonHtml" in app_js
+    assert "bindRecentRowActions" in app_js
+    assert "toggleSyncLock" in app_js
+    assert "/api/sync/lock" in app_js
+    assert "lock-btn-unlocked" in style
+    assert "lock-btn-locked" in style
     assert "shareTooltip" in app_js
     assert "indexTooltip" in app_js
     assert "function updateDocModalActions(doc, path)" in app_js
+    assert "async function loadRemoteConfig(stats)" in app_js
     assert "async function shareDocFromModal()" in app_js
 
 
@@ -122,11 +138,14 @@ def test_shared_rows_offer_remote_delete_action() -> None:
         "function recentRowHtml", 1
     )[0]
 
-    assert "deleteRemoteButtonHtml" in app_js
-    assert "async function deleteRemotePath(path)" in app_js
+    assert "deleteStrataButtonHtml" in app_js
+    assert "canDeleteFromStrata" in app_js
+    assert "isActionableLocalDoc" in app_js
+    assert "openDeleteStrataConfirm" in app_js
     assert "/api/sync/delete-remote" in app_js
-    assert "item.remote_id" in sync_row
-    assert "deleteRemoteButtonHtml" in sync_row
+    assert "canDeleteFromStrata(item)" in sync_row
+    assert "deleteStrataButtonHtml" in sync_row
+    assert "canShowLockItem(item)" in sync_row
     assert "shareButtonHtml" in sync_row
 
 

@@ -42,6 +42,7 @@ _MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("remote_updated_at", "TEXT"),
     ("sync_ignored_at", "TEXT"),
     ("sync_ignore_reason", "TEXT"),
+    ("sync_locked", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -95,6 +96,7 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         "remote_updated_at": None,
         "sync_ignored_at": None,
         "sync_ignore_reason": None,
+        "sync_locked": 0,
         **row,
     }
     conn.execute(
@@ -104,7 +106,7 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             body, body_hash, plan_status, linear_task_id, files_changed,
             deploy_commands, tags, folder_status, status_mismatch, storage,
             origin, remote_id, author_name, author_email, shared_at, synced_at,
-            remote_updated_at, sync_ignored_at, sync_ignore_reason
+            remote_updated_at, sync_ignored_at, sync_ignore_reason, sync_locked
         ) VALUES (
             :id, :kind, :project, :path, :title, :created_at, :updated_at,
             :body, :body_hash, :plan_status, :linear_task_id, :files_changed,
@@ -112,7 +114,7 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             COALESCE(:storage, 'file'),
             COALESCE(:origin, 'local'), :remote_id, :author_name, :author_email,
             :shared_at, :synced_at, :remote_updated_at, :sync_ignored_at,
-            :sync_ignore_reason
+            :sync_ignore_reason, COALESCE(:sync_locked, 0)
         )
         ON CONFLICT(path) DO UPDATE SET
             kind = excluded.kind,
@@ -144,7 +146,8 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             ),
             sync_ignore_reason = COALESCE(
                 documents.sync_ignore_reason, excluded.sync_ignore_reason
-            )
+            ),
+            sync_locked = COALESCE(documents.sync_locked, excluded.sync_locked)
         """,
         payload,
     )
@@ -233,6 +236,22 @@ def mark_shared(
         """,
         (remote_id, author_name, author_email, now, now, path.replace("\\", "/")),
     )
+
+
+def set_sync_locked(
+    conn: sqlite3.Connection,
+    *,
+    path: str,
+    locked: bool,
+) -> bool:
+    cur = conn.execute(
+        """
+        UPDATE documents SET sync_locked = ?
+        WHERE path = ?
+        """,
+        (1 if locked else 0, path.replace("\\", "/")),
+    )
+    return cur.rowcount > 0
 
 
 def mark_remote_deleted(

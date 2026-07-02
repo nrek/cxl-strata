@@ -55,6 +55,7 @@ def stash_paths(
     *,
     author_name: str | None = None,
     author_email: str | None = None,
+    allow_locked: bool = False,
 ) -> dict[str, Any]:
     cfg_author = _author_from_config()
     author_name = author_name or cfg_author[0]
@@ -62,6 +63,7 @@ def stash_paths(
 
     documents: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    skipped: list[dict[str, str]] = []
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -74,11 +76,14 @@ def stash_paths(
             if not doc:
                 errors.append({"path": rel, "error": "not indexed"})
                 continue
+            if not allow_locked and doc.get("sync_locked"):
+                skipped.append({"path": rel, "reason": "sync_locked"})
+                continue
             body = doc.get("body") or ""
             documents.append(_document_payload(rel, body, doc.get("kind")))
 
     if not documents:
-        return {"synced": [], "failed": errors}
+        return {"synced": [], "failed": errors, "skipped": skipped}
 
     result = api_client.documents_import_batch(documents)
     synced = result.get("synced", [])
@@ -95,16 +100,21 @@ def stash_paths(
                 author_email=author_email,
             )
 
-    return {"synced": synced, "failed": failed}
+    return {"synced": synced, "failed": failed, "skipped": skipped}
 
 
-def delete_remote_path(path: str) -> dict[str, Any]:
+def delete_remote_path(path: str, *, actor_name: str | None = None) -> dict[str, Any]:
     rel = path.replace("\\", "/")
     with db.connect() as conn:
         db.init_db(conn)
         doc = queries.knowledge_get(conn, rel)
     if not doc:
         return {"path": rel, "deleted": False, "error": "not indexed"}
+
+    author = queries.effective_author_name(doc)
+    if actor_name:
+        if not author or author.strip().lower() != actor_name.strip().lower():
+            return {"path": rel, "deleted": False, "error": "not author"}
 
     remote_id = doc.get("remote_id")
     if not remote_id:
@@ -136,6 +146,7 @@ def stash_filtered(
         clauses = [
             "(COALESCE(origin, 'local') != 'shared' OR remote_id IS NULL)",
             "sync_ignored_at IS NULL",
+            "COALESCE(sync_locked, 0) = 0",
         ]
         params: list[Any] = []
         if kind:

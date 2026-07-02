@@ -242,6 +242,12 @@
             <button type="button" id="doc-share-btn" class="cta-btn cta-share">Share to Team</button>
             <span class="action-sep" aria-hidden="true">|</span>
             <button type="button" id="doc-index-btn" class="cta-btn cta-index">Re-index Locally</button>
+            <button type="button" id="doc-lock-btn" class="icon-btn lock-btn lock-btn-unlocked hidden" aria-label="Unlocked for batch sync" title="Unlocked — included in batch sync">
+              <i class="fa-solid fa-lock-open" aria-hidden="true"></i>
+            </button>
+            <button type="button" id="doc-delete-strata-btn" class="icon-btn delete-strata-btn hidden" aria-label="Delete from STRATA" title="Delete your shared copy from STRATA (local file is kept).">
+              <i class="fa-solid fa-trash" aria-hidden="true"></i>
+            </button>
           </div>
           <button type="button" id="doc-close" class="icon-btn" aria-label="Close">
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
@@ -249,6 +255,22 @@
         </div>
       </header>
       <div id="doc-body" class="markdown-body"></div>
+    </article>
+  </dialog>
+
+  <dialog id="delete-strata-modal" class="confirm-modal">
+    <article>
+      <header>
+        <h2>Delete from STRATA</h2>
+      </header>
+      <p>This removes the shared copy from STRATA. Your local file stays on disk.</p>
+      <p id="delete-strata-path" class="delete-strata-path"></p>
+      <label class="confirm-label" for="delete-strata-confirm-input">Type DELETE to confirm</label>
+      <input id="delete-strata-confirm-input" class="confirm-input" type="text" autocomplete="off" spellcheck="false" />
+      <footer class="confirm-footer">
+        <button type="button" id="delete-strata-cancel" class="cta-btn">Cancel</button>
+        <button type="button" id="delete-strata-confirm" class="cta-btn cta-share" disabled>Confirm</button>
+      </footer>
     </article>
   </dialog>
 

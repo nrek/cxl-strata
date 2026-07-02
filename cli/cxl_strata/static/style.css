@@ -905,6 +905,99 @@ dialog header {
   display: none;
 }
 
+.lock-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.lock-btn-unlocked {
+  color: #9ca3af;
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.35);
+}
+
+.lock-btn-unlocked:hover:not(:disabled) {
+  color: #e5e7eb;
+  background: rgba(148, 163, 184, 0.28);
+  border-color: rgba(148, 163, 184, 0.55);
+}
+
+.lock-btn-locked {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(248, 113, 113, 0.45);
+}
+
+.lock-btn-locked:hover:not(:disabled) {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(248, 113, 113, 0.65);
+}
+
+.delete-strata-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.delete-strata-btn:hover:not(:disabled) {
+  color: #fecaca;
+  background: rgba(239, 68, 68, 0.26);
+  border-color: rgba(248, 113, 113, 0.55);
+}
+
+.confirm-modal article {
+  min-width: min(420px, 92vw);
+}
+
+.confirm-modal header {
+  padding-bottom: 0.25rem;
+}
+
+.confirm-modal p {
+  margin: 0.5rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.delete-strata-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.confirm-label {
+  display: block;
+  margin: 0.75rem 0 0.35rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.confirm-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.55rem 0.65rem;
+  font-size: 0.9rem;
+}
+
+.confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
 .doc-head-text {
   min-width: 0;
   flex: 1;

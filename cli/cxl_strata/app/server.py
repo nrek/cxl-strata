@@ -62,7 +62,7 @@ def _api_online() -> dict:
     try:
         from .. import api_client
 
-        who = api_client.whoami()
+        who = api_client.whoami(timeout=3.0)
         return {"online": True, "actor": who.get("actor"), "organization": who.get("organization")}
     except Exception as exc:  # noqa: BLE001 - UI status only
         return {"online": False, "error": str(exc)}
@@ -167,6 +167,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             payload = {
                 "api_base_url": cfg.get("api_base_url"),
                 "organization": cfg.get("organization_slug"),
+                "actor_name": cfg.get("actor_name"),
                 **_api_online(),
             }
             _json_response(self, payload)
@@ -179,7 +180,13 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if path == "/api/authors":
             with db.connect() as conn:
                 db.init_db(conn)
-                _json_response(self, {"authors": queries.list_authors(conn)})
+                _json_response(
+                    self,
+                    {
+                        "authors": queries.list_authors(conn),
+                        "local_actor": queries.local_default_author(),
+                    },
+                )
             return
 
         if path == "/api/sync/local":
@@ -452,8 +459,37 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/sync/upload":
             body = _read_json(self)
             paths = [str(p) for p in (body.get("paths") or [])]
-            result = stash_paths(paths)
+            allow_locked = bool(body.get("allow_locked"))
+            result = stash_paths(paths, allow_locked=allow_locked)
             _json_response(self, result)
+            return
+
+        if parsed.path == "/api/sync/lock":
+            try:
+                body = _read_json(self)
+            except json.JSONDecodeError:
+                _json_response(self, {"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+                return
+            doc_path = str(body.get("path") or "").strip().replace("\\", "/")
+            if not doc_path:
+                _json_response(self, {"error": "path required"}, HTTPStatus.BAD_REQUEST)
+                return
+            locked = bool(body.get("locked"))
+            with db.connect() as conn:
+                db.init_db(conn)
+                doc = queries.knowledge_get(conn, doc_path)
+                if not doc:
+                    fp = paths.WORKSPACE_ROOT / doc_path
+                    if fp.is_file():
+                        from ..workspace_index.indexer import index_file
+
+                        index_file(conn, fp.resolve())
+                        doc = queries.knowledge_get(conn, doc_path)
+                if not doc:
+                    _json_response(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
+                    return
+                db.set_sync_locked(conn, path=doc_path, locked=locked)
+            _json_response(self, {"path": doc_path, "sync_locked": locked})
             return
 
         if parsed.path == "/api/sync/delete-remote":
@@ -462,8 +498,9 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             if not path:
                 _json_response(self, {"error": "path required"}, HTTPStatus.BAD_REQUEST)
                 return
+            actor_name = str(body.get("actor_name") or "").strip() or None
             try:
-                result = delete_remote_path(path)
+                result = delete_remote_path(path, actor_name=actor_name)
                 status = HTTPStatus.OK if result.get("deleted") else HTTPStatus.BAD_REQUEST
                 _json_response(self, result, status)
             except Exception as exc:  # noqa: BLE001

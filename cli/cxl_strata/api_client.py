@@ -9,18 +9,18 @@ import httpx
 from .local_store import load_api_key, load_config
 
 
-def _client() -> httpx.Client:
+def _client(*, timeout: float = 30.0) -> httpx.Client:
     cfg = load_config()
     base = cfg.get("api_base_url", "http://127.0.0.1:8015").rstrip("/")
     return httpx.Client(
         base_url=base,
         headers={"Authorization": f"Bearer {load_api_key()}"},
-        timeout=30.0,
+        timeout=timeout,
     )
 
 
-def whoami() -> dict[str, Any]:
-    with _client() as client:
+def whoami(*, timeout: float = 30.0) -> dict[str, Any]:
+    with _client(timeout=timeout) as client:
         r = client.get("/v1/whoami")
         r.raise_for_status()
         return r.json()

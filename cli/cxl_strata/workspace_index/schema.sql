@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS documents (
     status_mismatch INTEGER NOT NULL DEFAULT 0,
     storage TEXT NOT NULL DEFAULT 'file',
     sync_ignored_at TEXT,
-    sync_ignore_reason TEXT
+    sync_ignore_reason TEXT,
+    sync_locked INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS plans (

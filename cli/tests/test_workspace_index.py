@@ -191,6 +191,34 @@ def test_delete_remote_path_marks_local_doc_ignored(
     assert row["sync_ignore_reason"] == "deleted_remote"
 
 
+def test_delete_remote_path_rejects_non_author(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+
+    monkeypatch.setattr(
+        documents.api_client,
+        "delete_document",
+        lambda remote_id: (_ for _ in ()).throw(AssertionError("should not delete")),
+    )
+
+    result = documents.delete_remote_path(path, actor_name="Someone Else")
+
+    assert result["deleted"] is False
+    assert result["error"] == "not author"
+
+
 def test_scan_potential_secret_files_returns_redacted_previews(workspace: Path) -> None:
     plan = workspace / ".cursor" / "plans" / "draft" / "secret-plan.md"
     plan.write_text(
@@ -429,6 +457,7 @@ def test_project_timeline_events_include_sync_status(workspace: Path) -> None:
     row = next(r for r in result["events"] if r["path"] == path)
     assert row["sync_status"] == "not_shared"
     assert row["syncable"] is True
+    assert row.get("sync_locked") is False
 
 
 def test_project_library_includes_old_handoffs(workspace: Path) -> None:
@@ -473,3 +502,75 @@ def test_resolve_workspace_root_prefers_parent_memory_workspace(
 
     resolve_workspace_root.cache_clear()
     assert resolve_workspace_root(repo) == workspace.resolve()
+
+
+def test_sync_locked_excludes_doc_from_batch_stash(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.set_sync_locked(conn, path=path, locked=True)
+
+    captured: list[list[dict]] = []
+
+    def fake_import_batch(payload: list[dict]) -> dict:
+        captured.append(payload)
+        return {"synced": [], "failed": []}
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: (None, None))
+    monkeypatch.setattr(documents.api_client, "documents_import_batch", fake_import_batch)
+
+    result = documents.stash_paths([path])
+
+    assert not captured
+    assert result["skipped"] == [{"path": path, "reason": "sync_locked"}]
+
+    result_allowed = documents.stash_paths([path], allow_locked=True)
+    assert result_allowed["skipped"] == []
+    assert len(captured) == 1
+
+
+def test_sync_locked_marks_doc_not_syncable(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.set_sync_locked(conn, path=path, locked=True)
+        doc = queries.knowledge_get(conn, path)
+
+    assert doc is not None
+    assert doc["sync_locked"] is True
+    assert doc["syncable"] is False
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        library = nl_query.project_library(conn, project="test-proj", limit=50)
+    lib_row = next(r for r in library["events"] if r["path"] == path)
+    assert lib_row["sync_locked"] is True
+
+
+def test_project_library_events_include_remote_id_for_shared_docs(
+    workspace: Path,
+) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-1",
+            author_name="Tester",
+            author_email="tester@example.com",
+        )
+        library = nl_query.project_library(conn, project="test-proj", limit=50)
+
+    row = next(r for r in library["events"] if r["path"] == path)
+    assert row["remote_id"] == "remote-1"
+    assert row["sync_status"] == "shared"
+    assert row["syncable"] is False

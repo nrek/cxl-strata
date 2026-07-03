@@ -183,6 +183,7 @@ def _sync_meta(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         "author_name": queries.effective_author_name(data),
         "remote_id": data.get("remote_id"),
         "origin": data.get("origin") or "local",
+        "storage": data.get("storage") or "file",
     }
 
 
@@ -297,7 +298,7 @@ def timeline(
         f"""
         SELECT path, kind, project, title, updated_at, created_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
-               sync_ignore_reason, sync_locked, author_name,
+               sync_ignore_reason, sync_locked, author_name, storage,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
@@ -337,7 +338,7 @@ def timeline(
             SELECT d.path, d.project, d.title, d.updated_at, d.created_at,
                    d.origin, d.remote_id, d.shared_at, d.synced_at,
                    d.sync_ignored_at, d.sync_ignore_reason, d.sync_locked,
-                   d.author_name,
+                   d.author_name, d.storage,
                    s.heading, s.section_at,
                    substr(s.body, 1, 400) AS excerpt, s.ordinal
             FROM sections s
@@ -395,7 +396,7 @@ def project_library(
         """
         SELECT path, kind, project, title, updated_at, created_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
-               sync_ignore_reason, sync_locked, author_name,
+               sync_ignore_reason, sync_locked, author_name, storage,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE project = ?

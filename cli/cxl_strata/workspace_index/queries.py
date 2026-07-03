@@ -90,6 +90,38 @@ def list_authors(conn: sqlite3.Connection) -> list[str]:
     return sorted(names, key=lambda s: s.lower())
 
 
+def _is_workspace_artifact_path(path: str) -> bool:
+    rel = path.replace("\\", "/")
+    if rel in {"CLAUDE.md", "AGENTS.md"}:
+        return True
+    return rel.startswith((".md/", ".cursor/", ".claude/", ".codex/"))
+
+
+def is_authored_by_local_actor(
+    row: dict[str, Any] | None,
+    local_actor: str | None,
+) -> bool:
+    actor = (local_actor or "").strip()
+    if not actor:
+        return False
+    author = (row.get("author_name") if row else None) or ""
+    author = str(author).strip()
+    if author and author.lower() == actor.lower():
+        return True
+    if not author and row and _is_workspace_artifact_path(str(row.get("path") or "")):
+        return True
+    return False
+
+
+def resolve_local_actor(*, remote_actor: str | None = None) -> str | None:
+    name = local_default_author()
+    if name:
+        return name
+    if remote_actor:
+        return str(remote_actor).strip() or None
+    return None
+
+
 def filter_by_author(items: list[dict[str, Any]], author: str | None) -> list[dict[str, Any]]:
     if not author:
         return items
@@ -324,8 +356,10 @@ def list_shared_from_team_documents(
     limit: int = 500,
     kind: str | None = None,
     author: str | None = None,
+    local_actor: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Documents ingested from the central API into local SQLite (origin=shared)."""
+    """Documents pulled from teammates via the central API (not your own shares out)."""
+    actor = resolve_local_actor(remote_actor=local_actor)
     clauses = ["origin = 'shared'"]
     params: list[Any] = []
     if kind:
@@ -348,6 +382,8 @@ def list_shared_from_team_documents(
     items: list[dict[str, Any]] = []
     for row in rows:
         item = dict(row)
+        if is_authored_by_local_actor(item, actor):
+            continue
         activity_at = max(
             str(v)
             for v in (

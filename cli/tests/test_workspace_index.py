@@ -311,6 +311,76 @@ def test_list_shared_from_team_documents_and_authors(workspace: Path) -> None:
     assert not any(item["path"] == shared_path for item in empty)
 
 
+def test_list_shared_from_team_excludes_own_shares(workspace: Path) -> None:
+    own_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    team_path = "shared/remote-handoff-1"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.upsert_document(
+            conn,
+            {
+                "id": "own-shared-handoff",
+                "kind": "handoff",
+                "project": "test-proj",
+                "path": own_path,
+                "title": "My shared handoff",
+                "created_at": "2026-07-01T12:00:00Z",
+                "updated_at": "2026-07-01T12:00:00Z",
+                "body": "# Handoff\n\nShared by me.",
+                "body_hash": "mine123",
+                "plan_status": None,
+                "linear_task_id": None,
+                "files_changed": None,
+                "deploy_commands": None,
+                "tags": None,
+                "folder_status": None,
+                "status_mismatch": 0,
+                "storage": "file",
+                "origin": "shared",
+                "remote_id": "remote-own-1",
+                "author_name": "Enrique",
+                "author_email": "enrique@example.com",
+                "shared_at": "2026-07-01T12:00:00Z",
+                "synced_at": "2026-07-01T12:00:00Z",
+                "remote_updated_at": "2026-07-01T12:00:00Z",
+            },
+        )
+        db.upsert_document(
+            conn,
+            {
+                "id": "shared-remote-handoff-1",
+                "kind": "handoff",
+                "project": "test-proj",
+                "path": team_path,
+                "title": "Team handoff",
+                "created_at": "2026-07-01T12:00:00Z",
+                "updated_at": "2026-07-01T12:00:00Z",
+                "body": "# Handoff\n\nShared by teammate.",
+                "body_hash": "abc123",
+                "plan_status": None,
+                "linear_task_id": None,
+                "files_changed": None,
+                "deploy_commands": None,
+                "tags": None,
+                "folder_status": None,
+                "status_mismatch": 0,
+                "storage": "db_only",
+                "origin": "shared",
+                "remote_id": "remote-handoff-1",
+                "author_name": "Teammate",
+                "author_email": "teammate@example.com",
+                "shared_at": "2026-07-01T12:00:00Z",
+                "synced_at": "2026-07-02T12:00:00Z",
+                "remote_updated_at": "2026-07-01T12:00:00Z",
+            },
+        )
+        items = queries.list_shared_from_team_documents(conn, limit=50, local_actor="Enrique")
+
+    paths = {item["path"] for item in items}
+    assert team_path in paths
+    assert own_path not in paths
+
+
 def test_knowledge_get_includes_sync_status(workspace: Path) -> None:
     indexer.index_all(prune=False)
     path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
@@ -442,6 +512,24 @@ def test_scan_recent_locally_changed_excludes_stale_files(workspace: Path) -> No
     assert stale_path not in paths
 
 
+def test_scan_pending_includes_db_only_not_shared(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        conn.execute(
+            "UPDATE documents SET storage = 'db_only', remote_id = NULL WHERE path = ?",
+            (path,),
+        )
+
+    pending = sync_review.scan_pending(project="test-proj", kind="handoff")
+    paths = {item["path"] for item in pending}
+    assert path in paths
+    row = next(item for item in pending if item["path"] == path)
+    assert row["local_status"] == "archived"
+    assert row["sync_status"] == "not_shared"
+
+
 def test_project_timeline_events_include_sync_status(workspace: Path) -> None:
     stats = indexer.index_all(prune=False)
     assert stats["indexed"] >= 1
@@ -458,6 +546,19 @@ def test_project_timeline_events_include_sync_status(workspace: Path) -> None:
     assert row["sync_status"] == "not_shared"
     assert row["syncable"] is True
     assert row.get("sync_locked") is False
+    assert row.get("storage") == "file"
+
+
+def test_project_library_includes_storage_meta(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        conn.execute("UPDATE documents SET storage = 'db_only' WHERE path = ?", (path,))
+        result = nl_query.project_library(conn, project="test-proj", limit=50)
+
+    row = next(r for r in result["events"] if r["path"] == path)
+    assert row["storage"] == "db_only"
 
 
 def test_project_library_includes_old_handoffs(workspace: Path) -> None:

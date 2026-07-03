@@ -104,7 +104,7 @@ def test_modal_and_action_ctas() -> None:
     assert "Re-index Locally" in app_js
     assert "canShowLockItem" in app_js
     assert "canDeleteFromStrata" in app_js
-    assert "isActionableLocalDoc" in app_js
+    assert "isIndexedDoc" in app_js
     assert "lockButtonHtml" in app_js
     assert "bindRecentRowActions" in app_js
     assert "toggleSyncLock" in app_js
@@ -140,7 +140,7 @@ def test_shared_rows_offer_remote_delete_action() -> None:
 
     assert "deleteStrataButtonHtml" in app_js
     assert "canDeleteFromStrata" in app_js
-    assert "isActionableLocalDoc" in app_js
+    assert "isIndexedDoc" in app_js
     assert "openDeleteStrataConfirm" in app_js
     assert "/api/sync/delete-remote" in app_js
     assert "canDeleteFromStrata(item)" in sync_row

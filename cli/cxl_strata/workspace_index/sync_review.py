@@ -145,7 +145,71 @@ def scan_pending(
         rows.append(enriched)
 
     rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    _append_db_only_pending(rows, project=project, kind=kind)
     return filter_by_author(rows, author)
+
+
+def _append_db_only_pending(
+    rows: list[dict[str, Any]],
+    *,
+    project: str | None,
+    kind: str | None,
+) -> None:
+    """Include archived SQLite-only docs that batch sync can still upload."""
+    seen = {r["path"] for r in rows}
+    clauses = [
+        "COALESCE(storage, 'file') = 'db_only'",
+        "remote_id IS NULL",
+        "sync_ignored_at IS NULL",
+        "COALESCE(sync_locked, 0) = 0",
+    ]
+    params: list[Any] = []
+    if project:
+        clauses.append("project = ?")
+        params.append(project)
+    if kind:
+        clauses.append("kind = ?")
+        params.append(kind)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        db_rows = conn.execute(
+            f"""
+            SELECT path, kind, project, title, updated_at, created_at, origin,
+                   remote_id, shared_at, synced_at, sync_ignored_at, sync_ignore_reason,
+                   sync_locked, author_name, storage,
+                   substr(body, 1, 180) AS excerpt
+            FROM documents
+            WHERE {" AND ".join(clauses)}
+            ORDER BY updated_at DESC
+            """,
+            params,
+        ).fetchall()
+
+    for db_row in db_rows:
+        rel = db_row["path"]
+        if rel in seen:
+            continue
+        row_dict = {
+            "path": rel,
+            "kind": db_row["kind"],
+            "project": db_row["project"],
+            "updated_at": db_row["updated_at"] or db_row["created_at"],
+            "local_status": "archived",
+            "share_status": "not shared",
+            "author_name": effective_author_name(dict(db_row)),
+            "excerpt": db_row["excerpt"] or "",
+            "remote_id": None,
+            "synced_at": db_row["synced_at"],
+            "sync_ignored_at": None,
+            "sync_locked": bool(db_row["sync_locked"]),
+            "storage": "db_only",
+            "origin": db_row["origin"] or "local",
+        }
+        enriched = _with_sync_status(row_dict)
+        enriched["local_status"] = "archived"
+        enriched["share_status"] = "not shared"
+        rows.append(enriched)
 
 
 def scan_recent_locally_changed(

@@ -266,10 +266,19 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             kind = (qs.get("kind") or [None])[0]
             author = (qs.get("author") or [None])[0]
             limit = max(1, min(limit, 2000))
+            local_actor = queries.resolve_local_actor()
+            if not local_actor:
+                api_status = _api_online()
+                if api_status.get("online"):
+                    local_actor = api_status.get("actor")
             with db.connect() as conn:
                 db.init_db(conn)
                 items = queries.list_shared_from_team_documents(
-                    conn, limit=limit, kind=kind, author=author
+                    conn,
+                    limit=limit,
+                    kind=kind,
+                    author=author,
+                    local_actor=local_actor,
                 )
             _json_response(self, {"items": items})
             return

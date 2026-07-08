@@ -136,6 +136,19 @@ def filter_by_author(items: list[dict[str, Any]], author: str | None) -> list[di
     return out
 
 
+def _kinds_filter(
+    kind: str | None,
+    kinds: list[str] | None,
+) -> list[str] | None:
+    """Normalize single-kind and multi-kind filters into one list (or None)."""
+    if kinds:
+        cleaned = [str(k).strip() for k in kinds if str(k).strip()]
+        return cleaned or None
+    if kind and str(kind).strip():
+        return [str(kind).strip()]
+    return None
+
+
 def _handoff_documents_since(
     conn: sqlite3.Connection,
     project: str,
@@ -144,13 +157,14 @@ def _handoff_documents_since(
 ) -> list[dict[str, Any]]:
     rows = conn.execute(
         """
-        SELECT path, kind, project, title, updated_at, created_at, plan_status,
+        SELECT path, kind, project, title, updated_at, created_at, published_at,
+               plan_status,
                substr(body, 1, 800) AS excerpt
         FROM documents
         WHERE kind = 'handoff'
           AND project = ?
           AND (updated_at >= ? OR created_at >= ?)
-        ORDER BY updated_at DESC
+        ORDER BY COALESCE(published_at, created_at, updated_at) DESC
         LIMIT ?
         """,
         (project, since_iso, since_iso, limit),
@@ -281,7 +295,9 @@ def list_recent_local_documents(
     hours: int = 168,
     limit: int = 500,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
+    project: str | None = None,
 ) -> list[dict[str, Any]]:
     """Indexed local documents with activity in the rolling window — all projects."""
     since = _iso_since_hours(hours)
@@ -289,19 +305,24 @@ def list_recent_local_documents(
         "(updated_at >= ? OR created_at >= ? OR shared_at >= ? OR synced_at >= ?)"
     ]
     params: list[Any] = [since, since, since, since]
-    if kind:
-        clauses.append("kind = ?")
-        params.append(kind)
+    kind_list = _kinds_filter(kind, kinds)
+    if kind_list:
+        placeholders = ",".join("?" * len(kind_list))
+        clauses.append(f"kind IN ({placeholders})")
+        params.extend(kind_list)
+    if project:
+        clauses.append("project = ?")
+        params.append(project)
 
     rows = conn.execute(
         f"""
-        SELECT path, kind, project, title, created_at, updated_at, origin,
-               remote_id, shared_at, synced_at, sync_ignored_at,
+        SELECT path, kind, project, title, created_at, updated_at, published_at,
+               origin, remote_id, shared_at, synced_at, sync_ignored_at,
                sync_ignore_reason, author_name, storage, sync_locked,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}
-        ORDER BY COALESCE(updated_at, synced_at, shared_at, created_at) DESC
+        ORDER BY COALESCE(published_at, created_at, updated_at, synced_at, shared_at) DESC
         LIMIT ?
         """,
         (*params, limit),
@@ -355,25 +376,32 @@ def list_shared_from_team_documents(
     *,
     limit: int = 500,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
     local_actor: str | None = None,
+    project: str | None = None,
 ) -> list[dict[str, Any]]:
     """Documents pulled from teammates via the central API (not your own shares out)."""
     actor = resolve_local_actor(remote_actor=local_actor)
     clauses = ["origin = 'shared'"]
     params: list[Any] = []
-    if kind:
-        clauses.append("kind = ?")
-        params.append(kind)
+    kind_list = _kinds_filter(kind, kinds)
+    if kind_list:
+        placeholders = ",".join("?" * len(kind_list))
+        clauses.append(f"kind IN ({placeholders})")
+        params.extend(kind_list)
+    if project:
+        clauses.append("project = ?")
+        params.append(project)
 
     rows = conn.execute(
         f"""
-        SELECT path, kind, project, title, created_at, updated_at, origin,
-               remote_id, shared_at, synced_at, author_name, storage,
+        SELECT path, kind, project, title, created_at, updated_at, published_at,
+               origin, remote_id, shared_at, synced_at, author_name, storage,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}
-        ORDER BY COALESCE(synced_at, updated_at, shared_at, created_at) DESC
+        ORDER BY COALESCE(published_at, created_at, synced_at, updated_at, shared_at) DESC
         LIMIT ?
         """,
         (*params, limit),
@@ -414,11 +442,13 @@ def list_recent_local_files(
     hours: int = 168,
     limit: int = 500,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
+    project: str | None = None,
 ) -> list[dict[str, Any]]:
     """Locally active indexed documents within the rolling window, newest first."""
     return list_recent_local_documents(
-        conn, hours=hours, limit=limit, kind=kind, author=author
+        conn, hours=hours, limit=limit, kind=kind, kinds=kinds, author=author, project=project
     )
 
 
@@ -428,6 +458,7 @@ def knowledge_search(
     query: str,
     project: str | None = None,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     plan_status: str | None = None,
     author: str | None = None,
     limit: int = 15,
@@ -438,9 +469,11 @@ def knowledge_search(
     if project:
         clauses.append("d.project = ?")
         params.append(project)
-    if kind:
-        clauses.append("d.kind = ?")
-        params.append(kind)
+    kind_list = _kinds_filter(kind, kinds)
+    if kind_list:
+        placeholders = ",".join("?" * len(kind_list))
+        clauses.append(f"d.kind IN ({placeholders})")
+        params.extend(kind_list)
     if plan_status:
         clauses.append("d.plan_status = ?")
         params.append(plan_status)
@@ -449,7 +482,7 @@ def knowledge_search(
     rows = conn.execute(
         f"""
         SELECT d.path, d.kind, d.project, d.title, d.plan_status,
-               d.updated_at, d.created_at, d.origin, d.remote_id,
+               d.updated_at, d.created_at, d.published_at, d.origin, d.remote_id,
                d.shared_at, d.synced_at, d.sync_ignored_at,
                d.sync_ignore_reason, d.author_name,
                snippet(documents_fts, 1, '**', '**', '…', 32) AS snippet,

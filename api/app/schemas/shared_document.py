@@ -19,6 +19,7 @@ class SharedDocumentCreate(BaseModel):
     visibility: str = "internal"
     plan_status: str | None = None
     linear_task_id: str | None = None
+    published_at: datetime | None = None
     sections: list[dict[str, Any]] | None = None
 
 
@@ -40,9 +41,26 @@ class SharedDocumentOut(BaseModel):
     author_name: str
     author_email: str | None
     actor_id: str | None
+    published_at: datetime | None
     shared_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class DocumentCommentCreate(BaseModel):
+    body: str
+    author_name: str | None = None
+    author_email: str | None = None
+    created_at: datetime | None = None
+
+
+class DocumentCommentOut(BaseModel):
+    id: str
+    document_id: str
+    author_name: str
+    author_email: str | None
+    body: str
+    created_at: datetime
 
 
 class SharedDocumentImportBatchIn(BaseModel):

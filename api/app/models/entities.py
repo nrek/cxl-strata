@@ -141,6 +141,7 @@ class SharedDocument(Base):
     author_name: Mapped[str] = mapped_column(String(255))
     author_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -152,6 +153,11 @@ class SharedDocument(Base):
     actor: Mapped["Actor | None"] = relationship()
     sections: Mapped[list["SharedDocumentSection"]] = relationship(
         back_populates="document", cascade="all, delete-orphan"
+    )
+    comments: Mapped[list["SharedDocumentComment"]] = relationship(
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="SharedDocumentComment.created_at",
     )
 
 
@@ -166,3 +172,17 @@ class SharedDocumentSection(Base):
     ordinal: Mapped[int] = mapped_column(default=0)
 
     document: Mapped["SharedDocument"] = relationship(back_populates="sections")
+
+
+class SharedDocumentComment(Base):
+    __tablename__ = "shared_document_comments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id: Mapped[str] = mapped_column(ForeignKey("shared_documents.id", ondelete="CASCADE"), index=True)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("actors.id"), nullable=True)
+    author_name: Mapped[str] = mapped_column(String(255))
+    author_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    document: Mapped["SharedDocument"] = relationship(back_populates="comments")

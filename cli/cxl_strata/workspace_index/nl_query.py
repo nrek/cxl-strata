@@ -145,7 +145,10 @@ def sort_events_newest_first(events: list[dict[str, Any]]) -> list[dict[str, Any
     return sorted(
         events,
         key=lambda e: event_sort_key(
-            e.get("at") or e.get("updated_at") or e.get("created_at"),
+            e.get("at")
+            or e.get("published_at")
+            or e.get("created_at")
+            or e.get("updated_at"),
             e.get("path", ""),
         ),
         reverse=True,
@@ -296,24 +299,27 @@ def timeline(
     events: list[dict[str, Any]] = []
     rows = conn.execute(
         f"""
-        SELECT path, kind, project, title, updated_at, created_at,
+        SELECT path, kind, project, title, updated_at, created_at, published_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
                sync_ignore_reason, sync_locked, author_name, storage,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE {" AND ".join(doc_clauses)}
-        ORDER BY COALESCE(updated_at, created_at) DESC
+        ORDER BY COALESCE(published_at, created_at, updated_at) DESC
         LIMIT ?
         """,
         (*doc_params, limit),
     ).fetchall()
 
     for row in rows:
-        ts = normalize_event_at(row["updated_at"] or row["created_at"], row["path"])
+        ts = normalize_event_at(
+            row["published_at"] or row["created_at"] or row["updated_at"], row["path"]
+        )
         events.append(
             {
                 "type": "handoff",
                 "at": ts,
+                "published_at": row["published_at"],
                 "project": row["project"],
                 "title": fix_mojibake(row["title"] or PathStem(row["path"])),
                 "path": row["path"],
@@ -394,13 +400,13 @@ def project_library(
     """All indexed documents for a project — no time window (knowledge library browse)."""
     rows = conn.execute(
         """
-        SELECT path, kind, project, title, updated_at, created_at,
+        SELECT path, kind, project, title, updated_at, created_at, published_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
                sync_ignore_reason, sync_locked, author_name, storage,
                substr(body, 1, 500) AS excerpt
         FROM documents
         WHERE project = ?
-        ORDER BY COALESCE(updated_at, created_at) DESC
+        ORDER BY COALESCE(published_at, created_at, updated_at) DESC
         LIMIT ?
         """,
         (project, limit),
@@ -408,12 +414,15 @@ def project_library(
 
     events: list[dict[str, Any]] = []
     for row in rows:
-        ts = normalize_event_at(row["updated_at"] or row["created_at"], row["path"])
+        ts = normalize_event_at(
+            row["published_at"] or row["created_at"] or row["updated_at"], row["path"]
+        )
         events.append(
             {
                 "type": row["kind"],
                 "kind": row["kind"],
                 "at": ts,
+                "published_at": row["published_at"],
                 "project": row["project"],
                 "title": fix_mojibake(row["title"] or PathStem(row["path"])),
                 "path": row["path"],
@@ -447,6 +456,33 @@ def PathStem(path: str) -> str:
     return path.rsplit("/", 1)[-1].replace(".md", "")
 
 
+def filter_events_by_kinds(
+    payload: dict[str, Any], kinds: list[str] | None
+) -> dict[str, Any]:
+    """Filter timeline/library events or search results by document kind/type."""
+    if not kinds:
+        return payload
+    allowed = {str(k).strip() for k in kinds if str(k).strip()}
+    if not allowed:
+        return payload
+
+    def keep(row: dict[str, Any]) -> bool:
+        row_type = row.get("type") or row.get("kind") or ""
+        return row_type in allowed
+
+    out = dict(payload)
+    if isinstance(out.get("events"), list):
+        out["events"] = [e for e in out["events"] if keep(e)]
+        out["event_count"] = len(out["events"])
+    if isinstance(out.get("results"), list):
+        out["results"] = [r for r in out["results"] if keep(r)]
+    if isinstance(out.get("handoffs"), list) and "handoff" not in allowed:
+        out["handoffs"] = []
+    if isinstance(out.get("plans"), list) and "plan" not in allowed:
+        out["plans"] = []
+    return out
+
+
 def parse_and_run(
     conn: sqlite3.Connection,
     query: str,
@@ -456,6 +492,7 @@ def parse_and_run(
     author: str | None = None,
     hours: int | None = None,
     all_time: bool = False,
+    kinds: list[str] | None = None,
 ) -> dict[str, Any]:
     text = query.strip()
 
@@ -472,6 +509,7 @@ def parse_and_run(
                 include_sections=True,
                 author=author,
             )
+        out = filter_events_by_kinds(out, kinds)
         return {
             "query": "",
             "intent": out.get("intent", "library"),
@@ -515,7 +553,7 @@ def parse_and_run(
             limit=limit,
             author=author,
         )
-        return {**meta, **out}
+        return {**meta, **filter_events_by_kinds(out, kinds)}
 
     if intent == "recent" and projects:
         recent_hours = effective_hours if effective_hours is not None else 168
@@ -553,6 +591,7 @@ def parse_and_run(
         conn,
         query=fts_query,
         project=project_filter,
+        kinds=[k for k in (kinds or []) if k != "section"] or None,
         limit=search_limit * 3 if last_time else search_limit,
         author=author,
     )
@@ -562,7 +601,10 @@ def parse_and_run(
         results = [r for r in results if r.get("project") in pset]
 
     for row in results:
-        row["at"] = normalize_event_at(row.get("updated_at"), row.get("path", ""))
+        row["at"] = normalize_event_at(
+            row.get("published_at") or row.get("created_at") or row.get("updated_at"),
+            row.get("path", ""),
+        )
         row["title"] = fix_mojibake(row.get("title") or PathStem(row.get("path", "")))
         row["snippet"] = fix_mojibake(row.get("snippet") or "")
 
@@ -578,7 +620,7 @@ def parse_and_run(
             limit=limit,
             author=author,
         )
-        return {**meta, **out}
+        return {**meta, **filter_events_by_kinds(out, kinds)}
 
     return {**meta, "intent": "search", "fts_query": fts_query, "results": results}
 

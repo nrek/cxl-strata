@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from cxl_strata import documents
+from cxl_strata import documents, pull
 from cxl_strata.workspace_index import db, indexer, nl_query, prune, queries, sync_review
+from cxl_strata.workspace_index.parsers import infer_published_at
 from cxl_strata.workspace_index.paths import resolve_workspace_root, set_workspace_root
 
 
@@ -46,6 +47,10 @@ def test_schema_migration_columns(workspace: Path) -> None:
     with db.connect() as conn:
         db.init_db(conn)
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
+        comment_cols = {
+            r["name"]
+            for r in conn.execute("PRAGMA table_info(document_comments)").fetchall()
+        }
     for name in (
         "remote_id",
         "author_name",
@@ -53,8 +58,104 @@ def test_schema_migration_columns(workspace: Path) -> None:
         "synced_at",
         "sync_ignored_at",
         "sync_ignore_reason",
+        "published_at",
     ):
         assert name in cols
+    for name in ("document_path", "remote_comment_id", "body", "created_at", "synced_at"):
+        assert name in comment_cols
+
+
+def test_infer_published_at_prefers_filename_then_frontmatter_then_title() -> None:
+    assert (
+        infer_published_at(filename="2026-07-02T22-29-11Z.md")
+        == "2026-07-02T22:29:11Z"
+    )
+    assert (
+        infer_published_at(
+            filename="notes.md", frontmatter={"published_at": "2026-06-15"}
+        )
+        == "2026-06-15T00:00:00Z"
+    )
+    assert (
+        infer_published_at(
+            filename="notes.md",
+            frontmatter={},
+            title="Handoff — 2026-06-04T12-00-00Z",
+        )
+        == "2026-06-04T12:00:00Z"
+    )
+    assert infer_published_at(filename="notes.md") is None
+
+
+def test_indexed_handoff_has_published_at_from_filename(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT published_at FROM documents WHERE path LIKE '%handoff%'"
+        ).fetchone()
+    assert row is not None
+    assert row["published_at"] == "2026-06-30T12:00:00Z"
+
+
+def test_recent_local_documents_sorted_by_published_date(workspace: Path) -> None:
+    # Older handoff by filename stamp but touched most recently on disk.
+    older = workspace / ".md" / "handoff" / "test-proj" / "2026-06-20T12-00-00Z.md"
+    older.write_text("# Handoff — 2026-06-20T12-00-00Z\n\n- older doc\n", encoding="utf-8")
+    indexer.index_all(prune=False)
+    future = (datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()
+    os.utime(older, (future, future))
+    indexer.index_all(prune=False)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        items = queries.list_recent_local_documents(conn, hours=24 * 30, limit=50)
+
+    paths = [item["path"] for item in items]
+    newer_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    older_path = ".md/handoff/test-proj/2026-06-20T12-00-00Z.md"
+    assert paths.index(newer_path) < paths.index(older_path)
+    row = next(item for item in items if item["path"] == older_path)
+    assert row["published_at"] == "2026-06-20T12:00:00Z"
+
+
+def test_index_backfills_published_at_for_unchanged_rows(workspace: Path) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        conn.execute("UPDATE documents SET published_at = NULL WHERE path = ?", (path,))
+
+    indexer.index_all(prune=False)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT published_at FROM documents WHERE path = ?", (path,)
+        ).fetchone()
+    assert row["published_at"] == "2026-06-30T12:00:00Z"
+
+
+def test_recent_local_documents_kinds_and_project_filters(workspace: Path) -> None:
+    (workspace / ".md" / "blueprints" / "test-proj.md").write_text(
+        "# Test proj blueprint\n", encoding="utf-8"
+    )
+    indexer.index_all(prune=False)
+    with db.connect() as conn:
+        db.init_db(conn)
+        both = queries.list_recent_local_documents(
+            conn, hours=168, limit=50, kinds=["handoff", "blueprint"]
+        )
+        handoffs = queries.list_recent_local_documents(
+            conn, hours=168, limit=50, kinds=["handoff"]
+        )
+        scoped = queries.list_recent_local_documents(
+            conn, hours=168, limit=50, project="test-proj", kinds=["handoff"]
+        )
+
+    assert {item["kind"] for item in both} == {"handoff", "blueprint"}
+    assert {item["kind"] for item in handoffs} == {"handoff"}
+    assert all(item["project"] == "test-proj" for item in scoped)
 
 
 def test_indexes_cursor_claude_and_codex_instruction_files(tmp_path: Path) -> None:
@@ -653,6 +754,165 @@ def test_sync_locked_marks_doc_not_syncable(workspace: Path) -> None:
         library = nl_query.project_library(conn, project="test-proj", limit=50)
     lib_row = next(r for r in library["events"] if r["path"] == path)
     assert lib_row["sync_locked"] is True
+
+
+def test_stash_payload_includes_published_at(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexer.index_all(prune=False)
+    captured: list[dict] = []
+
+    def fake_import_batch(payload: list[dict]) -> dict:
+        captured.extend(payload)
+        return {"synced": [{"path": payload[0]["path"], "remote_id": "remote-1"}], "failed": []}
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: (None, None))
+    monkeypatch.setattr(documents.api_client, "documents_import_batch", fake_import_batch)
+
+    result = documents.stash_paths([".md/handoff/test-proj/2026-06-30T12-00-00Z.md"])
+
+    assert not result["failed"]
+    assert captured[0]["published_at"] == "2026-06-30T12:00:00Z"
+
+
+def test_local_comments_persist_and_sync_on_stash(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.add_comment(
+            conn,
+            comment_id="local-comment-1",
+            document_path=path,
+            body="Ship after QA.",
+            author_name="Enrique",
+        )
+        comments = db.list_comments(conn, path)
+        assert len(comments) == 1
+        assert comments[0]["synced_at"] is None
+
+    pushed: list[tuple[str, str]] = []
+
+    def fake_create_comment(document_id: str, body: str, **kwargs) -> dict:
+        pushed.append((document_id, body))
+        return {"id": "remote-comment-1"}
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: (None, None))
+    monkeypatch.setattr(
+        documents.api_client,
+        "documents_import_batch",
+        lambda payload: {
+            "synced": [{"path": payload[0]["path"], "remote_id": "remote-1"}],
+            "failed": [],
+        },
+    )
+    monkeypatch.setattr(documents.api_client, "create_document_comment", fake_create_comment)
+
+    result = documents.stash_paths([path])
+
+    assert not result["failed"]
+    assert pushed == [("remote-1", "Ship after QA.")]
+    with db.connect() as conn:
+        db.init_db(conn)
+        comments = db.list_comments(conn, path)
+    assert comments[0]["synced_at"]
+    assert comments[0]["remote_comment_id"] == "remote-comment-1"
+
+
+def test_pull_documents_upserts_published_at_and_comments(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_row = {
+        "id": "remote-doc-1",
+        "path": ".md/handoff/team-proj/2026-06-25T09-00-00Z.md",
+        "kind": "handoff",
+        "project_slug": "team-proj",
+        "title": "Team handoff",
+        "body": "# Handoff\n\nFrom teammate.",
+        "body_hash": "hash-1",
+        "author_name": "Teammate",
+        "author_email": "teammate@example.com",
+        "published_at": "2026-06-25T09:00:00Z",
+        "created_at": "2026-06-26T10:00:00Z",
+        "updated_at": "2026-06-26T10:00:00Z",
+        "shared_at": "2026-06-26T10:00:00Z",
+        "storage_state": "db_only",
+        "comments": [
+            {
+                "id": "remote-comment-9",
+                "body": "Looks good.",
+                "author_name": "Reviewer",
+                "created_at": "2026-06-27T08:00:00Z",
+            }
+        ],
+    }
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return [remote_row] if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+
+    result = pull.pull_documents()
+
+    assert result["pulled"] == 1
+    assert result["comments_pulled"] == 1
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT published_at, origin FROM documents WHERE path = ?",
+            (remote_row["path"],),
+        ).fetchone()
+        comments = db.list_comments(conn, remote_row["path"])
+    assert row["published_at"] == "2026-06-25T09:00:00Z"
+    assert row["origin"] == "shared"
+    assert comments[0]["body"] == "Looks good."
+    assert comments[0]["remote_comment_id"] == "remote-comment-9"
+    assert comments[0]["synced_at"]
+
+    # Re-pull must not duplicate comments.
+    result_again = pull.pull_documents()
+    assert result_again["skipped"] == 1
+    with db.connect() as conn:
+        db.init_db(conn)
+        comments = db.list_comments(conn, remote_row["path"])
+    assert len(comments) == 1
+
+
+def test_scan_pending_supports_multiple_kinds(workspace: Path) -> None:
+    (workspace / ".cursor" / "plans" / "draft" / "sample-plan.md").write_text(
+        "# Plan\n\nDo the thing.\n", encoding="utf-8"
+    )
+    indexer.index_all(prune=False)
+
+    both = sync_review.scan_pending(kinds=["handoff", "plan"])
+    plans_only = sync_review.scan_pending(kinds=["plan"])
+
+    assert {item["kind"] for item in both} >= {"handoff", "plan"}
+    assert {item["kind"] for item in plans_only} == {"plan"}
+    assert all("published_at" in item for item in both)
+
+
+def test_query_kind_filter_scopes_project_library(workspace: Path) -> None:
+    (workspace / ".md" / "blueprints" / "test-proj.md").write_text(
+        "---\nproject: test-proj\n---\n\n# Test proj blueprint\n", encoding="utf-8"
+    )
+    indexer.index_all(prune=False)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        all_kinds = nl_query.parse_and_run(conn, "", project="test-proj", all_time=True)
+        handoffs = nl_query.parse_and_run(
+            conn, "", project="test-proj", all_time=True, kinds=["handoff"]
+        )
+
+    assert {e["kind"] for e in all_kinds["events"]} == {"handoff", "blueprint"}
+    assert {e["kind"] for e in handoffs["events"]} == {"handoff"}
 
 
 def test_project_library_events_include_remote_id_for_shared_docs(

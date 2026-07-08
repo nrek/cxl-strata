@@ -6,6 +6,7 @@ from app.models.entities import (
     Project,
     Repo,
     SharedDocument,
+    SharedDocumentComment,
     SharedDocumentSection,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "Project",
     "Repo",
     "SharedDocument",
+    "SharedDocumentComment",
     "SharedDocumentSection",
 ]

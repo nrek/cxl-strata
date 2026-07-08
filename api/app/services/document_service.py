@@ -6,20 +6,36 @@ import hashlib
 import uuid
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.content_safety import redact_secret_markers
 from app.core.types import AuthContext, utcnow
-from app.models import Project, SharedDocument, SharedDocumentSection
-from app.schemas.shared_document import SharedDocumentCreate
+from app.models import Project, SharedDocument, SharedDocumentComment, SharedDocumentSection
+from app.schemas.shared_document import DocumentCommentCreate, SharedDocumentCreate
 
 
 def _body_hash(body: str) -> str:
     return hashlib.sha256(body.encode()).hexdigest()
 
 
-def document_to_dict(row: SharedDocument, *, include_body: bool = True) -> dict[str, Any]:
+def comment_to_dict(row: SharedDocumentComment) -> dict[str, Any]:
+    return {
+        "id": row.id,
+        "document_id": row.document_id,
+        "author_name": row.author_name,
+        "author_email": row.author_email,
+        "body": row.body,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def document_to_dict(
+    row: SharedDocument,
+    *,
+    include_body: bool = True,
+    include_comments: bool = False,
+) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": row.id,
         "organization_id": row.organization_id,
@@ -37,6 +53,7 @@ def document_to_dict(row: SharedDocument, *, include_body: bool = True) -> dict[
         "author_name": row.author_name,
         "author_email": row.author_email,
         "actor_id": row.actor_id,
+        "published_at": row.published_at.isoformat() if row.published_at else None,
         "shared_at": row.shared_at.isoformat() if row.shared_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
@@ -45,6 +62,8 @@ def document_to_dict(row: SharedDocument, *, include_body: bool = True) -> dict[
         payload["body"] = row.body
     else:
         payload["body"] = row.body[:500]
+    if include_comments:
+        payload["comments"] = [comment_to_dict(c) for c in row.comments]
     return payload
 
 
@@ -97,6 +116,10 @@ class DocumentService:
         now = utcnow()
 
         if row and row.body_hash == digest:
+            if body.published_at is not None and row.published_at is None:
+                row.published_at = body.published_at
+                self.db.commit()
+                self.db.refresh(row)
             return row
 
         if row is None:
@@ -119,6 +142,7 @@ class DocumentService:
                 linear_task_id=body.linear_task_id,
                 author_name=author_name,
                 author_email=author_email,
+                published_at=body.published_at,
                 shared_at=now,
             )
             self.db.add(row)
@@ -137,6 +161,8 @@ class DocumentService:
             row.actor_id = self.auth.actor_id
             row.author_name = author_name
             row.author_email = author_email
+            if body.published_at is not None:
+                row.published_at = body.published_at
             row.updated_at = now
             row.shared_at = now
 
@@ -176,6 +202,7 @@ class DocumentService:
         self,
         *,
         project: str | None = None,
+        repo: str | None = None,
         kind: str | None = None,
         author: str | None = None,
         since: str | None = None,
@@ -187,16 +214,33 @@ class DocumentService:
         )
         if project:
             stmt = stmt.where(SharedDocument.project_slug == project)
+        if repo:
+            stmt = stmt.where(SharedDocument.repo_name == repo)
         if kind:
             stmt = stmt.where(SharedDocument.kind == kind)
         if author:
             stmt = stmt.where(SharedDocument.author_name.ilike(f"%{author}%"))
         if since:
             stmt = stmt.where(SharedDocument.updated_at >= since)
-        stmt = stmt.order_by(SharedDocument.updated_at.desc()).offset(offset).limit(limit)
+        stmt = (
+            stmt.order_by(
+                func.coalesce(
+                    SharedDocument.published_at, SharedDocument.created_at
+                ).desc()
+            )
+            .offset(offset)
+            .limit(limit)
+        )
         return list(self.db.scalars(stmt).all())
 
-    def search(self, q: str, *, project: str | None = None, limit: int = 50) -> list[SharedDocument]:
+    def search(
+        self,
+        q: str,
+        *,
+        project: str | None = None,
+        repo: str | None = None,
+        limit: int = 50,
+    ) -> list[SharedDocument]:
         pattern = f"%{q}%"
         stmt = select(SharedDocument).where(
             SharedDocument.organization_id == self.auth.organization_id,
@@ -208,8 +252,39 @@ class DocumentService:
         )
         if project:
             stmt = stmt.where(SharedDocument.project_slug == project)
-        stmt = stmt.order_by(SharedDocument.updated_at.desc()).limit(limit)
+        if repo:
+            stmt = stmt.where(SharedDocument.repo_name == repo)
+        stmt = stmt.order_by(
+            func.coalesce(SharedDocument.published_at, SharedDocument.created_at).desc()
+        ).limit(limit)
         return list(self.db.scalars(stmt).all())
+
+    def add_comment(
+        self, document_id: str, body: DocumentCommentCreate
+    ) -> SharedDocumentComment | None:
+        row = self.get(document_id)
+        if row is None:
+            return None
+        author_name, author_email = self._author()
+        comment = SharedDocumentComment(
+            id=str(uuid.uuid4()),
+            document_id=row.id,
+            actor_id=self.auth.actor_id,
+            author_name=body.author_name or author_name,
+            author_email=body.author_email or author_email,
+            body=body.body,
+            created_at=body.created_at or utcnow(),
+        )
+        self.db.add(comment)
+        self.db.commit()
+        self.db.refresh(comment)
+        return comment
+
+    def list_comments(self, document_id: str) -> list[SharedDocumentComment] | None:
+        row = self.get(document_id)
+        if row is None:
+            return None
+        return list(row.comments)
 
     def import_batch(self, documents: list[SharedDocumentCreate]) -> tuple[list[dict], list[dict]]:
         synced: list[dict] = []

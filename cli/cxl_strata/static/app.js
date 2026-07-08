@@ -226,8 +226,12 @@ function dayKey(iso, path = "") {
   return normalized.slice(0, 10);
 }
 
+function publishedAt(ev) {
+  return ev.at || ev.published_at || ev.created_at || ev.updated_at;
+}
+
 function eventSortKey(ev) {
-  const at = normalizeEventAt(ev.at || ev.updated_at || ev.created_at, ev.path || "");
+  const at = normalizeEventAt(publishedAt(ev), ev.path || "");
   const t = Date.parse(at);
   return Number.isNaN(t) ? 0 : t;
 }
@@ -430,6 +434,9 @@ async function runToolCommand(command) {
   setToolStatus("Running...");
 
   try {
+    const scopedProject =
+      state.view === "app" && state.activeProject ? state.activeProject : null;
+
     if (command === "sync-remote") {
       if (!state.apiOnline) {
         setToolStatus("Remote API is offline. Local search remains available.");
@@ -438,23 +445,39 @@ async function runToolCommand(command) {
       await api("/api/pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify(scopedProject ? { project: scopedProject } : {}),
       });
       await refreshDashboard();
-      setToolStatus("Remote sync complete.");
+      if (scopedProject) await refreshActiveProjectResults();
+      setToolStatus(
+        scopedProject
+          ? `Remote sync complete for ${scopedProject}.`
+          : "Remote sync complete."
+      );
       return;
     }
 
     if (command === "sync-local") {
-      if (!state.syncItems.length) await loadSyncLocal({ resetPage: false });
-      const paths = batchSyncPaths(state.syncItems);
+      let items = state.syncItems;
+      if (scopedProject) {
+        const params = filesFilterParams();
+        params.set("project", scopedProject);
+        const data = await api(`/api/sync/local?${params.toString()}`);
+        items = data.items || [];
+      } else if (!items.length) {
+        await loadSyncLocal({ resetPage: false });
+        items = state.syncItems;
+      }
+      const paths = batchSyncPaths(items);
       if (!paths.length) {
         setToolStatus("All local artifacts are already shared or locked.");
         return;
       }
       await syncPaths(paths);
       await refreshRemotePending();
-      setToolStatus(`Shared ${paths.length} local artifact${paths.length === 1 ? "" : "s"}.`);
+      setToolStatus(
+        `Shared ${paths.length} local artifact${paths.length === 1 ? "" : "s"}${scopedProject ? ` from ${scopedProject}` : ""}.`
+      );
       return;
     }
 
@@ -800,7 +823,7 @@ function cardHtml(item) {
   const type = item.type || item.kind || "search";
   const path = item.path || "";
   const title = friendlyCardTitle(item);
-  const at = normalizeEventAt(item.at || item.updated_at || item.created_at, path);
+  const at = normalizeEventAt(publishedAt(item), path);
   const project = item.project || item.project_slug || "";
   const excerpt = stripMarkdown(item.excerpt || item.snippet || item.overview || item.body || "");
   const source =
@@ -834,7 +857,7 @@ function renderTimeline(events, { emptyMessage } = {}) {
   const sorted = sortEventsNewestFirst(events);
   const byDay = new Map();
   for (const ev of sorted) {
-    const k = dayKey(ev.at || ev.updated_at || ev.created_at, ev.path || "");
+    const k = dayKey(publishedAt(ev), ev.path || "");
     if (!byDay.has(k)) byDay.set(k, []);
     byDay.get(k).push(ev);
   }
@@ -916,7 +939,58 @@ async function openDoc(path) {
   $("#doc-subtitle").textContent = path.replace(/^\.md\//, "");
   $("#doc-body").innerHTML = renderMarkdown(prepareBodyForDisplay(doc.body));
   updateDocModalActions(doc, path);
+  renderDocComments(doc.comments || []);
   $("#doc-modal").showModal();
+}
+
+function docCommentHtml(comment) {
+  const author = comment.author_name || "unknown";
+  const syncedLabel = comment.synced_at || comment.remote_comment_id ? "synced" : "local";
+  return `
+    <li class="doc-comment">
+      <div class="doc-comment-meta">
+        <strong>${esc(author)}</strong>
+        <span>${esc(fmtDate(comment.created_at))}</span>
+        <span class="doc-comment-sync ${syncedLabel === "synced" ? "synced" : "local"}">${syncedLabel}</span>
+      </div>
+      <p class="doc-comment-body">${esc(fixMojibake(comment.body || ""))}</p>
+    </li>`;
+}
+
+function renderDocComments(comments) {
+  const list = $("#doc-comments-list");
+  if (!list) return;
+  list.innerHTML = comments.length
+    ? comments.map(docCommentHtml).join("")
+    : '<li class="doc-comment-empty">No comments yet.</li>';
+}
+
+async function submitDocComment(event) {
+  event.preventDefault();
+  const path = state.activeDocPath;
+  const input = $("#doc-comment-input");
+  const submitBtn = $("#doc-comment-submit");
+  const body = (input?.value || "").trim();
+  if (!path || !body) return;
+  if (submitBtn) setActionBusy(submitBtn, "Adding…");
+  try {
+    const result = await api("/api/documents/comment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, body }),
+    });
+    renderDocComments(result.items || []);
+    if (input) input.value = "";
+    showToast(
+      result.synced
+        ? "Comment added and synced to STRATA."
+        : "Comment saved locally — it syncs when this document is shared."
+    );
+  } catch (err) {
+    showToast(`Comment failed: ${err.message}`);
+  } finally {
+    if (submitBtn) setActionIdle(submitBtn, "Add Comment");
+  }
 }
 
 function cssEscape(value) {
@@ -1155,6 +1229,21 @@ function syncHomeAuthorToScoped() {
   }
 }
 
+function hasNonLocalAuthors() {
+  const actor = (state.localActorName || "").trim().toLowerCase();
+  const others = state.authors.filter(
+    (name) => (name || "").trim().toLowerCase() !== actor
+  );
+  if (!actor) return state.authors.length > 1;
+  return others.length > 0;
+}
+
+function updateAuthorFilterVisibility() {
+  const visible = hasNonLocalAuthors();
+  $("#files-filter-author")?.classList.toggle("hidden", !visible);
+  $("#scoped-filter-author")?.classList.toggle("hidden", !visible);
+}
+
 async function loadAuthors() {
   const data = await api("/api/authors").catch(() => ({ authors: [], local_actor: "" }));
   state.authors = data.authors || [];
@@ -1166,25 +1255,38 @@ async function loadAuthors() {
     '<option value="">All Authors</option>' +
     state.authors.map((name) => `<option value="${esc(name)}">${esc(name)}</option>`).join("");
   for (const id of ["files-filter-author", "scoped-filter-author"]) {
-    const el = $(id);
+    const el = $(`#${id}`);
     if (!el) continue;
     const prev = el.value;
     el.innerHTML = options;
     if (prev && state.authors.includes(prev)) el.value = prev;
   }
+  updateAuthorFilterVisibility();
+}
+
+function selectedKinds(containerSel) {
+  const container = $(containerSel);
+  if (!container) return [];
+  return [...container.querySelectorAll("input[type=checkbox]:checked")].map(
+    (input) => input.value
+  );
 }
 
 function filesFilterParams() {
   const params = new URLSearchParams({ hours: "168", limit: "500" });
-  const kind = ($("#files-filter-kind") || {}).value || "";
+  const kinds = selectedKinds("#files-filter-kinds");
   const author = ($("#files-filter-author") || {}).value || "";
-  if (kind) params.set("kind", kind);
+  if (kinds.length) params.set("kinds", kinds.join(","));
   if (author) params.set("author", author);
   return params;
 }
 
 function scopedAuthorFilter() {
   return ($("#scoped-filter-author") || {}).value || "";
+}
+
+function scopedKindsFilter() {
+  return selectedKinds("#scoped-filter-kinds");
 }
 
 function reloadHomeFileTabs() {
@@ -1206,6 +1308,7 @@ async function runScopedSearch(q) {
   $("#output").innerHTML = '<p class="empty loading">Searching…</p>';
   const source = ($("#scoped-source") || {}).value || "local";
   const author = scopedAuthorFilter();
+  const kinds = scopedKindsFilter();
   const data = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1215,6 +1318,7 @@ async function runScopedSearch(q) {
       project: state.activeProject,
       source,
       author: author || undefined,
+      kinds: kinds.length ? kinds.join(",") : undefined,
     }),
   });
   renderResults(data);
@@ -1228,6 +1332,7 @@ async function browseProject(project) {
   $("#output").innerHTML = '<p class="empty loading">Loading project…</p>';
   const source = ($("#scoped-source") || {}).value || "local";
   const author = scopedAuthorFilter();
+  const kinds = scopedKindsFilter();
   const data = await api("/api/query", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1238,6 +1343,7 @@ async function browseProject(project) {
       all_time: true,
       source,
       author: author || undefined,
+      kinds: kinds.length ? kinds.join(",") : undefined,
     }),
   });
   renderResults(data);
@@ -1259,7 +1365,7 @@ function syncRowHtml(item) {
       <div class="sync-meta">
         ${esc(item.local_status)} · ${esc(item.share_status)}
         ${item.author_name ? ` · ${esc(item.author_name)}` : ""}
-        · ${esc(fmtDate(item.updated_at))}
+        · ${esc(fmtDate(item.published_at || item.updated_at))}
       </div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
       <div class="sync-actions">
@@ -1283,7 +1389,7 @@ function recentRowHtml(item) {
         <span class="recent-title">${esc(title)}</span>
       </div>
       <div class="sync-meta">
-        ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)}${item.author_name ? ` · ${esc(item.author_name)}` : ""} · ${esc(fmtDate(item.updated_at || item.created_at))}
+        ${item.project ? `${esc(item.project)} · ` : ""}${esc(localStatus)} · ${esc(shareStatus)}${item.author_name ? ` · ${esc(item.author_name)}` : ""} · ${esc(fmtDate(item.published_at || item.created_at || item.updated_at))}
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
@@ -1301,7 +1407,7 @@ function sharedFromRowHtml(item) {
         <span class="recent-title">${esc(title)}</span>
       </div>
       <div class="sync-meta">
-        ${item.project ? `${esc(item.project)} · ` : ""}${author ? `${esc(author)} · ` : ""}received · ${esc(fmtDate(item.updated_at || item.synced_at || item.created_at))}
+        ${item.project ? `${esc(item.project)} · ` : ""}${author ? `${esc(author)} · ` : ""}received · ${esc(fmtDate(item.published_at || item.created_at || item.updated_at || item.synced_at))}
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
@@ -1761,7 +1867,7 @@ function bindHomeTabControls() {
   $("#tab-received")?.addEventListener("click", () => switchHomeTab("received"));
   $("#tab-secrets")?.addEventListener("click", () => switchHomeTab("secrets"));
 
-  $("#files-filter-kind")?.addEventListener("change", () => reloadHomeFileTabs());
+  $("#files-filter-kinds")?.addEventListener("change", () => reloadHomeFileTabs());
   $("#files-filter-author")?.addEventListener("change", () => {
     syncHomeAuthorToScoped();
     reloadHomeFileTabs();
@@ -1877,6 +1983,16 @@ async function init() {
       else browseProject(state.activeProject);
     }
   });
+
+  $("#scoped-filter-kinds")?.addEventListener("change", () => {
+    if (state.view === "app" && state.activeProject) {
+      const q = $("#scoped-q").value.trim();
+      if (q) runScopedSearch(q);
+      else browseProject(state.activeProject);
+    }
+  });
+
+  $("#doc-comment-form")?.addEventListener("submit", submitDocComment);
 
   const chips = $("#example-chips");
   chips.innerHTML = EXAMPLES.map(

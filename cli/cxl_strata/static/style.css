@@ -1356,3 +1356,142 @@ dialog h2 {
   font-size: 0.65rem;
   text-transform: uppercase;
 }
+
+/* Document kind filter chips */
+.kind-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.kind-filter-scoped {
+  margin: 0.5rem 0 0.25rem;
+}
+
+.kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.kind-chip:hover {
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+
+.kind-chip input[type="checkbox"] {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+}
+
+.kind-chip:has(input:checked) {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* Document comments (synced team metadata) */
+.doc-comments {
+  margin-top: 1.25rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.doc-comments-title {
+  margin: 0 0 0.6rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.doc-comments-list {
+  list-style: none;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.doc-comment {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 0.55rem 0.7rem;
+}
+
+.doc-comment-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+}
+
+.doc-comment-meta strong {
+  color: var(--text);
+  font-size: 0.78rem;
+}
+
+.doc-comment-sync {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.45rem;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.doc-comment-sync.synced {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.doc-comment-body {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.doc-comment-empty {
+  color: var(--muted);
+  font-size: 0.8rem;
+  list-style: none;
+}
+
+.doc-comment-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.doc-comment-form textarea {
+  flex: 1;
+  resize: vertical;
+  min-height: 2.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.doc-comment-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}

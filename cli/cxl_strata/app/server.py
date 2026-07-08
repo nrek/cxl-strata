@@ -58,6 +58,18 @@ def _read_json(handler: BaseHTTPRequestHandler) -> dict:
     return json.loads(raw.decode("utf-8"))
 
 
+def _csv_list(raw: object) -> list[str] | None:
+    """Parse a CSV query/body value ('handoff,plan') into a clean list."""
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        values = [str(v).strip() for v in raw]
+    else:
+        values = str(raw).split(",")
+    cleaned = [v.strip() for v in values if v and v.strip()]
+    return cleaned or None
+
+
 def _api_online() -> dict:
     try:
         from .. import api_client
@@ -193,10 +205,11 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             project = (qs.get("project") or [None])[0]
             kind = (qs.get("kind") or [None])[0]
+            kinds = _csv_list((qs.get("kinds") or [None])[0])
             author = (qs.get("author") or [None])[0]
             show_all = (qs.get("all") or ["0"])[0] in ("1", "true", "yes")
             rows = sync_review.scan_pending(
-                project=project, kind=kind, author=author, show_all=show_all
+                project=project, kind=kind, kinds=kinds, author=author, show_all=show_all
             )
             _json_response(self, {"items": rows})
             return
@@ -204,6 +217,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if path == "/api/sync/potential-secrets":
             qs = parse_qs(parsed.query)
             kind = (qs.get("kind") or [None])[0]
+            kinds = _csv_list((qs.get("kinds") or [None])[0])
             author = (qs.get("author") or [None])[0]
             try:
                 limit = int((qs.get("limit") or ["500"])[0])
@@ -211,6 +225,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 limit = 500
             rows = sync_review.scan_potential_secret_files(
                 kind=kind,
+                kinds=kinds,
                 author=author,
                 limit=max(1, min(limit, 2000)),
             )
@@ -246,13 +261,21 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             except ValueError:
                 hours = 168
             kind = (qs.get("kind") or [None])[0]
+            kinds = _csv_list((qs.get("kinds") or [None])[0])
             author = (qs.get("author") or [None])[0]
+            project = (qs.get("project") or [None])[0]
             limit = max(1, min(limit, 2000))
             hours = max(1, min(hours, 24 * 30))
             with db.connect() as conn:
                 db.init_db(conn)
                 items = queries.list_recent_local_documents(
-                    conn, hours=hours, limit=limit, kind=kind, author=author
+                    conn,
+                    hours=hours,
+                    limit=limit,
+                    kind=kind,
+                    kinds=kinds,
+                    author=author,
+                    project=project,
                 )
             _json_response(self, {"items": items, "hours": hours})
             return
@@ -264,7 +287,9 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 500
             kind = (qs.get("kind") or [None])[0]
+            kinds = _csv_list((qs.get("kinds") or [None])[0])
             author = (qs.get("author") or [None])[0]
+            project = (qs.get("project") or [None])[0]
             limit = max(1, min(limit, 2000))
             local_actor = queries.resolve_local_actor()
             if not local_actor:
@@ -277,10 +302,24 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                     conn,
                     limit=limit,
                     kind=kind,
+                    kinds=kinds,
                     author=author,
                     local_actor=local_actor,
+                    project=project,
                 )
             _json_response(self, {"items": items})
+            return
+
+        if path == "/api/documents/comments":
+            qs = parse_qs(parsed.query)
+            doc_path = (qs.get("path") or [None])[0]
+            if not doc_path:
+                _json_response(self, {"error": "path required"}, HTTPStatus.BAD_REQUEST)
+                return
+            with db.connect() as conn:
+                db.init_db(conn)
+                comments = db.list_comments(conn, doc_path)
+            _json_response(self, {"items": comments})
             return
 
         if path == "/api/doc":
@@ -300,6 +339,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 if doc.get("body"):
                     doc["body"] = fix_mojibake(doc["body"])
                 doc["source"] = doc.get("origin") or "local"
+                doc["comments"] = db.list_comments(conn, doc_path)
                 _json_response(self, doc)
             return
 
@@ -396,6 +436,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             limit = int(body.get("limit", 50))
             project = body.get("project")
             author = body.get("author")
+            kinds = _csv_list(body.get("kinds"))
             all_time = bool(body.get("all_time"))
             hours_raw = body.get("hours")
             hours: int | None
@@ -432,6 +473,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                         author=author,
                         hours=hours,
                         all_time=all_time or (not q and bool(project)),
+                        kinds=kinds,
                     )
                 for row in local_result.get("results") or []:
                     row["source"] = "local"
@@ -447,6 +489,10 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                     for row in remote_results:
                         row["source"] = "shared"
                         row["kind"] = row.get("kind") or "document"
+                    if kinds:
+                        remote_results = [
+                            row for row in remote_results if row.get("kind") in kinds
+                        ]
                     if source == "both" and local_result.get("results"):
                         merged = list(local_result["results"]) + remote_results
                         local_result["results"] = merged[:limit]
@@ -523,6 +569,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 body = _read_json(self)
                 result = pull_documents(
                     project=body.get("project"),
+                    repo=body.get("repo"),
                     kind=body.get("kind"),
                     since=body.get("since"),
                     limit=int(body.get("limit", 2000)),
@@ -530,6 +577,71 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 _json_response(self, result)
             except Exception as exc:  # noqa: BLE001
                 _json_response(self, {"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+            return
+
+        if parsed.path == "/api/documents/comment":
+            try:
+                body = _read_json(self)
+            except json.JSONDecodeError:
+                _json_response(self, {"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+                return
+            doc_path = str(body.get("path") or "").strip().replace("\\", "/")
+            comment_body = str(body.get("body") or "").strip()
+            if not doc_path or not comment_body:
+                _json_response(
+                    self, {"error": "path and body required"}, HTTPStatus.BAD_REQUEST
+                )
+                return
+
+            cfg = {}
+            try:
+                cfg = load_config()
+            except FileNotFoundError:
+                pass
+            author_name = (
+                str(body.get("author_name") or "").strip()
+                or queries.resolve_local_actor()
+                or None
+            )
+            if not author_name:
+                api_status = _api_online()
+                if api_status.get("online"):
+                    author_name = api_status.get("actor")
+            author_email = cfg.get("actor_email")
+
+            import uuid as _uuid
+
+            with db.connect() as conn:
+                db.init_db(conn)
+                doc = queries.knowledge_get(conn, doc_path)
+                if not doc:
+                    _json_response(self, {"error": "not found"}, HTTPStatus.NOT_FOUND)
+                    return
+                comment = db.add_comment(
+                    conn,
+                    comment_id=str(_uuid.uuid4()),
+                    document_path=doc_path,
+                    body=comment_body,
+                    author_name=author_name,
+                    author_email=author_email,
+                )
+                remote_id = doc.get("remote_id")
+                synced = False
+                if remote_id:
+                    try:
+                        from ..documents import push_unsynced_comments
+
+                        errors = push_unsynced_comments(
+                            conn, path=doc_path, remote_id=str(remote_id)
+                        )
+                        synced = not errors
+                    except Exception:  # noqa: BLE001 - comment stays local when API offline
+                        synced = False
+                comments = db.list_comments(conn, doc_path)
+            _json_response(
+                self,
+                {"comment": comment, "synced": synced, "items": comments},
+            )
             return
 
         self.send_error(HTTPStatus.NOT_FOUND)

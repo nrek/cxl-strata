@@ -218,6 +218,72 @@ def test_tool_drawer_static_wiring() -> None:
     assert ".tool-drawer-toggle.open" in style
 
 
+def test_kind_filter_chips_replace_kind_select() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="files-filter-kinds"' in index
+    assert 'id="scoped-filter-kinds"' in index
+    assert 'id="files-filter-kind"' not in index
+    assert 'value="section"' in index
+    assert "function selectedKinds(containerSel)" in app_js
+    assert 'params.set("kinds", kinds.join(","))' in app_js
+    assert "function scopedKindsFilter()" in app_js
+    assert ".kind-chip" in style
+    assert ".kind-filter" in style
+
+
+def test_author_dropdown_hidden_without_other_authors() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "function hasNonLocalAuthors()" in app_js
+    assert "function updateAuthorFilterVisibility()" in app_js
+    # Author selects start hidden and only show when teammates exist.
+    assert 'id="files-filter-author" class="strata-select hidden"' in index
+    assert 'id="scoped-filter-author" class="strata-select hidden"' in index
+    # Regression: loadAuthors must use id selectors with '#'.
+    assert 'const el = $(`#${id}`);' in app_js
+
+
+def test_doc_modal_comment_wiring() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+    index = (root / "static" / "index.html").read_text(encoding="utf-8")
+    style = (root / "static" / "style.css").read_text(encoding="utf-8")
+
+    assert 'id="doc-comments"' in index
+    assert 'id="doc-comments-list"' in index
+    assert 'id="doc-comment-form"' in index
+    assert 'id="doc-comment-input"' in index
+    assert "async function submitDocComment(event)" in app_js
+    assert "function renderDocComments(comments)" in app_js
+    assert "/api/documents/comment" in app_js
+    assert ".doc-comments" in style
+    assert ".doc-comment-form" in style
+
+
+def test_sync_commands_scope_to_active_project() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "const scopedProject =" in app_js
+    assert 'JSON.stringify(scopedProject ? { project: scopedProject } : {})' in app_js
+    assert 'params.set("project", scopedProject)' in app_js
+
+
+def test_results_sort_by_published_date() -> None:
+    root = _package_root()
+    app_js = (root / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert "function publishedAt(ev)" in app_js
+    assert "ev.at || ev.published_at || ev.created_at || ev.updated_at" in app_js
+    assert "item.published_at || item.created_at || item.updated_at" in app_js
+
+
 def test_quickstart_leads_with_workspace_defaults() -> None:
     repo_root = _package_root().parents[1]
     quickstart = (repo_root / "docs" / "quickstart.md").read_text(encoding="utf-8")

@@ -9,6 +9,7 @@ from . import api_client, local_store
 from .content_safety import redact_secret_markers
 from .workspace_index import db, queries
 from .workspace_index.indexer import index_file
+from .workspace_index.parsers import infer_published_at
 from .workspace_index.paths import WORKSPACE_ROOT
 
 
@@ -33,6 +34,7 @@ def _document_payload(rel_path: str, body: str, kind: str | None = None) -> dict
             "plan_status": doc.get("plan_status"),
             "linear_task_id": doc.get("linear_task_id"),
             "storage_state": doc.get("storage") or "file",
+            "published_at": doc.get("published_at") or doc.get("created_at"),
         }
     body = redact_secret_markers(body)
     return {
@@ -41,6 +43,7 @@ def _document_payload(rel_path: str, body: str, kind: str | None = None) -> dict
         "title": Path(rel_path).stem,
         "body": body,
         "body_hash": _body_hash(body),
+        "published_at": infer_published_at(filename=Path(rel_path).name),
     }
 
 
@@ -89,6 +92,7 @@ def stash_paths(
     synced = result.get("synced", [])
     failed = list(result.get("failed", [])) + errors
 
+    comment_errors: list[dict[str, str]] = []
     with db.connect() as conn:
         db.init_db(conn)
         for row in synced:
@@ -99,8 +103,42 @@ def stash_paths(
                 author_name=author_name,
                 author_email=author_email,
             )
+            comment_errors.extend(
+                push_unsynced_comments(
+                    conn,
+                    path=row.get("path", ""),
+                    remote_id=row.get("remote_id", ""),
+                )
+            )
 
-    return {"synced": synced, "failed": failed, "skipped": skipped}
+    result_out = {"synced": synced, "failed": failed, "skipped": skipped}
+    if comment_errors:
+        result_out["comment_errors"] = comment_errors
+    return result_out
+
+
+def push_unsynced_comments(conn, *, path: str, remote_id: str) -> list[dict[str, str]]:
+    """Send local comments that never reached the central API for a shared doc."""
+    errors: list[dict[str, str]] = []
+    if not remote_id:
+        return errors
+    for comment in db.unsynced_comments(conn, path):
+        try:
+            remote = api_client.create_document_comment(
+                str(remote_id),
+                comment["body"],
+                author_name=comment.get("author_name"),
+                author_email=comment.get("author_email"),
+                created_at=comment.get("created_at"),
+            )
+            db.mark_comment_synced(
+                conn,
+                comment_id=comment["id"],
+                remote_comment_id=remote.get("id"),
+            )
+        except Exception as exc:  # noqa: BLE001 - comment push is best-effort
+            errors.append({"path": path, "comment_id": comment["id"], "error": str(exc)})
+    return errors
 
 
 def delete_remote_path(path: str, *, actor_name: str | None = None) -> dict[str, Any]:

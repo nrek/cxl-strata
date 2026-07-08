@@ -75,14 +75,13 @@
 
         <section id="home-files-section" class="home-tabs-section">
           <div class="home-tab-filters">
-            <select id="files-filter-kind" class="strata-select" aria-label="Document type filter">
-              <option value="">All Types</option>
-              <option value="handoff">handoff</option>
-              <option value="blueprint">blueprint</option>
-              <option value="plan">plan</option>
-              <option value="rule">rule</option>
-            </select>
-            <select id="files-filter-author" class="strata-select" aria-label="Author filter">
+            <div id="files-filter-kinds" class="kind-filter" role="group" aria-label="Document type filter">
+              <label class="kind-chip"><input type="checkbox" value="handoff" /><span>handoff</span></label>
+              <label class="kind-chip"><input type="checkbox" value="blueprint" /><span>blueprint</span></label>
+              <label class="kind-chip"><input type="checkbox" value="plan" /><span>plan</span></label>
+              <label class="kind-chip"><input type="checkbox" value="rule" /><span>rule</span></label>
+            </div>
+            <select id="files-filter-author" class="strata-select hidden" aria-label="Author filter">
               <option value="">All Authors</option>
             </select>
           </div>
@@ -217,13 +216,21 @@
           <option value="both">Both</option>
           <option value="shared">Shared</option>
         </select>
-        <select id="scoped-filter-author" class="strata-select" aria-label="Author filter">
+        <select id="scoped-filter-author" class="strata-select hidden" aria-label="Author filter">
           <option value="">All Authors</option>
         </select>
         <button type="submit" class="icon-btn icon-btn-accent" aria-label="Search">
           <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
         </button>
       </form>
+
+      <div id="scoped-filter-kinds" class="kind-filter kind-filter-scoped" role="group" aria-label="Result type filter">
+        <label class="kind-chip"><input type="checkbox" value="handoff" /><span>handoff</span></label>
+        <label class="kind-chip"><input type="checkbox" value="section" /><span>section</span></label>
+        <label class="kind-chip"><input type="checkbox" value="blueprint" /><span>blueprint</span></label>
+        <label class="kind-chip"><input type="checkbox" value="plan" /><span>plan</span></label>
+        <label class="kind-chip"><input type="checkbox" value="rule" /><span>rule</span></label>
+      </div>
 
       <div id="meta" class="meta hidden"></div>
       <div id="output" class="hidden"></div>
@@ -255,6 +262,18 @@
         </div>
       </header>
       <div id="doc-body" class="markdown-body"></div>
+      <section id="doc-comments" class="doc-comments" aria-label="Document comments">
+        <h3 class="doc-comments-title">Comments</h3>
+        <ul id="doc-comments-list" class="doc-comments-list"></ul>
+        <form id="doc-comment-form" class="doc-comment-form">
+          <textarea
+            id="doc-comment-input"
+            rows="2"
+            placeholder="Add a comment — synced to your team when this document is shared"
+          ></textarea>
+          <button type="submit" id="doc-comment-submit" class="cta-btn cta-share">Add Comment</button>
+        </form>
+      </section>
     </article>
   </dialog>
 

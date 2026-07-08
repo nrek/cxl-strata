@@ -16,13 +16,15 @@ from app.core.types import AuthContext
 from app.schemas.key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatchIn, SyncBatchOut
 from app.schemas.shared_document import (
+    DocumentCommentCreate,
+    DocumentCommentOut,
     SharedDocumentCreate,
     SharedDocumentImportBatchIn,
     SharedDocumentImportBatchOut,
     SharedDocumentOut,
 )
 from app.services.client_install import client_manifest, render_install_ps1, render_install_sh
-from app.services.document_service import DocumentService, document_to_dict
+from app.services.document_service import DocumentService, comment_to_dict, document_to_dict
 from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
@@ -294,12 +296,14 @@ def create_document(
 @app.get("/v1/documents")
 def list_documents(
     project: str | None = Query(None),
+    repo: str | None = Query(None),
     kind: str | None = Query(None),
     author: str | None = Query(None),
     since: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     include_body: bool = Query(False),
+    include_comments: bool = Query(False),
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -307,6 +311,7 @@ def list_documents(
     service = DocumentService(db, auth)
     rows = service.list_documents(
         project=project,
+        repo=repo,
         kind=kind,
         author=author,
         since=since,
@@ -315,7 +320,8 @@ def list_documents(
     )
     return {
         "results": [
-            document_to_dict(r, include_body=include_body) for r in rows
+            document_to_dict(r, include_body=include_body, include_comments=include_comments)
+            for r in rows
         ]
     }
 
@@ -324,13 +330,14 @@ def list_documents(
 def search_documents(
     q: str = Query(..., min_length=1),
     project: str | None = Query(None),
+    repo: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     auth: AuthContext = Depends(require_auth),
     db: Session = Depends(get_db),
 ) -> dict:
     require_scopes(auth, "memory:read")
     service = DocumentService(db, auth)
-    rows = service.search(q, project=project, limit=limit)
+    rows = service.search(q, project=project, repo=repo, limit=limit)
     return {"results": [document_to_dict(r, include_body=False) for r in rows]}
 
 
@@ -345,7 +352,36 @@ def get_document(
     row = service.get(document_id)
     if row is None:
         raise HTTPException(status_code=404, detail="not found")
-    return document_to_dict(row)
+    return document_to_dict(row, include_comments=True)
+
+
+@app.get("/v1/documents/{document_id}/comments")
+def list_document_comments(
+    document_id: str,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    service = DocumentService(db, auth)
+    rows = service.list_comments(document_id)
+    if rows is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return {"results": [comment_to_dict(r) for r in rows]}
+
+
+@app.post("/v1/documents/{document_id}/comments", response_model=DocumentCommentOut)
+def create_document_comment(
+    document_id: str,
+    body: DocumentCommentCreate,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> DocumentCommentOut:
+    require_scopes(auth, "memory:write")
+    service = DocumentService(db, auth)
+    comment = service.add_comment(document_id, body)
+    if comment is None:
+        raise HTTPException(status_code=404, detail="not found")
+    return DocumentCommentOut(**comment_to_dict(comment))
 
 
 @app.delete("/v1/documents/{document_id}")

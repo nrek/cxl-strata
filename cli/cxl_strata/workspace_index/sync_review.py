@@ -11,7 +11,19 @@ from . import db
 from ..content_safety import find_secret_markers, redact_secret_markers
 from .indexer import discover_files, index_file
 from . import paths
-from .queries import _with_sync_status, effective_author_name, filter_by_author
+from .parsers import infer_published_at
+from .queries import _kinds_filter, _with_sync_status, effective_author_name, filter_by_author
+
+
+def _published_iso(rel: str, db_row: dict[str, Any] | None, fallback: str) -> str:
+    """Published date from index, filename stamp, or activity fallback."""
+    if db_row and db_row.get("published_at"):
+        return str(db_row["published_at"])
+    inferred = infer_published_at(
+        filename=rel.rsplit("/", 1)[-1],
+        title=db_row.get("title") if db_row else None,
+    )
+    return inferred or fallback
 
 
 def _mtime_iso(path: Path) -> str:
@@ -77,11 +89,13 @@ def scan_pending(
     *,
     project: str | None = None,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
     show_all: bool = False,
 ) -> list[dict[str, Any]]:
     """Return local artifacts that are new/changed/unshared vs SQLite."""
     rows: list[dict[str, Any]] = []
+    kind_list = _kinds_filter(kind, kinds)
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -89,16 +103,16 @@ def scan_pending(
             r["path"]: dict(r)
             for r in conn.execute(
                 """
-                SELECT path, body_hash, storage, origin, remote_id, shared_at,
-                       author_name, updated_at, sync_ignored_at, sync_ignore_reason,
-                       sync_locked
+                SELECT path, title, body_hash, storage, origin, remote_id, shared_at,
+                       author_name, updated_at, published_at, sync_ignored_at,
+                       sync_ignore_reason, sync_locked
                 FROM documents
                 """
             ).fetchall()
         }
 
     for file_kind, path in discover_files():
-        if kind and file_kind != kind:
+        if kind_list and file_kind not in kind_list:
             continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         db_row = indexed.get(rel)
@@ -125,11 +139,13 @@ def scan_pending(
         except OSError:
             pass
 
+        mtime = _mtime_iso(path)
         row_dict = {
             "path": rel,
             "kind": file_kind,
             "project": (db_row.get("project") if db_row else None) or _project_from_path(rel),
-            "updated_at": _mtime_iso(path),
+            "updated_at": mtime,
+            "published_at": _published_iso(rel, db_row, mtime),
             "local_status": local_status,
             "share_status": share_status,
             "author_name": effective_author_name(db_row),
@@ -144,8 +160,10 @@ def scan_pending(
         enriched["share_status"] = share_status
         rows.append(enriched)
 
-    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
-    _append_db_only_pending(rows, project=project, kind=kind)
+    rows.sort(
+        key=lambda r: r.get("published_at") or r.get("updated_at") or "", reverse=True
+    )
+    _append_db_only_pending(rows, project=project, kinds=kind_list)
     return filter_by_author(rows, author)
 
 
@@ -153,7 +171,7 @@ def _append_db_only_pending(
     rows: list[dict[str, Any]],
     *,
     project: str | None,
-    kind: str | None,
+    kinds: list[str] | None = None,
 ) -> None:
     """Include archived SQLite-only docs that batch sync can still upload."""
     seen = {r["path"] for r in rows}
@@ -167,21 +185,22 @@ def _append_db_only_pending(
     if project:
         clauses.append("project = ?")
         params.append(project)
-    if kind:
-        clauses.append("kind = ?")
-        params.append(kind)
+    if kinds:
+        placeholders = ",".join("?" * len(kinds))
+        clauses.append(f"kind IN ({placeholders})")
+        params.extend(kinds)
 
     with db.connect() as conn:
         db.init_db(conn)
         db_rows = conn.execute(
             f"""
-            SELECT path, kind, project, title, updated_at, created_at, origin,
-                   remote_id, shared_at, synced_at, sync_ignored_at, sync_ignore_reason,
-                   sync_locked, author_name, storage,
+            SELECT path, kind, project, title, updated_at, created_at, published_at,
+                   origin, remote_id, shared_at, synced_at, sync_ignored_at,
+                   sync_ignore_reason, sync_locked, author_name, storage,
                    substr(body, 1, 180) AS excerpt
             FROM documents
             WHERE {" AND ".join(clauses)}
-            ORDER BY updated_at DESC
+            ORDER BY COALESCE(published_at, created_at, updated_at) DESC
             """,
             params,
         ).fetchall()
@@ -195,6 +214,7 @@ def _append_db_only_pending(
             "kind": db_row["kind"],
             "project": db_row["project"],
             "updated_at": db_row["updated_at"] or db_row["created_at"],
+            "published_at": db_row["published_at"] or db_row["created_at"],
             "local_status": "archived",
             "share_status": "not shared",
             "author_name": effective_author_name(dict(db_row)),
@@ -217,6 +237,7 @@ def scan_recent_locally_changed(
     hours: int = 168,
     limit: int = 200,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
 ) -> list[dict[str, Any]]:
     """On-disk files with recent local edit or share activity, newest first."""
@@ -224,6 +245,7 @@ def scan_recent_locally_changed(
         "+00:00", "Z"
     )
     rows: list[dict[str, Any]] = []
+    kind_list = _kinds_filter(kind, kinds)
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -231,7 +253,7 @@ def scan_recent_locally_changed(
             r["path"]: dict(r)
             for r in conn.execute(
                 """
-                SELECT path, kind, project, title, created_at, origin,
+                SELECT path, kind, project, title, created_at, published_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
                        storage, author_name, sync_ignored_at, sync_ignore_reason,
                        sync_locked, substr(body, 1, 180) AS excerpt
@@ -241,7 +263,7 @@ def scan_recent_locally_changed(
         }
 
     for file_kind, path in discover_files():
-        if kind and file_kind != kind:
+        if kind_list and file_kind not in kind_list:
             continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         try:
@@ -271,6 +293,7 @@ def scan_recent_locally_changed(
             "updated_at": activity_at,
             "mtime": mtime,
             "created_at": (db_row.get("created_at") if db_row else None) or mtime,
+            "published_at": _published_iso(rel, db_row, mtime),
             "origin": (db_row.get("origin") if db_row else None) or "local",
             "remote_id": db_row.get("remote_id") if db_row else None,
             "shared_at": db_row.get("shared_at") if db_row else None,
@@ -285,7 +308,9 @@ def scan_recent_locally_changed(
         }
         rows.append(_with_sync_status(item))
 
-    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    rows.sort(
+        key=lambda r: r.get("published_at") or r.get("updated_at") or "", reverse=True
+    )
     filtered = filter_by_author(rows, author)
     return filtered[:limit]
 
@@ -293,11 +318,13 @@ def scan_recent_locally_changed(
 def scan_potential_secret_files(
     *,
     kind: str | None = None,
+    kinds: list[str] | None = None,
     author: str | None = None,
     limit: int = 500,
 ) -> list[dict[str, Any]]:
     """Local docs containing secret-like values that STRATA will redact before sync."""
     rows: list[dict[str, Any]] = []
+    kind_list = _kinds_filter(kind, kinds)
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -305,7 +332,7 @@ def scan_potential_secret_files(
             r["path"]: dict(r)
             for r in conn.execute(
                 """
-                SELECT path, kind, project, title, created_at, origin,
+                SELECT path, kind, project, title, created_at, published_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
                        storage, author_name, sync_ignored_at, sync_ignore_reason,
                        sync_locked
@@ -315,7 +342,7 @@ def scan_potential_secret_files(
         }
 
     for file_kind, path in discover_files():
-        if kind and file_kind != kind:
+        if kind_list and file_kind not in kind_list:
             continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         try:
@@ -339,6 +366,7 @@ def scan_potential_secret_files(
             "updated_at": _activity_iso(mtime, db_row),
             "mtime": mtime,
             "created_at": (db_row.get("created_at") if db_row else None) or mtime,
+            "published_at": _published_iso(rel, db_row, mtime),
             "origin": (db_row.get("origin") if db_row else None) or "local",
             "remote_id": db_row.get("remote_id") if db_row else None,
             "shared_at": db_row.get("shared_at") if db_row else None,
@@ -354,7 +382,9 @@ def scan_potential_secret_files(
         }
         rows.append(_with_sync_status(item))
 
-    rows.sort(key=lambda r: r.get("updated_at") or "", reverse=True)
+    rows.sort(
+        key=lambda r: r.get("published_at") or r.get("updated_at") or "", reverse=True
+    )
     filtered = filter_by_author(rows, author)
     return filtered[:limit]
 

@@ -4,7 +4,7 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,56 @@ def parse_iso_from_filename(name: str) -> str | None:
         return dt.isoformat().replace("+00:00", "Z")
     except ValueError:
         return stamp
+
+
+_TITLE_TS_RE = re.compile(r"(\d{4}-\d{2}-\d{2})(?:T(\d{2})[-:](\d{2})[-:](\d{2})Z?)?")
+_PUBLISHED_FRONTMATTER_KEYS = ("published_at", "published", "created_at", "created", "date")
+
+
+def _coerce_iso_value(value: Any) -> str | None:
+    """Best-effort normalization of frontmatter date values to UTC ISO strings."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if isinstance(value, date):
+        return f"{value.isoformat()}T00:00:00Z"
+    text = str(value).strip()
+    if not text:
+        return None
+    return _stamp_to_iso(text)
+
+
+def _stamp_to_iso(text: str) -> str | None:
+    m = _TITLE_TS_RE.search(text)
+    if not m:
+        return None
+    date_part, hh, mm, ss = m.groups()
+    if hh is None:
+        return f"{date_part}T00:00:00Z"
+    return f"{date_part}T{hh}:{mm}:{ss}Z"
+
+
+def infer_published_at(
+    *,
+    filename: str,
+    frontmatter: dict[str, Any] | None = None,
+    title: str | None = None,
+) -> str | None:
+    """Published date for a document: filename stamp, frontmatter dates, then title."""
+    iso = parse_iso_from_filename(filename)
+    if iso:
+        return iso
+    for key in _PUBLISHED_FRONTMATTER_KEYS:
+        coerced = _coerce_iso_value((frontmatter or {}).get(key))
+        if coerced:
+            return coerced
+    if title:
+        coerced = _stamp_to_iso(title)
+        if coerced:
+            return coerced
+    return None
 
 
 def infer_project_from_prefix(filename: str) -> str | None:

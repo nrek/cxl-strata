@@ -32,6 +32,7 @@ def connect(db_path: Path | None = None) -> Iterator[sqlite3.Connection]:
 
 
 _MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("published_at", "TEXT"),
     ("storage", "TEXT NOT NULL DEFAULT 'file'"),
     ("origin", "TEXT NOT NULL DEFAULT 'local'"),
     ("remote_id", "TEXT"),
@@ -53,6 +54,10 @@ def init_db(conn: sqlite3.Connection) -> None:
     for name, typedef in _MIGRATION_COLUMNS:
         if name not in cols:
             conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {typedef}")
+    # Index on a migrated column must be created after the ALTERs on legacy DBs.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_documents_published ON documents(published_at)"
+    )
 
 
 def is_db_only(conn: sqlite3.Connection, path: str) -> bool:
@@ -87,6 +92,7 @@ def upsert_fts(
 
 def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     payload = {
+        "published_at": None,
         "origin": "local",
         "remote_id": None,
         "author_name": None,
@@ -102,13 +108,13 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT INTO documents (
-            id, kind, project, path, title, created_at, updated_at,
+            id, kind, project, path, title, created_at, updated_at, published_at,
             body, body_hash, plan_status, linear_task_id, files_changed,
             deploy_commands, tags, folder_status, status_mismatch, storage,
             origin, remote_id, author_name, author_email, shared_at, synced_at,
             remote_updated_at, sync_ignored_at, sync_ignore_reason, sync_locked
         ) VALUES (
-            :id, :kind, :project, :path, :title, :created_at, :updated_at,
+            :id, :kind, :project, :path, :title, :created_at, :updated_at, :published_at,
             :body, :body_hash, :plan_status, :linear_task_id, :files_changed,
             :deploy_commands, :tags, :folder_status, :status_mismatch,
             COALESCE(:storage, 'file'),
@@ -122,6 +128,7 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             title = excluded.title,
             created_at = COALESCE(documents.created_at, excluded.created_at),
             updated_at = excluded.updated_at,
+            published_at = COALESCE(excluded.published_at, documents.published_at),
             body = excluded.body,
             body_hash = excluded.body_hash,
             plan_status = excluded.plan_status,
@@ -274,6 +281,119 @@ def mark_remote_deleted(
         WHERE path = ?
         """,
         (now, reason, path.replace("\\", "/")),
+    )
+
+
+def add_comment(
+    conn: sqlite3.Connection,
+    *,
+    comment_id: str,
+    document_path: str,
+    body: str,
+    author_name: str | None = None,
+    author_email: str | None = None,
+    created_at: str | None = None,
+    remote_comment_id: str | None = None,
+    synced_at: str | None = None,
+) -> dict[str, Any]:
+    row = {
+        "id": comment_id,
+        "document_path": document_path.replace("\\", "/"),
+        "remote_comment_id": remote_comment_id,
+        "author_name": author_name,
+        "author_email": author_email,
+        "body": body,
+        "created_at": created_at or utc_now(),
+        "synced_at": synced_at,
+    }
+    conn.execute(
+        """
+        INSERT INTO document_comments (
+            id, document_path, remote_comment_id, author_name, author_email,
+            body, created_at, synced_at
+        ) VALUES (
+            :id, :document_path, :remote_comment_id, :author_name, :author_email,
+            :body, :created_at, :synced_at
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            body = excluded.body,
+            remote_comment_id = COALESCE(excluded.remote_comment_id, document_comments.remote_comment_id),
+            synced_at = COALESCE(excluded.synced_at, document_comments.synced_at)
+        """,
+        row,
+    )
+    return row
+
+
+def upsert_remote_comment(
+    conn: sqlite3.Connection,
+    *,
+    document_path: str,
+    remote_comment_id: str,
+    body: str,
+    author_name: str | None = None,
+    author_email: str | None = None,
+    created_at: str | None = None,
+) -> None:
+    existing = conn.execute(
+        "SELECT id FROM document_comments WHERE remote_comment_id = ?",
+        (remote_comment_id,),
+    ).fetchone()
+    comment_id = existing["id"] if existing else f"remote-{remote_comment_id}"
+    add_comment(
+        conn,
+        comment_id=comment_id,
+        document_path=document_path,
+        body=body,
+        author_name=author_name,
+        author_email=author_email,
+        created_at=created_at,
+        remote_comment_id=remote_comment_id,
+        synced_at=utc_now(),
+    )
+
+
+def list_comments(conn: sqlite3.Connection, path: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, document_path, remote_comment_id, author_name, author_email,
+               body, created_at, synced_at
+        FROM document_comments
+        WHERE document_path = ?
+        ORDER BY created_at ASC
+        """,
+        (path.replace("\\", "/"),),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def unsynced_comments(conn: sqlite3.Connection, path: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, document_path, author_name, author_email, body, created_at
+        FROM document_comments
+        WHERE document_path = ? AND synced_at IS NULL
+        ORDER BY created_at ASC
+        """,
+        (path.replace("\\", "/"),),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_comment_synced(
+    conn: sqlite3.Connection,
+    *,
+    comment_id: str,
+    remote_comment_id: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        UPDATE document_comments
+        SET synced_at = ?,
+            remote_comment_id = COALESCE(?, remote_comment_id)
+        WHERE id = ?
+        """,
+        (utc_now(), remote_comment_id, comment_id),
     )
 
 

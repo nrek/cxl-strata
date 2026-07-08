@@ -7,7 +7,13 @@ from pathlib import Path
 
 from . import db, parsers
 from . import paths as _paths
-from .parsers import doc_id_for_path, parse_document, parse_iso_from_filename, split_handoff_sections
+from .parsers import (
+    doc_id_for_path,
+    infer_published_at,
+    parse_document,
+    parse_iso_from_filename,
+    split_handoff_sections,
+)
 from .parsers import dumps_json
 
 
@@ -92,9 +98,11 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
     body_hash = hashlib.sha256(text.encode()).hexdigest()
 
     existing = conn.execute(
-        "SELECT body_hash FROM documents WHERE path = ?", (rel_path,)
+        "SELECT body_hash, published_at FROM documents WHERE path = ?", (rel_path,)
     ).fetchone()
     if existing and existing["body_hash"] == body_hash:
+        if not existing["published_at"]:
+            _backfill_published_at(conn, rel_path, path, text, kind)
         return False
 
     parsed = parse_document(rel_path, text, kind=kind, path_obj=path)
@@ -102,6 +110,14 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
 
     created = parse_iso_from_filename(path.name) or _mtime_iso(path)
     updated = _mtime_iso(path)
+    published = (
+        infer_published_at(
+            filename=path.name,
+            frontmatter=parsed.frontmatter,
+            title=parsed.title,
+        )
+        or created
+    )
 
     folder_status = parsers.status_from_plan_path(path) if kind == "plan" else None
     status_mismatch = 0
@@ -117,6 +133,7 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
         "title": parsed.title,
         "created_at": created,
         "updated_at": updated,
+        "published_at": published,
         "body": text,
         "body_hash": body_hash,
         "plan_status": parsed.plan_status,
@@ -153,6 +170,26 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
         db.replace_sections(conn, doc_id, sections)
 
     return True
+
+
+def _backfill_published_at(
+    conn, rel_path: str, path: Path, text: str, kind: str
+) -> None:
+    """Populate published_at on unchanged legacy rows without a full re-upsert."""
+    parsed = parse_document(rel_path, text, kind=kind, path_obj=path)
+    published = (
+        infer_published_at(
+            filename=path.name,
+            frontmatter=parsed.frontmatter,
+            title=parsed.title,
+        )
+        or parse_iso_from_filename(path.name)
+        or _mtime_iso(path)
+    )
+    conn.execute(
+        "UPDATE documents SET published_at = ? WHERE path = ? AND published_at IS NULL",
+        (published, rel_path),
+    )
 
 
 def index_all(*, prune: bool = True) -> dict[str, int]:

@@ -32,9 +32,11 @@ def needs_pull(row: dict[str, Any], existing: Any) -> bool:
 def fetch_all_remote_documents(
     *,
     project: str | None = None,
+    repo: str | None = None,
     kind: str | None = None,
     since: str | None = None,
     include_body: bool = False,
+    include_comments: bool = False,
     max_rows: int = _MAX_REMOTE_ROWS,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -42,11 +44,13 @@ def fetch_all_remote_documents(
     while len(rows) < max_rows:
         batch = api_client.list_documents(
             project=project,
+            repo=repo,
             kind=kind,
             since=since,
             limit=_PAGE_SIZE,
             offset=offset,
             include_body=include_body,
+            include_comments=include_comments,
         )
         if not batch:
             break
@@ -84,19 +88,23 @@ def count_remote_pending(
 def pull_documents(
     *,
     project: str | None = None,
+    repo: str | None = None,
     kind: str | None = None,
     since: str | None = None,
     limit: int = _MAX_REMOTE_ROWS,
 ) -> dict[str, Any]:
     remote_rows = fetch_all_remote_documents(
         project=project,
+        repo=repo,
         kind=kind,
         since=since,
         include_body=True,
+        include_comments=True,
         max_rows=limit,
     )
     pulled = 0
     skipped = 0
+    comments_pulled = 0
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -107,6 +115,7 @@ def pull_documents(
                 (rel,),
             ).fetchone()
             remote_updated = _remote_updated(row)
+            comments_pulled += _pull_comments(conn, rel, row.get("comments"))
             if not needs_pull(row, existing):
                 skipped += 1
                 continue
@@ -119,6 +128,7 @@ def pull_documents(
                 "title": row.get("title"),
                 "created_at": row.get("created_at"),
                 "updated_at": row.get("updated_at") or remote_updated,
+                "published_at": row.get("published_at") or row.get("created_at"),
                 "body": row.get("body") or "",
                 "body_hash": row.get("body_hash") or "",
                 "plan_status": row.get("plan_status"),
@@ -140,4 +150,31 @@ def pull_documents(
             db.upsert_document(conn, payload)
             pulled += 1
 
-    return {"pulled": pulled, "skipped": skipped, "total_remote": len(remote_rows)}
+    return {
+        "pulled": pulled,
+        "skipped": skipped,
+        "comments_pulled": comments_pulled,
+        "total_remote": len(remote_rows),
+    }
+
+
+def _pull_comments(conn: Any, rel: str, comments: Any) -> int:
+    """Mirror remote document comments into the local SQLite cache."""
+    if not isinstance(comments, list):
+        return 0
+    count = 0
+    for comment in comments:
+        remote_comment_id = comment.get("id")
+        if not remote_comment_id:
+            continue
+        db.upsert_remote_comment(
+            conn,
+            document_path=rel,
+            remote_comment_id=str(remote_comment_id),
+            body=comment.get("body") or "",
+            author_name=comment.get("author_name"),
+            author_email=comment.get("author_email"),
+            created_at=comment.get("created_at"),
+        )
+        count += 1
+    return count

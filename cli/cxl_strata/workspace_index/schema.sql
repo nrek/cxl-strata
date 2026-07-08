@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS documents (
     title TEXT,
     created_at TEXT,
     updated_at TEXT,
+    published_at TEXT,
     body TEXT NOT NULL,
     body_hash TEXT NOT NULL,
     plan_status TEXT CHECK (
@@ -42,6 +43,17 @@ CREATE TABLE IF NOT EXISTS plans (
     status_changed_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS document_comments (
+    id TEXT PRIMARY KEY,
+    document_path TEXT NOT NULL,
+    remote_comment_id TEXT,
+    author_name TEXT,
+    author_email TEXT,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    synced_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS sections (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -62,6 +74,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
 CREATE INDEX IF NOT EXISTS idx_documents_kind ON documents(kind);
 CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project);
 CREATE INDEX IF NOT EXISTS idx_documents_updated ON documents(updated_at);
+CREATE INDEX IF NOT EXISTS idx_document_comments_path ON document_comments(document_path);
+CREATE INDEX IF NOT EXISTS idx_document_comments_remote ON document_comments(remote_comment_id);
 CREATE INDEX IF NOT EXISTS idx_documents_plan_status ON documents(plan_status);
 CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status);
 CREATE INDEX IF NOT EXISTS idx_plans_project ON plans(project);

@@ -30,7 +30,8 @@ def write_markdown_file(rel_path: str, text: str) -> Path:
     """Write a repo-relative markdown path under WORKSPACE_ROOT."""
     fp = paths.WORKSPACE_ROOT / rel_path.replace("\\", "/")
     fp.parent.mkdir(parents=True, exist_ok=True)
-    fp.write_text(text, encoding="utf-8")
+    # newline="\n" keeps files LF on Windows (default translates \n -> \r\n)
+    fp.write_text(text, encoding="utf-8", newline="\n")
     return fp
 
 

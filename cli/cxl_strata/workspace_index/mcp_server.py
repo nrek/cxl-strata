@@ -16,8 +16,20 @@ from mcp.server import Server  # noqa: E402
 from mcp.server.stdio import stdio_server  # noqa: E402
 from mcp.types import TextContent, Tool  # noqa: E402
 
-from workspace_knowledge import db, plan_ops, queries, storage  # noqa: E402
-from workspace_knowledge.indexer import index_all  # noqa: E402
+try:
+    from workspace_knowledge import db, plan_ops, queries, storage  # noqa: E402
+    from workspace_knowledge.indexer import index_all  # noqa: E402
+except ImportError:  # packaged CLI install without workspace scripts
+    from cxl_strata.workspace_index import db, plan_ops, queries, storage  # noqa: E402
+    from cxl_strata.workspace_index.indexer import index_all  # noqa: E402
+
+try:
+    from workspace_knowledge import graph  # noqa: E402
+except ImportError:
+    try:
+        from cxl_strata.workspace_index import graph  # noqa: E402
+    except ImportError:
+        graph = None  # graph tool disabled when module unavailable
 
 server = Server("workspace-knowledge")
 
@@ -166,6 +178,30 @@ async def list_tools() -> list[Tool]:
             },
         ),
         Tool(
+            name="knowledge_graph_neighbors",
+            description=(
+                "Related documents from the knowledge graph for a document path "
+                "or free-text query. Surfaces prior work that shares Linear "
+                "tickets, changed files, tags, or similar content — use before "
+                "starting new work to avoid re-solving problems."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "path_or_query": {
+                        "type": "string",
+                        "description": (
+                            "Repo-relative document path (e.g. "
+                            ".md/handoff/synq-forge/2026-05-26T22-30-00Z.md) or a "
+                            "free-text description of the problem"
+                        ),
+                    },
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["path_or_query"],
+            },
+        ),
+        Tool(
             name="knowledge_reindex",
             description="Rebuild or refresh the workspace SQLite index from markdown sources.",
             inputSchema={
@@ -253,6 +289,16 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
                     project=project or "",
                     content=args["content"],
                     path=args.get("path"),
+                )
+            )
+        if name == "knowledge_graph_neighbors":
+            if graph is None:
+                return _text({"error": "graph module unavailable in this install"})
+            return _text(
+                graph.neighbors(
+                    conn,
+                    args["path_or_query"],
+                    limit=int(args.get("limit", 10)),
                 )
             )
         if name == "knowledge_reindex":

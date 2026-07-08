@@ -69,6 +69,8 @@ const state = {
   localActorName: "",
   hasSearched: false,
   remotePending: 0,
+  graphProject: null,
+  graphReturnView: "home",
 };
 
 const MOJIBAKE_MARKERS = /â[\u0080-\u00BF]|Ã.|Â.|\uFFFD/;
@@ -258,6 +260,8 @@ function showView(name) {
   $("#view-home").classList.toggle("view-active", name === "home");
   $("#view-app").classList.toggle("hidden", name !== "app");
   $("#view-app").classList.toggle("view-active", name === "app");
+  $("#view-graph")?.classList.toggle("hidden", name !== "graph");
+  $("#view-graph")?.classList.toggle("view-active", name === "graph");
 }
 
 function setAppSidebarVisible(visible) {
@@ -574,21 +578,55 @@ function renderProjectPanels(summary) {
 
 function renderSidebar() {
   const list = $("#project-list");
-  list.innerHTML = state.allProjects
-    .slice(0, 60)
-    .map((p) => projectRowHtml(p))
-    .join("");
+  const allRow = `
+    <li>
+      <button type="button" class="project-row project-row-all" data-project="">
+        <span class="project-name"><i class="fa-solid fa-layer-group" aria-hidden="true"></i> All Projects</span>
+      </button>
+    </li>`;
+  list.innerHTML =
+    allRow +
+    state.allProjects
+      .slice(0, 60)
+      .map((p) => projectRowHtml(p))
+      .join("");
 
   list.querySelectorAll("button").forEach((btn) => {
-    btn.addEventListener("click", () => selectProject(btn.dataset.project));
+    btn.addEventListener("click", () => {
+      if (btn.dataset.project) selectProject(btn.dataset.project);
+      else selectAllProjects();
+    });
   });
 
   highlightActiveProject();
 }
 
+function renderHomeSidebar() {
+  const list = $("#home-project-list");
+  if (!list) return;
+  list.innerHTML = state.allProjects.map((p) => projectRowHtml(p)).join("");
+  list.querySelectorAll("button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      setHomeSidebarOpen(false);
+      enterProject(btn.dataset.project, { browse: true });
+    });
+  });
+}
+
+function setHomeSidebarOpen(open) {
+  const sidebar = $("#home-sidebar");
+  const backdrop = $("#home-sidebar-backdrop");
+  const toggle = $("#home-menu-btn");
+  if (!sidebar) return;
+  sidebar.classList.toggle("open", open);
+  sidebar.setAttribute("aria-hidden", String(!open));
+  if (backdrop) backdrop.hidden = !open;
+  toggle?.setAttribute("aria-expanded", String(open));
+}
+
 function highlightActiveProject() {
   document.querySelectorAll(".project-row").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.project === state.activeProject);
+    btn.classList.toggle("active", btn.dataset.project === (state.activeProject ?? ""));
   });
 }
 
@@ -628,6 +666,41 @@ function selectProject(project) {
     runScopedSearch(q);
   } else {
     browseProject(project);
+  }
+}
+
+function enterAllProjects(initialQuery = "") {
+  state.activeProject = null;
+  $("#active-project").textContent = "All Projects";
+  showView("app");
+  renderSidebar();
+  highlightActiveProject();
+  setAppSidebarVisible(true);
+
+  const q = (initialQuery || "").trim();
+  $("#scoped-q").value = q;
+  $("#scoped-q").placeholder = "Search across all projects…";
+
+  if (q) {
+    runScopedSearch(q);
+  } else {
+    setAppResultsVisible(false);
+  }
+  $("#scoped-q").focus();
+}
+
+function selectAllProjects() {
+  state.activeProject = null;
+  $("#active-project").textContent = "All Projects";
+  highlightActiveProject();
+  $("#scoped-q").placeholder = "Search across all projects…";
+  const q = $("#scoped-q").value.trim();
+  if (q) {
+    runScopedSearch(q);
+  } else {
+    setAppResultsVisible(false);
+    $("#output").innerHTML = "";
+    $("#meta").innerHTML = "";
   }
 }
 
@@ -875,6 +948,33 @@ function renderTimeline(events, { emptyMessage } = {}) {
   return html;
 }
 
+function renderGroupedResults(results) {
+  const groups = new Map();
+  for (const r of results) {
+    const key = r.project || "(no project)";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  let html = "";
+  for (const [project, items] of groups) {
+    const kinds = [...new Set(items.map((r) => r.kind).filter(Boolean))];
+    html += `
+      <section class="project-group">
+        <header class="project-group-head">
+          <button type="button" class="project-group-title" data-project="${esc(project)}" title="Scope search to ${esc(project)}">
+            <i class="fa-solid fa-folder-open" aria-hidden="true"></i> ${esc(project)}
+          </button>
+          <span class="project-group-meta">
+            ${kinds.map((k) => `<span class="badge badge-${esc(k)}">${esc(k)}</span>`).join("")}
+            <span class="project-group-count">${items.length}</span>
+          </span>
+        </header>
+        ${items.map((r) => cardHtml({ ...r, type: r.kind || "search" })).join("")}
+      </section>`;
+  }
+  return html;
+}
+
 function renderResults(data) {
   const out = $("#output");
   renderMeta(data);
@@ -898,13 +998,25 @@ function renderResults(data) {
       : '<p class="empty">No plans matched.</p>';
   } else if (data.results) {
     const results = sortEventsNewestFirst(data.results);
-    out.innerHTML = results.length
-      ? results.map((r) => cardHtml({ ...r, type: r.kind || "search" })).join("")
-      : '<p class="empty">No matches in this project. Try different keywords.</p>';
+    if (!results.length) {
+      out.innerHTML = state.activeProject
+        ? '<p class="empty">No matches in this project. Try different keywords.</p>'
+        : '<p class="empty">No matches in any project. Try different keywords.</p>';
+    } else if (!state.activeProject) {
+      out.innerHTML = renderGroupedResults(results);
+    } else {
+      out.innerHTML = results.map((r) => cardHtml({ ...r, type: r.kind || "search" })).join("");
+    }
   } else {
     out.innerHTML = '<p class="empty">No results.</p>';
   }
 
+  out.querySelectorAll(".project-group-title").forEach((el) => {
+    el.addEventListener("click", () => {
+      const project = el.dataset.project;
+      if (project && project !== "(no project)") selectProject(project);
+    });
+  });
   out.querySelectorAll(".card[data-path]").forEach((el) => {
     el.addEventListener("click", (event) => {
       if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn")) return;
@@ -996,6 +1108,180 @@ async function submitDocComment(event) {
 function cssEscape(value) {
   if (window.CSS?.escape) return window.CSS.escape(value);
   return String(value).replace(/["\\]/g, "\\$&");
+}
+
+/* ── Knowledge graph explorer ── */
+
+const KIND_COLORS = {
+  handoff: "#4ade80",
+  blueprint: "#93c5fd",
+  plan: "#a78bfa",
+  rule: "#d1d5db",
+  project: "#6ea8fe",
+};
+const GRAPH_DIM_COLOR = "rgba(139, 149, 168, 0.18)";
+
+let graphInstance = null;
+let graphHighlightSet = null;
+let graphReloadTimer = null;
+
+function graphNodeColor(node) {
+  const base = KIND_COLORS[node.type === "project" ? "project" : node.kind] || "#8b95a8";
+  if (graphHighlightSet && !graphHighlightSet.has(node.id)) return GRAPH_DIM_COLOR;
+  return base;
+}
+
+function graphNodeVal(node) {
+  if (node.type === "project") return 7 + Math.min(node.degree || 0, 24);
+  return 2 + Math.min(node.degree || 0, 12);
+}
+
+function graphNodeLabel(node) {
+  if (node.type === "project") {
+    return `<div class="graph-tooltip"><strong>${esc(node.title || node.project)}</strong><span>project · ${node.degree || 0} documents</span></div>`;
+  }
+  const when = node.published_at ? fmtDate(node.published_at) : "";
+  const parts = [
+    node.kind ? `<span class="graph-tooltip-kind">${esc(node.kind)}</span>` : "",
+    node.project ? esc(node.project) : "",
+    when ? esc(when) : "",
+  ].filter(Boolean);
+  return `<div class="graph-tooltip"><strong>${esc(fixMojibake(node.title || node.id))}</strong><span>${parts.join(" · ")}</span><em>${esc(node.id)}</em></div>`;
+}
+
+function graphLinkColor(link) {
+  return link.type === "similar"
+    ? "rgba(110, 168, 254, 0.22)"
+    : link.type === "project"
+      ? "rgba(139, 149, 168, 0.14)"
+      : "rgba(74, 222, 128, 0.35)";
+}
+
+function graphNodeMatches(node, needle) {
+  return (
+    (node.title || "").toLowerCase().includes(needle) ||
+    (node.project || "").toLowerCase().includes(needle) ||
+    (node.id || "").toLowerCase().includes(needle)
+  );
+}
+
+function applyGraphHighlight(query) {
+  const needle = (query || "").trim().toLowerCase();
+  if (!needle || !graphInstance) {
+    graphHighlightSet = null;
+  } else {
+    const { nodes } = graphInstance.graphData();
+    graphHighlightSet = new Set(
+      nodes.filter((n) => graphNodeMatches(n, needle)).map((n) => n.id)
+    );
+  }
+  graphInstance?.nodeColor(graphNodeColor);
+}
+
+function graphKindsFilter() {
+  return selectedKinds("#graph-filter-kinds");
+}
+
+function sizeGraphCanvas() {
+  const el = $("#graph-canvas");
+  if (!el || !graphInstance) return;
+  graphInstance.width(el.clientWidth).height(el.clientHeight);
+}
+
+function ensureGraphInstance() {
+  if (graphInstance) return graphInstance;
+  const el = $("#graph-canvas");
+  if (!el || typeof ForceGraph === "undefined") return null;
+
+  graphInstance = ForceGraph()(el)
+    .backgroundColor("rgba(0,0,0,0)")
+    .nodeId("id")
+    .nodeVal(graphNodeVal)
+    .nodeColor(graphNodeColor)
+    .nodeLabel(graphNodeLabel)
+    .linkColor(graphLinkColor)
+    .linkWidth((link) => (link.type === "similar" ? 1 : Math.min(1 + link.weight * 0.6, 3)))
+    .linkLineDash((link) => (link.type === "similar" ? [3, 3] : null))
+    .linkLabel((link) => (link.reason ? `<div class="graph-tooltip"><span>${esc(link.reason)}</span></div>` : ""))
+    .nodeCanvasObjectMode(() => "after")
+    .nodeCanvasObject((node, ctx, globalScale) => {
+      if (node.type !== "project") return;
+      const fontSize = Math.max(11 / globalScale, 3);
+      ctx.font = `600 ${fontSize}px "Segoe UI", system-ui, sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.fillStyle =
+        graphHighlightSet && !graphHighlightSet.has(node.id)
+          ? GRAPH_DIM_COLOR
+          : "rgba(236, 238, 243, 0.85)";
+      const radius = Math.sqrt(Math.max(graphNodeVal(node), 1)) * 4;
+      ctx.fillText(node.title || node.project || "", node.x, node.y + radius / globalScale + 2 / globalScale);
+    })
+    .onNodeClick((node) => {
+      if (node.type === "project") {
+        openGraphView(node.project);
+      } else {
+        openDoc(node.id);
+      }
+    })
+    .cooldownTicks(180);
+
+  window.addEventListener("resize", sizeGraphCanvas);
+  return graphInstance;
+}
+
+async function loadGraphData() {
+  const instance = ensureGraphInstance();
+  const statsEl = $("#graph-stats");
+  if (!instance) {
+    if (statsEl) statsEl.textContent = "Graph library failed to load.";
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (state.graphProject) params.set("project", state.graphProject);
+  const kinds = graphKindsFilter();
+  if (kinds.length) params.set("kinds", kinds.join(","));
+  const threshold = parseFloat(($("#graph-threshold") || {}).value || "0");
+  if (threshold > 0) params.set("min_weight", String(threshold));
+
+  if (statsEl) statsEl.textContent = "Building graph…";
+  let data;
+  try {
+    data = await api(`/api/graph?${params.toString()}`);
+  } catch (err) {
+    if (statsEl) statsEl.textContent = `Graph failed: ${err.message}`;
+    return;
+  }
+
+  instance.graphData({ nodes: data.nodes || [], links: data.links || [] });
+  sizeGraphCanvas();
+  applyGraphHighlight(($("#graph-highlight") || {}).value || "");
+  if (statsEl) {
+    const s = data.stats || {};
+    statsEl.textContent = `${s.documents ?? 0} documents · ${s.projects ?? 0} projects · ${s.links ?? 0} links`;
+  }
+}
+
+function scheduleGraphReload() {
+  window.clearTimeout(graphReloadTimer);
+  graphReloadTimer = window.setTimeout(() => loadGraphData(), 250);
+}
+
+function openGraphView(project) {
+  if (state.view !== "graph") state.graphReturnView = state.view;
+  state.graphProject = project || null;
+  $("#graph-scope").textContent = project
+    ? `${project} + neighbors`
+    : "All projects";
+  showView("graph");
+  loadGraphData();
+}
+
+function closeGraphView() {
+  const target = state.graphReturnView === "app" && state.activeProject ? "app" : "home";
+  showView(target);
+  if (target === "home") $("#home-q")?.focus();
 }
 
 async function refreshActiveProjectResults() {
@@ -1836,10 +2122,8 @@ function handleHomeSearch(rawQ) {
 
   syncHomeAuthorToScoped();
   const source = ($("#home-source") || {}).value || "local";
-  if (source !== "local" && q) {
-    enterProject(state.latestProjects[0]?.project || state.allProjects[0]?.project || "—", q);
-    return;
-  }
+  const scopedSource = $("#scoped-source");
+  if (scopedSource) scopedSource.value = source;
 
   const detected = detectProjectFromQuery(q);
   if (detected) {
@@ -1848,14 +2132,8 @@ function handleHomeSearch(rawQ) {
     return;
   }
 
-  if (state.latestProjects.length) {
-    enterProject(state.latestProjects[0].project, q);
-    return;
-  }
-
-  if (state.allProjects.length) {
-    enterProject(state.allProjects[0].project, q);
-  }
+  // Keyword searches with no project mentioned go cross-project, grouped by project.
+  enterAllProjects(q);
 }
 
 function bindHomeTabControls() {
@@ -1966,6 +2244,7 @@ async function init() {
   renderStatsLine(stats, { online: false, pending: 0 });
   renderProjectPanels(summary);
   renderSidebar();
+  renderHomeSidebar();
   await loadAuthors();
   await Promise.allSettled([
     loadRecentLocal(),
@@ -1976,21 +2255,14 @@ async function init() {
 
   void loadRemoteConfig(stats);
 
-  $("#scoped-filter-author")?.addEventListener("change", () => {
-    if (state.view === "app" && state.activeProject) {
-      const q = $("#scoped-q").value.trim();
-      if (q) runScopedSearch(q);
-      else browseProject(state.activeProject);
-    }
-  });
-
-  $("#scoped-filter-kinds")?.addEventListener("change", () => {
-    if (state.view === "app" && state.activeProject) {
-      const q = $("#scoped-q").value.trim();
-      if (q) runScopedSearch(q);
-      else browseProject(state.activeProject);
-    }
-  });
+  const rerunScoped = () => {
+    if (state.view !== "app") return;
+    const q = $("#scoped-q").value.trim();
+    if (q) runScopedSearch(q);
+    else if (state.activeProject) browseProject(state.activeProject);
+  };
+  $("#scoped-filter-author")?.addEventListener("change", rerunScoped);
+  $("#scoped-filter-kinds")?.addEventListener("change", rerunScoped);
 
   $("#doc-comment-form")?.addEventListener("submit", submitDocComment);
 
@@ -2029,6 +2301,31 @@ async function init() {
   $("#doc-delete-strata-btn")?.addEventListener("click", () => openDeleteStrataConfirm(state.activeDocPath));
   $("#doc-modal").addEventListener("click", (e) => {
     if (e.target === $("#doc-modal")) $("#doc-modal").close();
+  });
+
+  $("#home-menu-btn")?.addEventListener("click", () => {
+    setHomeSidebarOpen(!$("#home-sidebar")?.classList.contains("open"));
+  });
+  $("#home-sidebar-close")?.addEventListener("click", () => setHomeSidebarOpen(false));
+  $("#home-sidebar-backdrop")?.addEventListener("click", () => setHomeSidebarOpen(false));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && $("#home-sidebar")?.classList.contains("open")) {
+      setHomeSidebarOpen(false);
+    }
+  });
+
+  $("#home-graph-btn")?.addEventListener("click", () => openGraphView(null));
+  $("#scoped-graph-btn")?.addEventListener("click", () => openGraphView(state.activeProject));
+  $("#graph-back-btn")?.addEventListener("click", closeGraphView);
+  $("#graph-filter-kinds")?.addEventListener("change", () => loadGraphData());
+  $("#graph-threshold")?.addEventListener("input", () => {
+    const value = parseFloat($("#graph-threshold").value || "0");
+    const out = $("#graph-threshold-value");
+    if (out) out.textContent = value.toFixed(2);
+    scheduleGraphReload();
+  });
+  $("#graph-highlight")?.addEventListener("input", () => {
+    applyGraphHighlight($("#graph-highlight").value);
   });
 
   initToolDrawer();

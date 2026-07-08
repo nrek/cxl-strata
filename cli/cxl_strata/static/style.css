@@ -743,6 +743,73 @@ button:hover { filter: brightness(1.08); }
   padding-bottom: 0.35rem;
 }
 
+/* ── All-projects grouped results ── */
+
+.project-group {
+  margin-bottom: 1.6rem;
+}
+
+.project-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.35rem;
+}
+
+.project-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: transparent;
+  border: none;
+  padding: 0.15rem 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.project-group-title:hover {
+  color: var(--accent);
+  background: var(--chip);
+}
+
+.project-group-title i {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.project-group-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.project-group-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: var(--chip);
+  border-radius: 999px;
+  padding: 0.1rem 0.5rem;
+}
+
+.project-row-all .project-name i {
+  margin-right: 0.3rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.sidebar-rows .project-row-all {
+  margin-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding-bottom: 0.55rem;
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1494,4 +1561,245 @@ dialog h2 {
 .doc-comment-form textarea:focus {
   outline: none;
   border-color: var(--accent-dim);
+}
+
+/* ── Knowledge graph explorer ── */
+
+#view-graph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(110, 168, 254, 0.06), transparent),
+    var(--bg);
+}
+
+.home-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.home-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.home-menu-btn {
+  font-size: 1rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.home-menu-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+/* ── Home projects drawer ── */
+
+.home-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border-right: 1px solid var(--border);
+  padding: 0.9rem 0.75rem 1rem;
+  transform: translateX(-100%);
+  /* visibility delays hiding until the slide-out finishes */
+  transition: transform 0.18s ease, visibility 0.18s;
+  visibility: hidden;
+}
+
+.home-sidebar.open {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.home-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+  padding-left: 0.35rem;
+}
+
+.home-sidebar-head h2 {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.home-sidebar #home-project-list {
+  overflow-y: auto;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+}
+
+.home-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.graph-open-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.graph-open-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.content-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.graph-topbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.graph-topbar .content-title h1 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.graph-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.graph-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.graph-slider input[type="range"] {
+  width: 110px;
+  accent-color: var(--accent);
+}
+
+.graph-slider output {
+  min-width: 2.4em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.graph-highlight {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 0.8rem;
+  width: 170px;
+}
+
+.graph-highlight:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.graph-canvas {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.graph-legend {
+  position: absolute;
+  left: 1rem;
+  bottom: 2.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(18, 20, 26, 0.88);
+  color: var(--muted);
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+  vertical-align: -1px;
+}
+
+.legend-handoff { background: var(--handoff); }
+.legend-blueprint { background: #93c5fd; }
+.legend-plan { background: var(--plan); }
+.legend-rule { background: #d1d5db; }
+.legend-project { background: var(--accent); }
+
+.legend-line::before {
+  content: "";
+  display: inline-block;
+  width: 18px;
+  margin-right: 0.4rem;
+  vertical-align: 3px;
+}
+
+.legend-solid::before { border-top: 2px solid rgba(74, 222, 128, 0.7); }
+.legend-dashed::before { border-top: 2px dashed rgba(110, 168, 254, 0.7); }
+
+.graph-stats {
+  position: absolute;
+  right: 1rem;
+  bottom: 0.5rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.graph-tooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 22rem;
+  padding: 0.15rem 0.1rem;
+  font-size: 0.8rem;
+}
+
+.graph-tooltip strong { color: var(--text); }
+.graph-tooltip span { color: var(--muted); font-size: 0.72rem; }
+.graph-tooltip em { color: var(--muted); font-size: 0.66rem; font-style: normal; opacity: 0.8; }
+
+.graph-tooltip-kind {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }

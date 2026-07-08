@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 from .. import cursor_rule, local_store
 from ..documents import delete_remote_path, stash_paths
 from ..local_store import load_config
-from ..workspace_index import db, indexer, nl_query, paths, queries, sync_review
+from ..workspace_index import db, graph, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
@@ -320,6 +320,36 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 db.init_db(conn)
                 comments = db.list_comments(conn, doc_path)
             _json_response(self, {"items": comments})
+            return
+
+        if path == "/api/graph":
+            qs = parse_qs(parsed.query)
+            project = (qs.get("project") or [None])[0]
+            kinds = _csv_list((qs.get("kinds") or [None])[0])
+            hours_raw = (qs.get("hours") or [None])[0]
+            hours: int | None = None
+            if hours_raw:
+                try:
+                    hours = max(0, min(int(hours_raw), 24 * 365))
+                except ValueError:
+                    hours = None
+            min_weight_raw = (qs.get("min_weight") or [None])[0]
+            min_weight: float | None = None
+            if min_weight_raw:
+                try:
+                    min_weight = max(0.0, float(min_weight_raw))
+                except ValueError:
+                    min_weight = None
+            with db.connect() as conn:
+                db.init_db(conn)
+                payload = graph.build_graph(
+                    conn,
+                    project=project or None,
+                    kinds=kinds,
+                    hours=hours,
+                    min_weight=min_weight,
+                )
+            _json_response(self, payload)
             return
 
         if path == "/api/doc":

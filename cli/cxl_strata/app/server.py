@@ -13,7 +13,7 @@ from urllib import request
 from urllib.parse import parse_qs, urlparse
 
 from .. import cursor_rule, local_store
-from ..documents import delete_remote_path, stash_paths
+from ..documents import archive_paths, archive_prefix, delete_remote_path, stash_paths
 from ..local_store import load_config
 from ..workspace_index import db, graph, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
@@ -230,6 +230,13 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 limit=max(1, min(limit, 2000)),
             )
             _json_response(self, {"items": rows})
+            return
+
+        if path == "/api/index/pending":
+            with db.connect() as conn:
+                db.init_db(conn)
+                pending = indexer.pending_paths(conn)
+            _json_response(self, {"count": len(pending), "paths": pending[:100]})
             return
 
         if path == "/api/sync/remote-pending":
@@ -534,6 +541,11 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             _json_response(self, local_result)
             return
 
+        if parsed.path == "/api/index/run":
+            stats = indexer.index_all(prune=False)
+            _json_response(self, stats)
+            return
+
         if parsed.path == "/api/sync/index":
             body = _read_json(self)
             paths = body.get("paths") or []
@@ -588,6 +600,31 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 result = delete_remote_path(path, actor_name=actor_name)
                 status = HTTPStatus.OK if result.get("deleted") else HTTPStatus.BAD_REQUEST
                 _json_response(self, result, status)
+            except Exception as exc:  # noqa: BLE001
+                _json_response(self, {"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
+            return
+
+        if parsed.path == "/api/sync/archive":
+            try:
+                body = _read_json(self)
+            except json.JSONDecodeError:
+                _json_response(self, {"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+                return
+            archive_paths_in = [
+                str(p).strip() for p in (body.get("paths") or []) if str(p).strip()
+            ]
+            prefix = str(body.get("prefix") or "").strip()
+            if not archive_paths_in and not prefix:
+                _json_response(
+                    self, {"error": "paths or prefix required"}, HTTPStatus.BAD_REQUEST
+                )
+                return
+            try:
+                if prefix:
+                    result = archive_prefix(prefix, execute=bool(body.get("execute")))
+                else:
+                    result = archive_paths(archive_paths_in)
+                _json_response(self, result)
             except Exception as exc:  # noqa: BLE001
                 _json_response(self, {"error": str(exc)}, HTTPStatus.BAD_GATEWAY)
             return

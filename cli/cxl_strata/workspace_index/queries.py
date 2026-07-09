@@ -136,6 +136,12 @@ def filter_by_author(items: list[dict[str, Any]], author: str | None) -> list[di
     return out
 
 
+# Ignored/blocked docs (archived_local tombstones, deleted_remote, scratch
+# paths) are invisible app-wide: excluded from lists, counts, search, and
+# graphs as if they don't exist.
+NOT_IGNORED_SQL = "sync_ignored_at IS NULL"
+
+
 def _kinds_filter(
     kind: str | None,
     kinds: list[str] | None,
@@ -256,7 +262,7 @@ def knowledge_recent(
             )
 
     since = _iso_since_hours(hours)
-    clauses = ["(updated_at >= ? OR created_at >= ?)"]
+    clauses = ["(updated_at >= ? OR created_at >= ?)", NOT_IGNORED_SQL]
     params: list[Any] = [since, since]
     if project:
         clauses.append("project = ?")
@@ -302,7 +308,8 @@ def list_recent_local_documents(
     """Indexed local documents with activity in the rolling window — all projects."""
     since = _iso_since_hours(hours)
     clauses = [
-        "(updated_at >= ? OR created_at >= ? OR shared_at >= ? OR synced_at >= ?)"
+        "(updated_at >= ? OR created_at >= ? OR shared_at >= ? OR synced_at >= ?)",
+        NOT_IGNORED_SQL,
     ]
     params: list[Any] = [since, since, since, since]
     kind_list = _kinds_filter(kind, kinds)
@@ -383,7 +390,7 @@ def list_shared_from_team_documents(
 ) -> list[dict[str, Any]]:
     """Documents pulled from teammates via the central API (not your own shares out)."""
     actor = resolve_local_actor(remote_actor=local_actor)
-    clauses = ["origin = 'shared'"]
+    clauses = ["origin = 'shared'", NOT_IGNORED_SQL]
     params: list[Any] = []
     kind_list = _kinds_filter(kind, kinds)
     if kind_list:
@@ -463,7 +470,10 @@ def knowledge_search(
     author: str | None = None,
     limit: int = 15,
 ) -> list[dict[str, Any]]:
-    clauses = ["documents_fts MATCH ?"]
+    clauses = [
+        "documents_fts MATCH ?",
+        "d.sync_ignored_at IS NULL",
+    ]
     params: list[Any] = [query]
     joins = "JOIN documents d ON d.id = documents_fts.document_id"
     if project:

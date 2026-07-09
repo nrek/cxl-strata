@@ -935,3 +935,281 @@ def test_project_library_events_include_remote_id_for_shared_docs(
     assert row["remote_id"] == "remote-1"
     assert row["sync_status"] == "shared"
     assert row["syncable"] is False
+
+
+def _pulled_remote_row(path: str) -> dict:
+    return {
+        "id": f"remote-{path}",
+        "path": path,
+        "kind": "rule",
+        "project_slug": None,
+        "title": path.rsplit("/", 1)[-1],
+        "body": "# Plugin dump\n\nNot a real workspace rule.",
+        "body_hash": "hash-plugin-1",
+        "author_name": "Teammate",
+        "author_email": "teammate@example.com",
+        "created_at": "2026-06-26T10:00:00Z",
+        "updated_at": "2026-06-26T10:00:00Z",
+        "shared_at": "2026-06-26T10:00:00Z",
+        "storage_state": "db_only",
+    }
+
+
+def test_archive_paths_tombstones_doc_and_clears_body(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_path = ".md/handoff/team-proj/2026-06-25T09-00-00Z.md"
+    remote_row = _pulled_remote_row(remote_path)
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return [remote_row] if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    assert pull.pull_documents()["pulled"] == 1
+
+    result = documents.archive_paths([remote_path])
+    assert result["archived"] == [remote_path]
+    assert result["missing"] == []
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            """
+            SELECT id, body, body_hash, remote_id, sync_ignored_at, sync_ignore_reason
+            FROM documents WHERE path = ?
+            """,
+            (remote_path,),
+        ).fetchone()
+        fts = conn.execute(
+            "SELECT COUNT(*) AS n FROM documents_fts WHERE document_id = ?",
+            (row["id"],),
+        ).fetchone()
+
+    assert row["sync_ignored_at"]
+    assert row["sync_ignore_reason"] == "archived_local"
+    assert row["body"] == ""
+    assert row["body_hash"] == db.ARCHIVED_BODY_HASH
+    assert row["remote_id"] is None
+    assert fts["n"] == 0
+
+
+def test_pull_does_not_revive_archived_doc(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_path = ".md/handoff/team-proj/2026-06-25T09-00-00Z.md"
+    remote_row = _pulled_remote_row(remote_path)
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return [remote_row] if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    assert pull.pull_documents()["pulled"] == 1
+    documents.archive_paths([remote_path])
+
+    result = pull.pull_documents()
+    assert result["pulled"] == 0
+    assert result["ignored"] == 1
+
+    pending = pull.count_remote_pending()
+    assert pending["pending"] == 0
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT body, sync_ignore_reason FROM documents WHERE path = ?",
+            (remote_path,),
+        ).fetchone()
+    assert row["body"] == ""
+    assert row["sync_ignore_reason"] == "archived_local"
+
+
+def test_archive_prefix_dry_run_then_execute(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        _pulled_remote_row(".md/handoff/team-proj/2026-06-25T09-00-00Z.md"),
+        _pulled_remote_row(".md/handoff/team-proj/2026-06-26T09-00-00Z.md"),
+    ]
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return rows if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    indexer.index_all(prune=False)
+    assert pull.pull_documents()["pulled"] == 2
+
+    dry = documents.archive_prefix(".md/handoff/team-proj/")
+    assert dry["executed"] is False
+    assert dry["count"] == 2
+    assert set(dry["would_archive"]) == {r["path"] for r in rows}
+
+    # Dry run must not change anything.
+    with db.connect() as conn:
+        db.init_db(conn)
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM documents WHERE sync_ignored_at IS NOT NULL"
+        ).fetchone()["n"]
+    assert n == 0
+
+    executed = documents.archive_prefix(".md/handoff/team-proj/", execute=True)
+    assert executed["executed"] is True
+    assert executed["count"] == 2
+
+    # The local handoff outside the prefix is untouched.
+    with db.connect() as conn:
+        db.init_db(conn)
+        untouched = conn.execute(
+            "SELECT sync_ignored_at FROM documents WHERE path LIKE '.md/handoff/test-proj/%'"
+        ).fetchone()
+    assert untouched["sync_ignored_at"] is None
+
+    # Re-running finds nothing left to archive.
+    again = documents.archive_prefix(".md/handoff/team-proj/")
+    assert again["count"] == 0
+
+
+def test_archived_docs_hidden_from_default_retrieval(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    remote_path = ".md/handoff/team-proj/2026-06-25T09-00-00Z.md"
+    remote_row = _pulled_remote_row(remote_path)
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return [remote_row] if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    pull.pull_documents()
+    documents.archive_paths([remote_path])
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        recents = queries.list_recent_local_documents(conn, hours=168, limit=100)
+        received = queries.list_shared_from_team_documents(conn, limit=100)
+        hits = queries.knowledge_search(conn, query="plugin", limit=20)
+
+    assert remote_path not in {r["path"] for r in recents}
+    assert remote_path not in {r["path"] for r in received}
+    assert remote_path not in {r["path"] for r in hits}
+
+    # Ignored/blocked docs are invisible app-wide: Delete Remote tombstones
+    # disappear from lists and counts too (pretend they don't exist).
+    handoff_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    indexer.index_all(prune=False)
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_remote_deleted(conn, path=handoff_path, reason="deleted_remote")
+        recents = queries.list_recent_local_documents(conn, hours=168, limit=100)
+        by_kind = {r["kind"]: r["n"] for r in nl_query.stats(conn)["by_kind"]}
+        projects = {p["project"] for p in nl_query.list_projects(conn)}
+        pending_after_ignore = indexer.pending_paths(conn)
+    assert handoff_path not in {r["path"] for r in recents}
+    assert by_kind.get("handoff", 0) == 0
+    assert "test-proj" not in projects
+    assert handoff_path not in pending_after_ignore
+    files = sync_review.scan_recent_locally_changed(hours=168, limit=100)
+    assert handoff_path not in {r["path"] for r in files}
+
+
+def test_pull_blocks_scratch_paths_from_remote(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        _pulled_remote_row(".codex/.tmp/plugins/plugins/zoom/skills/a.md"),
+        _pulled_remote_row(".md/handoff/team-proj/2026-07-08T12-00-00Z.md"),
+    ]
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return rows if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+
+    result = pull.pull_documents()
+    assert result["pulled"] == 1
+    assert result["blocked"] == 1
+
+    pending = pull.count_remote_pending()
+    assert pending["pending"] == 0
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        paths = {r["path"] for r in conn.execute("SELECT path FROM documents")}
+    assert ".md/handoff/team-proj/2026-07-08T12-00-00Z.md" in paths
+    assert not any(p.startswith(".codex/.tmp/") for p in paths)
+
+
+def test_stash_refuses_scratch_paths(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[list[dict]] = []
+
+    def fake_import_batch(payload: list[dict]) -> dict:
+        captured.append(payload)
+        return {"synced": [], "failed": []}
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: (None, None))
+    monkeypatch.setattr(documents.api_client, "documents_import_batch", fake_import_batch)
+
+    result = documents.stash_paths([".codex/.tmp/plugins/plugins/zoom/skills/a.md"])
+
+    assert not captured
+    assert result["synced"] == []
+    assert result["skipped"] == [
+        {
+            "path": ".codex/.tmp/plugins/plugins/zoom/skills/a.md",
+            "reason": "scratch_path",
+        }
+    ]
+
+
+def test_pending_paths_reports_new_and_changed_files(workspace: Path) -> None:
+    handoff_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        assert handoff_path in indexer.pending_paths(conn)
+
+    indexer.index_all(prune=False)
+    with db.connect() as conn:
+        db.init_db(conn)
+        assert indexer.pending_paths(conn) == []
+
+    (workspace / handoff_path).write_text(
+        "# Handoff — 2026-06-30T12-00-00Z\n\n- **Changed:** edited after indexing\n",
+        encoding="utf-8",
+    )
+    with db.connect() as conn:
+        db.init_db(conn)
+        assert indexer.pending_paths(conn) == [handoff_path]
+
+
+def test_indexer_skips_codex_tmp_dumps(workspace: Path) -> None:
+    tmp_rule = workspace / ".codex" / ".tmp" / "plugins" / "plugins" / "zoom" / "note.md"
+    tmp_rule.parent.mkdir(parents=True)
+    tmp_rule.write_text("# Plugin cache dump\n", encoding="utf-8")
+    real_rule = workspace / ".codex" / "AGENTS.md"
+    real_rule.parent.mkdir(parents=True, exist_ok=True)
+    real_rule.write_text("# Codex agent instructions\n", encoding="utf-8")
+
+    indexer.index_all(prune=False)
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        paths = {
+            r["path"]
+            for r in conn.execute("SELECT path FROM documents WHERE kind = 'rule'")
+        }
+    assert ".codex/AGENTS.md" in paths
+    assert not any(p.startswith(".codex/.tmp/") for p in paths)
+
+    # Explicit path indexing must also refuse the tmp dump.
+    with db.connect() as conn:
+        db.init_db(conn)
+        from cxl_strata.workspace_index.indexer import index_file
+
+        assert index_file(conn, tmp_rule.resolve()) is False

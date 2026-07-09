@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.content_safety import redact_secret_markers
+from app.core.path_guard import is_scratch_path
 from app.core.types import AuthContext, utcnow
 from app.models import Project, SharedDocument, SharedDocumentComment, SharedDocumentSection
 from app.schemas.shared_document import DocumentCommentCreate, SharedDocumentCreate
@@ -290,6 +291,9 @@ class DocumentService:
         synced: list[dict] = []
         failed: list[dict] = []
         for raw in documents:
+            if is_scratch_path(raw.path):
+                failed.append({"path": raw.path, "error": "scratch path not allowed"})
+                continue
             try:
                 row = self.upsert(raw)
                 synced.append({"path": raw.path, "remote_id": row.id, "status": "upserted"})

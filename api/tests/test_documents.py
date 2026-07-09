@@ -87,6 +87,40 @@ def test_import_batch_shared_documents(client: TestClient) -> None:
     assert not data["failed"]
 
 
+def test_import_batch_rejects_scratch_paths(client: TestClient) -> None:
+    batch = {
+        "documents": [
+            {
+                "path": ".codex/.tmp/plugins/plugins/zoom/skills/zoom/SKILL.md",
+                "kind": "rule",
+                "title": "Plugin cache dump",
+                "body": "# Not team knowledge\n",
+            },
+            {
+                "path": ".md/handoff/cxl-strata/2026-07-08T12-00-00Z.md",
+                "kind": "handoff",
+                "project_slug": "cxl-strata",
+                "title": "Legit handoff",
+                "body": "# Handoff\n\nReal knowledge.",
+            },
+        ]
+    }
+    response = client.post(
+        "/v1/documents/import-batch", json=batch, headers=_auth_headers()
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert [row["path"] for row in data["synced"]] == [
+        ".md/handoff/cxl-strata/2026-07-08T12-00-00Z.md"
+    ]
+    assert data["failed"] == [
+        {
+            "path": ".codex/.tmp/plugins/plugins/zoom/skills/zoom/SKILL.md",
+            "error": "scratch path not allowed",
+        }
+    ]
+
+
 def test_published_at_round_trip_and_ordering(client: TestClient) -> None:
     older = {
         "path": ".md/handoff/cxl-strata/2026-06-01T08-00-00Z.md",

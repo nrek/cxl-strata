@@ -273,6 +273,8 @@ def scan_recent_locally_changed(
             continue
 
         db_row = indexed.get(rel)
+        if db_row and db_row.get("sync_ignored_at"):
+            continue
         activity_at = _activity_iso(mtime, db_row)
         if activity_at < since:
             continue
@@ -357,6 +359,8 @@ def scan_potential_secret_files(
             continue
 
         db_row = indexed.get(rel)
+        if db_row and db_row.get("sync_ignored_at"):
+            continue
         local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
         item = {
             "path": rel,

@@ -395,6 +395,13 @@ body {
   font-weight: 600;
 }
 
+.tool-count {
+  font-style: normal;
+  font-weight: 700;
+  color: var(--accent);
+  margin-left: 0.3rem;
+}
+
 .tool-command code {
   flex-shrink: 0;
   color: var(--muted);
@@ -1017,6 +1024,22 @@ dialog header {
   color: #fecaca;
   background: rgba(239, 68, 68, 0.26);
   border-color: rgba(248, 113, 113, 0.55);
+}
+
+.archive-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.archive-btn:hover:not(:disabled) {
+  color: #fde68a;
+  background: rgba(245, 158, 11, 0.26);
+  border-color: rgba(251, 191, 36, 0.55);
 }
 
 .confirm-modal article {

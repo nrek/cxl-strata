@@ -284,6 +284,47 @@ def mark_remote_deleted(
     )
 
 
+ARCHIVED_BODY_HASH = "archived-local"
+
+
+def archive_document(
+    conn: sqlite3.Connection,
+    *,
+    path: str,
+    reason: str = "archived_local",
+    ignored_at: str | None = None,
+) -> bool:
+    """Tombstone a doc locally: ignore future syncs, drop body/FTS/sections.
+
+    The row is kept (with empty body and a sentinel hash) so pull can see the
+    ignore marker and never re-import the remote copy.
+    """
+    rel = path.replace("\\", "/")
+    row = conn.execute("SELECT id FROM documents WHERE path = ?", (rel,)).fetchone()
+    if not row:
+        return False
+    doc_id = row["id"]
+    now = ignored_at or utc_now()
+    conn.execute(
+        """
+        UPDATE documents SET
+            origin = 'local',
+            remote_id = NULL,
+            shared_at = NULL,
+            synced_at = NULL,
+            sync_ignored_at = ?,
+            sync_ignore_reason = ?,
+            body = '',
+            body_hash = ?
+        WHERE path = ?
+        """,
+        (now, reason, ARCHIVED_BODY_HASH, rel),
+    )
+    conn.execute("DELETE FROM documents_fts WHERE document_id = ?", (doc_id,))
+    conn.execute("DELETE FROM sections WHERE document_id = ?", (doc_id,))
+    return True
+
+
 def add_comment(
     conn: sqlite3.Connection,
     *,

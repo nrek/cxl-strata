@@ -285,7 +285,7 @@ def timeline(
     include_sections: bool = True,
     author: str | None = None,
 ) -> dict[str, Any]:
-    doc_clauses = ["kind = 'handoff'"]
+    doc_clauses = ["kind = 'handoff'", queries.NOT_IGNORED_SQL]
     doc_params: list[Any] = []
     if hours is not None:
         since = _iso_since_hours(hours)
@@ -405,7 +405,7 @@ def project_library(
                sync_ignore_reason, sync_locked, author_name, storage,
                substr(body, 1, 500) AS excerpt
         FROM documents
-        WHERE project = ?
+        WHERE project = ? AND sync_ignored_at IS NULL
         ORDER BY COALESCE(published_at, created_at, updated_at) DESC
         LIMIT ?
         """,
@@ -436,7 +436,7 @@ def project_library(
         events = queries.filter_by_author(events, author)
 
     total = conn.execute(
-        "SELECT COUNT(*) AS n FROM documents WHERE project = ?",
+        "SELECT COUNT(*) AS n FROM documents WHERE project = ? AND sync_ignored_at IS NULL",
         (project,),
     ).fetchone()["n"]
 
@@ -634,7 +634,7 @@ def project_summary(conn: sqlite3.Connection, *, limit: int = 8) -> dict[str, li
                MAX(COALESCE(updated_at, created_at)) AS last_at,
                COUNT(*) AS total
         FROM documents
-        WHERE project IS NOT NULL
+        WHERE project IS NOT NULL AND sync_ignored_at IS NULL
         GROUP BY project
         ORDER BY last_at DESC
         LIMIT ?
@@ -659,7 +659,7 @@ def list_projects(conn: sqlite3.Connection) -> list[dict[str, Any]]:
         """
         SELECT project, kind, COUNT(*) AS n
         FROM documents
-        WHERE project IS NOT NULL
+        WHERE project IS NOT NULL AND sync_ignored_at IS NULL
         GROUP BY project, kind
         ORDER BY project, kind
         """
@@ -680,6 +680,7 @@ def stats(conn: sqlite3.Connection) -> dict[str, Any]:
         SELECT kind, COUNT(*) AS n,
                SUM(CASE WHEN storage = 'db_only' THEN 1 ELSE 0 END) AS db_only
         FROM documents
+        WHERE sync_ignored_at IS NULL
         GROUP BY kind
         """
     ).fetchall()

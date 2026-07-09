@@ -7,6 +7,7 @@ from typing import Any
 
 from . import api_client, local_store
 from .content_safety import redact_secret_markers
+from .path_guard import SCRATCH_REASON, is_scratch_path
 from .workspace_index import db, queries
 from .workspace_index.indexer import index_file
 from .workspace_index.parsers import infer_published_at
@@ -72,6 +73,9 @@ def stash_paths(
         db.init_db(conn)
         for rel in paths:
             rel = rel.replace("\\", "/")
+            if is_scratch_path(rel):
+                skipped.append({"path": rel, "reason": SCRATCH_REASON})
+                continue
             fp = WORKSPACE_ROOT / rel
             if fp.is_file():
                 index_file(conn, fp.resolve())
@@ -166,6 +170,57 @@ def delete_remote_path(path: str, *, actor_name: str | None = None) -> dict[str,
         db.init_db(conn)
         db.mark_remote_deleted(conn, path=rel)
     return {"path": rel, "remote_id": remote_id, "deleted": True}
+
+
+def archive_paths(
+    paths: list[str],
+    *,
+    reason: str = "archived_local",
+) -> dict[str, Any]:
+    """Archive docs locally: tombstone rows so sync never re-imports them.
+
+    Local-only — never touches the central API; teammates keep their copies.
+    """
+    archived: list[str] = []
+    missing: list[str] = []
+    with db.connect() as conn:
+        db.init_db(conn)
+        for path in paths:
+            rel = path.replace("\\", "/")
+            if db.archive_document(conn, path=rel, reason=reason):
+                archived.append(rel)
+            else:
+                missing.append(rel)
+    return {"archived": archived, "missing": missing, "count": len(archived)}
+
+
+def archive_prefix(
+    prefix: str,
+    *,
+    reason: str = "archived_local",
+    execute: bool = False,
+) -> dict[str, Any]:
+    """Archive every non-ignored doc whose path starts with prefix.
+
+    Dry run by default: returns the matching paths without changing anything.
+    """
+    rel_prefix = prefix.replace("\\", "/")
+    with db.connect() as conn:
+        db.init_db(conn)
+        rows = conn.execute(
+            """
+            SELECT path FROM documents
+            WHERE path LIKE ? || '%' AND sync_ignored_at IS NULL
+            ORDER BY path
+            """,
+            (rel_prefix,),
+        ).fetchall()
+    paths = [r["path"] for r in rows]
+    if not execute:
+        return {"would_archive": paths, "count": len(paths), "executed": False}
+    result = archive_paths(paths, reason=reason)
+    result["executed"] = True
+    return result
 
 
 def stash_filtered(

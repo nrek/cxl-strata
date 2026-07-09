@@ -176,9 +176,25 @@ def test_tool_drawer_static_wiring() -> None:
     assert "SETUP STATUS" in index
     assert 'id="setup-status-list"' in index
     assert 'id="setup-status-refresh"' in index
-    assert "Sync From Remote" in index
-    assert "Sync All Local" in index
-    assert "Strata Index" in index
+    assert "Files to Strata" in index
+    assert "Sync to Remote" in index
+    assert "Pull from Remote" in index
+    # Files to Strata (index) must be the first quick command
+    assert index.find('data-tool-command="index-local"') < index.find(
+        'data-tool-command="sync-local"'
+    )
+    assert index.find('data-tool-command="sync-local"') < index.find(
+        'data-tool-command="sync-remote"'
+    )
+    assert 'id="count-index-pending"' in index
+    assert 'id="count-sync-pending"' in index
+    assert 'id="count-pull-pending"' in index
+    assert "function confirmLargeSync(count)" in app_js
+    assert "async function refreshToolCounts()" in app_js
+    assert "/api/index/pending" in app_js
+    assert "/api/index/run" in app_js
+    assert "Are you sure you want to sync ${count} files to Strata?" in app_js
+    assert ".tool-count" in style
     assert "Copy Prompts" in index
     assert "Strata Prune" in index
     assert "Strata Summarize" in index

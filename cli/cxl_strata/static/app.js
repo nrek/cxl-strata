@@ -11,6 +11,11 @@ function kindLabel(kind, count) {
   return kind;
 }
 
+// "ignored" is a machine status (excluded from sync); show a friendlier label.
+function statusLabel(value) {
+  return value === "ignored" ? "local only" : value;
+}
+
 const EXAMPLES = [
   "last time I touched font awesome",
   "what did we do last week",
@@ -34,6 +39,8 @@ const ACTION = {
   deleteRemoteTooltip:
     "Delete the shared copy from STRATA and ignore this local file in future sync prompts.",
   deleteStrataTooltip: "Delete your shared copy from STRATA (local file is kept).",
+  archiveTooltip:
+    "Archive for me — remove from my local STRATA and never re-pull. The team's remote copy is kept.",
   lockUnlockedTooltip: "Unlocked — included in batch sync to STRATA API.",
   lockLockedTooltip: "Locked — excluded from batch sync to STRATA API.",
 };
@@ -391,10 +398,6 @@ async function copySetupFix(btn) {
   }
 }
 
-function uniquePaths(items) {
-  return [...new Set((items || []).map((item) => item.path).filter(Boolean))];
-}
-
 async function copyText(text) {
   if (navigator.clipboard?.writeText) {
     await navigator.clipboard.writeText(text);
@@ -431,6 +434,48 @@ async function copyToolPrompt(promptKey, btn) {
   }
 }
 
+function confirmLargeSync(count) {
+  if (count <= 50) return true;
+  return window.confirm(`Are you sure you want to sync ${count} files to Strata?`);
+}
+
+function setToolCount(id, value) {
+  const el = $(id);
+  if (!el) return;
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) {
+    el.textContent = `(${n})`;
+    el.hidden = false;
+  } else {
+    el.textContent = "";
+    el.hidden = true;
+  }
+}
+
+async function refreshToolCounts() {
+  try {
+    const indexPending = await api("/api/index/pending");
+    setToolCount("#count-index-pending", indexPending.count);
+  } catch (_) {
+    setToolCount("#count-index-pending", 0);
+  }
+  try {
+    await loadSyncLocal({ resetPage: false });
+    setToolCount("#count-sync-pending", batchSyncPaths(state.syncItems).length);
+  } catch (_) {
+    setToolCount("#count-sync-pending", 0);
+  }
+  if (state.apiOnline) {
+    try {
+      const remotePending = await api("/api/sync/remote-pending");
+      state.remotePending = remotePending.pending || 0;
+    } catch (_) {
+      /* keep current count */
+    }
+  }
+  setToolCount("#count-pull-pending", state.apiOnline ? state.remotePending : 0);
+}
+
 async function runToolCommand(command) {
   const btn = document.querySelector(`[data-tool-command="${cssEscape(command)}"]`);
   if (btn?.disabled) return;
@@ -453,10 +498,11 @@ async function runToolCommand(command) {
       });
       await refreshDashboard();
       if (scopedProject) await refreshActiveProjectResults();
+      await refreshToolCounts();
       setToolStatus(
         scopedProject
-          ? `Remote sync complete for ${scopedProject}.`
-          : "Remote sync complete."
+          ? `Remote pull complete for ${scopedProject}.`
+          : "Remote pull complete."
       );
       return;
     }
@@ -477,8 +523,13 @@ async function runToolCommand(command) {
         setToolStatus("All local artifacts are already shared or locked.");
         return;
       }
+      if (!confirmLargeSync(paths.length)) {
+        setToolStatus("Sync cancelled.");
+        return;
+      }
       await syncPaths(paths);
       await refreshRemotePending();
+      await refreshToolCounts();
       setToolStatus(
         `Shared ${paths.length} local artifact${paths.length === 1 ? "" : "s"}${scopedProject ? ` from ${scopedProject}` : ""}.`
       );
@@ -486,17 +537,22 @@ async function runToolCommand(command) {
     }
 
     if (command === "index-local") {
+      const stats = await api("/api/index/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       await Promise.all([
         loadRecentLocal({ resetPage: false }),
-        loadSyncLocal({ resetPage: false }),
+        loadPotentialSecrets({ resetPage: false }),
       ]);
-      const paths = uniquePaths([...state.recentItems, ...state.syncItems]);
-      if (!paths.length) {
-        setToolStatus("No local artifacts found to index.");
-        return;
-      }
-      await indexPaths(paths);
-      setToolStatus(`Indexed ${paths.length} local artifact${paths.length === 1 ? "" : "s"}.`);
+      await refreshToolCounts();
+      const indexed = stats.indexed ?? 0;
+      setToolStatus(
+        indexed
+          ? `Added ${indexed} file${indexed === 1 ? "" : "s"} to Strata.`
+          : "All workspace files are already in Strata."
+      );
       return;
     }
   } catch (err) {
@@ -514,7 +570,10 @@ function initToolDrawer() {
   toggle.addEventListener("click", () => {
     const open = !drawer.classList.contains("open");
     setToolDrawerOpen(open);
-    if (open) loadSetupStatus();
+    if (open) {
+      loadSetupStatus();
+      refreshToolCounts();
+    }
   });
 
   $("#setup-status-refresh")?.addEventListener("click", () => loadSetupStatus());
@@ -779,6 +838,14 @@ function canDeleteFromStrata(item) {
   );
 }
 
+function canArchiveItem(item) {
+  return (
+    isIndexedDoc(item) &&
+    (item.origin === "shared" || Boolean(item.remote_id)) &&
+    item.sync_status !== "ignored"
+  );
+}
+
 function isSyncLocked(item) {
   return Boolean(item?.sync_locked);
 }
@@ -811,6 +878,10 @@ function deleteStrataButtonHtml(path, className = "result-delete-strata-btn") {
   return `<button type="button" class="icon-btn delete-strata-btn ${className}" data-path="${esc(path)}" aria-label="Delete from STRATA" title="${esc(ACTION.deleteStrataTooltip)}"><i class="fa-solid fa-trash" aria-hidden="true"></i></button>`;
 }
 
+function archiveButtonHtml(path, className = "result-archive-btn") {
+  return `<button type="button" class="icon-btn archive-btn ${className}" data-path="${esc(path)}" aria-label="Archive for me" title="${esc(ACTION.archiveTooltip)}"><i class="fa-solid fa-box-archive" aria-hidden="true"></i></button>`;
+}
+
 function shareButtonHtml(path, className = "result-share-btn") {
   return `<button type="button" class="cta-btn cta-share ${className}" data-path="${esc(path)}" title="${esc(ACTION.shareTooltip)}">${ACTION.shareLabel}</button>`;
 }
@@ -826,8 +897,9 @@ function localActionButtonsHtml(item, { shareClass = "result-share-btn", indexCl
   const share = canShareItem(item) ? shareButtonHtml(path, shareClass) : "";
   const lock = canShowLockItem(item) ? lockButtonHtml(path, isSyncLocked(item)) : "";
   const deleteStrata = canDeleteFromStrata(item) ? deleteStrataButtonHtml(path) : "";
+  const archive = canArchiveItem(item) ? archiveButtonHtml(path) : "";
   const index = canReindexDoc(item) ? indexButtonHtml(path, indexClass) : "";
-  const actions = [share, lock, deleteStrata, index].filter(Boolean);
+  const actions = [share, lock, deleteStrata, archive, index].filter(Boolean);
   return `<div class="card-actions">${actions.join('<span class="action-sep" aria-hidden="true">|</span>')}</div>`;
 }
 
@@ -850,6 +922,7 @@ function updateDocModalActions(doc, path) {
   const indexBtn = $("#doc-index-btn");
   const lockBtn = $("#doc-lock-btn");
   const deleteBtn = $("#doc-delete-strata-btn");
+  const archiveBtn = $("#doc-archive-btn");
   const sep = actions?.querySelector(".action-sep");
   if (!actions || !shareBtn || !indexBtn || !lockBtn || !deleteBtn) return;
 
@@ -858,6 +931,7 @@ function updateDocModalActions(doc, path) {
   const showShare = indexed && canShareItem(doc);
   const showLock = showShare;
   const showDelete = indexed && canDeleteFromStrata(doc);
+  const showArchive = indexed && canArchiveItem(doc);
 
   actions.classList.toggle("hidden", !indexed);
   shareBtn.classList.toggle("hidden", !showShare);
@@ -865,6 +939,7 @@ function updateDocModalActions(doc, path) {
   indexBtn.classList.toggle("hidden", !canReindexDoc(doc));
   lockBtn.classList.toggle("hidden", !showLock);
   deleteBtn.classList.toggle("hidden", !showDelete);
+  archiveBtn?.classList.toggle("hidden", !showArchive);
 
   shareBtn.title = ACTION.shareTooltip;
   indexBtn.title = ACTION.indexTooltip;
@@ -872,6 +947,7 @@ function updateDocModalActions(doc, path) {
   setActionIdle(indexBtn, ACTION.indexLabel);
   lockBtn.dataset.path = path;
   deleteBtn.dataset.path = path;
+  if (archiveBtn) archiveBtn.dataset.path = path;
   if (showLock) renderLockButtonState(lockBtn, isSyncLocked(doc));
 }
 
@@ -1019,7 +1095,7 @@ function renderResults(data) {
   });
   out.querySelectorAll(".card[data-path]").forEach((el) => {
     el.addEventListener("click", (event) => {
-      if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn")) return;
+      if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn, .result-archive-btn")) return;
       openDoc(el.dataset.path);
     });
   });
@@ -1042,6 +1118,7 @@ function renderResults(data) {
     });
   });
   bindDeleteStrataButtons(out);
+  bindArchiveButtons(out);
 }
 
 async function openDoc(path) {
@@ -1485,6 +1562,45 @@ function bindDeleteStrataButtons(container) {
   });
 }
 
+async function archiveDocPath(path) {
+  if (!path) return;
+  const ok = window.confirm(
+    `Archive for me?\n\n${path}\n\nThis removes the document from your local STRATA and it will not be pulled again. The team's remote copy is kept.`
+  );
+  if (!ok) return;
+  try {
+    const result = await api("/api/sync/archive", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths: [path] }),
+    });
+    if (!result.count) {
+      showToast(result.error ? `Archive failed: ${result.error}` : "Archive failed: not indexed.");
+      return;
+    }
+    showToast("Archived — removed locally; won't re-sync from remote.");
+    if (state.activeDocPath === path) {
+      $("#doc-modal")?.close();
+    }
+    if (state.homeTab === "recent") await loadRecentLocal({ resetPage: false });
+    else if (state.homeTab === "received") await loadSharedFromTeam({ resetPage: false });
+    if (state.view === "app" && state.activeProject) {
+      await refreshActiveProjectResults();
+    }
+  } catch (err) {
+    showToast(`Archive failed: ${err.message}`);
+  }
+}
+
+function bindArchiveButtons(container) {
+  container.querySelectorAll(".result-archive-btn, .archive-one").forEach((btn) => {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      archiveDocPath(btn.dataset.path);
+    });
+  });
+}
+
 function initDeleteStrataModal() {
   const modal = $("#delete-strata-modal");
   const input = $("#delete-strata-confirm-input");
@@ -1649,7 +1765,7 @@ function syncRowHtml(item) {
         <span class="sync-path">${esc(item.path)}</span>
       </div>
       <div class="sync-meta">
-        ${esc(item.local_status)} · ${esc(item.share_status)}
+        ${esc(statusLabel(item.local_status))} · ${esc(statusLabel(item.share_status))}
         ${item.author_name ? ` · ${esc(item.author_name)}` : ""}
         · ${esc(fmtDate(item.published_at || item.updated_at))}
       </div>
@@ -1662,8 +1778,10 @@ function syncRowHtml(item) {
 
 function recentRowHtml(item) {
   const title = item.title || titleFromPath(item.path);
-  const localStatus = item.local_status || "indexed";
-  const shareStatus = item.share_status || (item.sync_status === "shared" ? "shared" : "not shared");
+  const localStatus = statusLabel(item.local_status || "indexed");
+  const shareStatus = statusLabel(
+    item.share_status || (item.sync_status === "shared" ? "shared" : "not shared")
+  );
   const actionButtons = localActionButtonsHtml(item, {
     shareClass: "sync-one",
     indexClass: "index-one",
@@ -1686,6 +1804,7 @@ function recentRowHtml(item) {
 function sharedFromRowHtml(item) {
   const title = item.title || titleFromPath(item.path);
   const author = item.author_name || "";
+  const archive = canArchiveItem(item) ? archiveButtonHtml(item.path, "archive-one") : "";
   return `
     <article class="sync-row recent-row" data-path="${esc(item.path)}" data-project="${esc(item.project || "")}" role="button" tabindex="0">
       <div class="sync-row-head">
@@ -1697,6 +1816,7 @@ function sharedFromRowHtml(item) {
       </div>
       <div class="sync-path">${esc(item.path)}</div>
       ${item.excerpt ? `<p class="card-excerpt">${esc(item.excerpt)}</p>` : ""}
+      ${archive ? `<div class="sync-actions">${archive}</div>` : ""}
     </article>`;
 }
 
@@ -1736,6 +1856,7 @@ function bindRecentRowActions(container) {
   });
   bindLockButtons(container);
   bindDeleteStrataButtons(container);
+  bindArchiveButtons(container);
 }
 
 function bindLockButtons(container) {
@@ -1785,7 +1906,7 @@ function renderPagedList({
     el.querySelectorAll(".recent-row").forEach((row) => {
       const activate = () => onRowActivate(row.dataset);
       row.addEventListener("click", (event) => {
-        if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn, .sync-one, .index-one, .delete-strata-one")) {
+        if (event.target.closest(".result-share-btn, .result-index-btn, .result-sync-btn, .result-lock-btn, .result-delete-strata-btn, .result-archive-btn, .sync-one, .index-one, .delete-strata-one, .archive-one")) {
           return;
         }
         activate();
@@ -1897,6 +2018,8 @@ function renderReceivedPage() {
     },
     onRowActivate: (dataset) => openRecentFile(dataset.path, dataset.project),
   });
+  const receivedTable = $("#received-from-team-table");
+  if (receivedTable) bindArchiveButtons(receivedTable);
 }
 
 function renderSyncPage() {
@@ -2156,7 +2279,9 @@ function bindHomeTabControls() {
   $("#secrets-refresh-btn")?.addEventListener("click", () => loadPotentialSecrets({ resetPage: false }));
   $("#sync-all-btn")?.addEventListener("click", async () => {
     if (!state.syncItems.length) await loadSyncLocal({ resetPage: false });
-    await syncPaths(batchSyncPaths(state.syncItems));
+    const paths = batchSyncPaths(state.syncItems);
+    if (!confirmLargeSync(paths.length)) return;
+    await syncPaths(paths);
   });
   $("#sync-prev")?.addEventListener("click", () => {
     if (state.syncPage > 0) {
@@ -2299,6 +2424,7 @@ async function init() {
   $("#doc-index-btn")?.addEventListener("click", () => indexDocFromModal());
   $("#doc-lock-btn")?.addEventListener("click", () => toggleDocLockFromModal());
   $("#doc-delete-strata-btn")?.addEventListener("click", () => openDeleteStrataConfirm(state.activeDocPath));
+  $("#doc-archive-btn")?.addEventListener("click", () => archiveDocPath(state.activeDocPath));
   $("#doc-modal").addEventListener("click", (e) => {
     if (e.target === $("#doc-modal")) $("#doc-modal").close();
   });

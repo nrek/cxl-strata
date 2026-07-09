@@ -69,9 +69,33 @@ def discover_files() -> list[tuple[str, Path]]:
     for agent_dir in (root / ".claude", root / ".codex"):
         if agent_dir.is_dir():
             for p in agent_dir.rglob("*.md"):
-                if p.is_file() and not p.name.startswith("."):
-                    out.append(("rule", p))
+                if not p.is_file() or p.name.startswith("."):
+                    continue
+                # Skip scratch caches like .codex/.tmp/** (plugin dumps, not rules).
+                if any(part.startswith(".") for part in p.relative_to(agent_dir).parts[:-1]):
+                    continue
+                out.append(("rule", p))
 
+    return out
+
+
+def pending_paths(conn) -> list[str]:
+    """Workspace files on disk that are new or changed vs the local index."""
+    out: list[str] = []
+    for _kind, path in discover_files():
+        rel = _rel(path)
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        body_hash = hashlib.sha256(text.encode()).hexdigest()
+        row = conn.execute(
+            "SELECT body_hash, sync_ignored_at FROM documents WHERE path = ?", (rel,)
+        ).fetchone()
+        if row is not None and row["sync_ignored_at"]:
+            continue
+        if row is None or row["body_hash"] != body_hash:
+            out.append(rel)
     return out
 
 
@@ -89,6 +113,9 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
         elif rel in {"CLAUDE.md", "AGENTS.md"}:
             kind = "rule"
         elif rel.startswith(".claude/") or rel.startswith(".codex/"):
+            # Scratch caches like .codex/.tmp/** are plugin dumps, not rules.
+            if any(part.startswith(".") for part in rel.split("/")[1:-1]):
+                return False
             kind = "rule"
         else:
             return False

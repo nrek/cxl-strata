@@ -160,6 +160,32 @@ def register(app: typer.Typer) -> None:
             )
         rprint(json.dumps(result, indent=2))
 
+    @app.command("archive")
+    def archive_cmd(
+        prefix: Optional[str] = typer.Option(
+            None, "--prefix", help="Archive all docs whose path starts with this prefix"
+        ),
+        path: Optional[str] = typer.Option(None, "--path", help="Archive a single doc path"),
+        execute: bool = typer.Option(False, "--execute"),
+        root: Optional[Path] = typer.Option(None, "--root"),
+    ) -> None:
+        """Archive docs locally: tombstone + never re-pull (remote copies kept)."""
+        if root:
+            set_workspace_root(root)
+        if not prefix and not path:
+            rprint("[red]Provide --prefix or --path.[/red]")
+            raise typer.Exit(1)
+        if path:
+            if execute:
+                result = documents.archive_paths([path])
+            else:
+                result = {"would_archive": [path], "count": 1, "executed": False}
+        else:
+            result = documents.archive_prefix(prefix, execute=execute)
+        rprint(json.dumps(result, indent=2))
+        if not execute:
+            rprint("[yellow]Dry run. Re-run with --execute to archive.[/yellow]")
+
     @app.command("pull")
     def pull_cmd(
         project: Optional[str] = typer.Option(None, "--project"),

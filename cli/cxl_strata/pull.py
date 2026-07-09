@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import api_client
+from .path_guard import is_scratch_path
 from .workspace_index import db
 from .workspace_index.parsers import doc_id_for_path
 
@@ -20,10 +21,22 @@ def _remote_updated(row: dict[str, Any]) -> str | None:
     return row.get("updated_at") or row.get("remote_updated_at")
 
 
+def _is_ignored(existing: Any) -> bool:
+    """True when the local row is a sync-ignore tombstone (archived locally)."""
+    if existing is None:
+        return False
+    try:
+        return bool(existing["sync_ignored_at"])
+    except (KeyError, IndexError):
+        return False
+
+
 def needs_pull(row: dict[str, Any], existing: Any) -> bool:
     """True when remote row is missing locally or differs from local copy."""
     if existing is None:
         return True
+    if _is_ignored(existing):
+        return False
     if existing["body_hash"] != row.get("body_hash"):
         return True
     return existing["remote_updated_at"] != _remote_updated(row)
@@ -76,8 +89,11 @@ def count_remote_pending(
         db.init_db(conn)
         for row in remote_rows:
             rel = _doc_path(row)
+            if is_scratch_path(rel):
+                continue
             existing = conn.execute(
-                "SELECT body_hash, remote_updated_at FROM documents WHERE path = ?",
+                "SELECT body_hash, remote_updated_at, sync_ignored_at"
+                " FROM documents WHERE path = ?",
                 (rel,),
             ).fetchone()
             if needs_pull(row, existing):
@@ -104,16 +120,25 @@ def pull_documents(
     )
     pulled = 0
     skipped = 0
+    ignored = 0
+    blocked = 0
     comments_pulled = 0
 
     with db.connect() as conn:
         db.init_db(conn)
         for row in remote_rows:
             rel = _doc_path(row)
+            if is_scratch_path(rel):
+                blocked += 1
+                continue
             existing = conn.execute(
-                "SELECT body_hash, remote_updated_at FROM documents WHERE path = ?",
+                "SELECT body_hash, remote_updated_at, sync_ignored_at"
+                " FROM documents WHERE path = ?",
                 (rel,),
             ).fetchone()
+            if _is_ignored(existing):
+                ignored += 1
+                continue
             remote_updated = _remote_updated(row)
             comments_pulled += _pull_comments(conn, rel, row.get("comments"))
             if not needs_pull(row, existing):
@@ -153,6 +178,8 @@ def pull_documents(
     return {
         "pulled": pulled,
         "skipped": skipped,
+        "ignored": ignored,
+        "blocked": blocked,
         "comments_pulled": comments_pulled,
         "total_remote": len(remote_rows),
     }

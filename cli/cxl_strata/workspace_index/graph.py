@@ -243,6 +243,7 @@ def _build_full_graph(conn: sqlite3.Connection) -> dict[str, Any]:
                updated_at, plan_status, linear_task_id, files_changed,
                tags, author_name, body
         FROM documents
+        WHERE sync_ignored_at IS NULL
         """
     ).fetchall()
 

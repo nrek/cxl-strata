@@ -191,6 +191,12 @@ def test_tool_drawer_static_wiring() -> None:
     assert 'id="count-pull-pending"' in index
     assert "function confirmLargeSync(count)" in app_js
     assert "async function refreshToolCounts()" in app_js
+    assert "function setToolActionDot(hasActions)" in app_js
+    assert 'id="tool-drawer-dot"' in index
+    assert ".tool-drawer-dot" in style
+    assert "remote-sync-btn" not in app_js
+    assert "stats-sync-btn" not in style
+    assert "function pullRemote(" not in app_js
     assert "/api/index/pending" in app_js
     assert "/api/index/run" in app_js
     assert "Are you sure you want to sync ${count} files to Strata?" in app_js
@@ -232,6 +238,7 @@ def test_tool_drawer_static_wiring() -> None:
     assert ".tool-drawer.open" in style
     assert ".tool-drawer-toggle" in style
     assert ".tool-drawer-toggle.open" in style
+    assert ".tool-drawer-toggle.open .tool-drawer-dot" in style
 
 
 def test_kind_filter_chips_replace_kind_select() -> None:

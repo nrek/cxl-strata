@@ -452,19 +452,33 @@ function setToolCount(id, value) {
   }
 }
 
+function setToolActionDot(hasActions) {
+  const dot = $("#tool-drawer-dot");
+  if (!dot) return;
+  dot.hidden = !hasActions;
+}
+
 async function refreshToolCounts() {
+  let indexCount = 0;
+  let syncCount = 0;
+  let pullCount = 0;
+
   try {
     const indexPending = await api("/api/index/pending");
-    setToolCount("#count-index-pending", indexPending.count);
+    indexCount = Number(indexPending.count) || 0;
   } catch (_) {
-    setToolCount("#count-index-pending", 0);
+    indexCount = 0;
   }
+  setToolCount("#count-index-pending", indexCount);
+
   try {
     await loadSyncLocal({ resetPage: false });
-    setToolCount("#count-sync-pending", batchSyncPaths(state.syncItems).length);
+    syncCount = batchSyncPaths(state.syncItems).length;
   } catch (_) {
-    setToolCount("#count-sync-pending", 0);
+    syncCount = 0;
   }
+  setToolCount("#count-sync-pending", syncCount);
+
   if (state.apiOnline) {
     try {
       const remotePending = await api("/api/sync/remote-pending");
@@ -473,7 +487,9 @@ async function refreshToolCounts() {
       /* keep current count */
     }
   }
-  setToolCount("#count-pull-pending", state.apiOnline ? state.remotePending : 0);
+  pullCount = state.apiOnline ? Number(state.remotePending) || 0 : 0;
+  setToolCount("#count-pull-pending", pullCount);
+  setToolActionDot(indexCount + syncCount + pullCount > 0);
 }
 
 async function runToolCommand(command) {
@@ -2173,38 +2189,12 @@ function renderApiStatus(cfg) {
   }
 }
 
-function renderStatsLine(stats, remotePending) {
+function renderStatsLine(stats) {
   const el = $("#stats-line");
   if (!el) return;
   const kinds =
     stats.by_kind?.map((k) => `${kindLabel(k.kind, k.n)}: ${k.n}`).join(" · ") || "";
-  let html = esc(kinds);
-  const pending = remotePending?.pending ?? 0;
-  if (state.apiOnline && remotePending?.online !== false && pending > 0) {
-    html += ` · <button type="button" id="remote-sync-btn" class="stats-sync-btn">sync ${pending}</button>`;
-  }
-  el.innerHTML = html;
-  $("#remote-sync-btn")?.addEventListener("click", pullRemote);
-}
-
-async function pullRemote() {
-  const btn = $("#remote-sync-btn");
-  if (!btn || btn.disabled) return;
-  btn.disabled = true;
-  btn.textContent = "syncing…";
-  try {
-    await api("/api/pull", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    await refreshDashboard();
-  } catch (err) {
-    alert(`Pull failed: ${err.message}`);
-    btn.disabled = false;
-    btn.textContent = `sync ${state.remotePending || ""}`.trim();
-    await refreshRemotePending();
-  }
+  el.innerHTML = esc(kinds);
 }
 
 async function refreshRemotePending() {
@@ -2213,7 +2203,8 @@ async function refreshRemotePending() {
     const remotePending = await api("/api/sync/remote-pending");
     state.remotePending = remotePending.pending || 0;
     const stats = await api("/api/stats");
-    renderStatsLine(stats, remotePending);
+    renderStatsLine(stats);
+    await refreshToolCounts();
   } catch (_) {
     /* keep current stats */
   }
@@ -2228,7 +2219,7 @@ async function refreshDashboard() {
       : Promise.resolve({ online: false, pending: 0 }),
   ]);
   state.remotePending = remotePending.pending || 0;
-  renderStatsLine(stats, remotePending);
+  renderStatsLine(stats);
   renderProjectPanels(summary);
   await loadAuthors();
   await Promise.allSettled([
@@ -2237,6 +2228,7 @@ async function refreshDashboard() {
     loadSharedFromTeam(),
     loadPotentialSecrets(),
   ]);
+  await refreshToolCounts();
 }
 
 function handleHomeSearch(rawQ) {
@@ -2345,13 +2337,15 @@ async function loadRemoteConfig(stats) {
   else if (cfg.actor) state.localActorName = String(cfg.actor).trim();
   else if (state.authors.length === 1) state.localActorName = state.authors[0].trim();
   renderApiStatus(cfg);
-  if (!state.apiOnline) return;
-  const remotePending = await api("/api/sync/remote-pending").catch(() => ({
-    online: false,
-    pending: 0,
-  }));
-  state.remotePending = remotePending.pending || 0;
-  renderStatsLine(stats, remotePending);
+  if (state.apiOnline) {
+    const remotePending = await api("/api/sync/remote-pending").catch(() => ({
+      online: false,
+      pending: 0,
+    }));
+    state.remotePending = remotePending.pending || 0;
+  }
+  if (stats) renderStatsLine(stats);
+  await refreshToolCounts();
 }
 
 async function init() {
@@ -2366,7 +2360,7 @@ async function init() {
 
   state.allProjects = projects;
   state.remotePending = 0;
-  renderStatsLine(stats, { online: false, pending: 0 });
+  renderStatsLine(stats);
   renderProjectPanels(summary);
   renderSidebar();
   renderHomeSidebar();
@@ -2377,6 +2371,7 @@ async function init() {
     loadSharedFromTeam(),
     loadPotentialSecrets(),
   ]);
+  await refreshToolCounts();
 
   void loadRemoteConfig(stats);
 

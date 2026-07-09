@@ -1167,6 +1167,71 @@ def test_stash_refuses_scratch_paths(
     ]
 
 
+def test_pull_does_not_create_outbound_sync_loop(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pull updates SQLite; a lagging on-disk copy must not demand Sync/Index."""
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    disk = workspace / path
+    original = disk.read_text(encoding="utf-8")
+    remote_body = "# Handoff — pulled from team\n\n- **Changed:** teammate edit\n"
+    import hashlib
+
+    remote_hash = hashlib.sha256(remote_body.encode()).hexdigest()
+    remote_row = {
+        "id": "remote-loop-1",
+        "path": path,
+        "kind": "handoff",
+        "project_slug": "test-proj",
+        "title": "Handoff — pulled from team",
+        "body": remote_body,
+        "body_hash": remote_hash,
+        "author_name": "Teammate",
+        "author_email": "teammate@example.com",
+        "created_at": "2026-07-09T12:00:00Z",
+        "updated_at": "2026-07-09T12:00:00Z",
+        "shared_at": "2026-07-09T12:00:00Z",
+        "storage_state": "file",
+    }
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        return [remote_row] if kwargs.get("offset", 0) == 0 else []
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    indexer.index_all(prune=False)
+    assert pull.pull_documents()["pulled"] == 1
+
+    # Disk still has the pre-pull body (mtime older than synced_at).
+    disk.write_text(original, encoding="utf-8")
+    past = (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
+    os.utime(disk, (past, past))
+
+    pending = sync_review.scan_pending()
+    assert path not in {item["path"] for item in pending}
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        assert path not in indexer.pending_paths(conn)
+        # Re-index must not clobber the fresher pulled body.
+        assert indexer.index_file(conn, disk.resolve(), "handoff") is False
+        row = conn.execute(
+            "SELECT body, body_hash FROM documents WHERE path = ?", (path,)
+        ).fetchone()
+    assert row["body"] == remote_body
+    assert row["body_hash"] == remote_hash
+
+    # A real local edit after the pull still surfaces for Sync to Remote.
+    disk.write_text(
+        "# Handoff — local edit after pull\n\n- **Changed:** mine\n",
+        encoding="utf-8",
+    )
+    future = (datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()
+    os.utime(disk, (future, future))
+    pending_after_edit = sync_review.scan_pending()
+    assert path in {item["path"] for item in pending_after_edit}
+
+
 def test_pending_paths_reports_new_and_changed_files(workspace: Path) -> None:
     handoff_path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
 

@@ -106,29 +106,6 @@ body {
   text-align: right;
 }
 
-.stats-sync-btn {
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  font-size: inherit;
-  color: var(--accent);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-.stats-sync-btn:hover:not(:disabled) {
-  color: #9ec5ff;
-}
-
-.stats-sync-btn:disabled {
-  opacity: 0.65;
-  cursor: wait;
-  text-decoration: none;
-}
-
 .home-center {
   width: min(920px, 100%);
   display: flex;
@@ -288,6 +265,22 @@ body {
   right: calc(var(--tool-drawer-width) - 18px);
   background: var(--accent);
   color: #0b1020;
+}
+
+.tool-drawer-dot {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #4ade80;
+  box-shadow: 0 0 0 2px rgba(11, 16, 32, 0.85);
+  pointer-events: none;
+}
+
+.tool-drawer-toggle.open .tool-drawer-dot {
+  display: none;
 }
 
 .tool-drawer {

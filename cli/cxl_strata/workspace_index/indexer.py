@@ -79,6 +79,28 @@ def discover_files() -> list[tuple[str, Path]]:
     return out
 
 
+def _disk_stale_vs_synced(row, path: Path) -> bool:
+    """True when a shared/pulled DB row is newer than the on-disk file.
+
+    Prevents Pull from Remote from flipping into Files-to-Strata / Sync-to-Remote
+    just because the local file still has the pre-pull contents.
+    """
+    if row is None:
+        return False
+    try:
+        if not row["remote_id"]:
+            return False
+        synced_at = row["synced_at"] or row["shared_at"]
+    except (KeyError, IndexError, TypeError):
+        return False
+    if not synced_at:
+        return False
+    try:
+        return _mtime_iso(path) <= str(synced_at)
+    except OSError:
+        return False
+
+
 def pending_paths(conn) -> list[str]:
     """Workspace files on disk that are new or changed vs the local index."""
     out: list[str] = []
@@ -90,9 +112,15 @@ def pending_paths(conn) -> list[str]:
             continue
         body_hash = hashlib.sha256(text.encode()).hexdigest()
         row = conn.execute(
-            "SELECT body_hash, sync_ignored_at FROM documents WHERE path = ?", (rel,)
+            """
+            SELECT body_hash, sync_ignored_at, remote_id, synced_at, shared_at
+            FROM documents WHERE path = ?
+            """,
+            (rel,),
         ).fetchone()
         if row is not None and row["sync_ignored_at"]:
+            continue
+        if row is not None and row["body_hash"] != body_hash and _disk_stale_vs_synced(row, path):
             continue
         if row is None or row["body_hash"] != body_hash:
             out.append(rel)
@@ -125,11 +153,18 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
     body_hash = hashlib.sha256(text.encode()).hexdigest()
 
     existing = conn.execute(
-        "SELECT body_hash, published_at FROM documents WHERE path = ?", (rel_path,)
+        """
+        SELECT body_hash, published_at, remote_id, synced_at, shared_at
+        FROM documents WHERE path = ?
+        """,
+        (rel_path,),
     ).fetchone()
     if existing and existing["body_hash"] == body_hash:
         if not existing["published_at"]:
             _backfill_published_at(conn, rel_path, path, text, kind)
+        return False
+    # Keep a fresher pulled/shared SQLite body; do not clobber it with stale disk.
+    if existing and existing["body_hash"] != body_hash and _disk_stale_vs_synced(existing, path):
         return False
 
     parsed = parse_document(rel_path, text, kind=kind, path_obj=path)

@@ -50,10 +50,25 @@ def _project_from_path(rel: str) -> str | None:
     return None
 
 
+def _local_edit_after_sync(db_row: dict[str, Any], mtime: str | None) -> bool:
+    """True when the on-disk file was edited after the last pull/share.
+
+    After Pull from Remote the SQLite row is authoritative; a lagging disk
+    copy must not look like an outbound Sync to Remote candidate.
+    """
+    if not mtime:
+        return False
+    synced_at = db_row.get("synced_at") or db_row.get("shared_at")
+    if not synced_at:
+        return True
+    return str(mtime) > str(synced_at)
+
+
 def _local_share_status(
     db_row: dict[str, Any] | None,
     *,
     body_hash: str | None = None,
+    mtime: str | None = None,
 ) -> tuple[str, str]:
     local_status = "indexed"
     share_status = "not shared"
@@ -69,7 +84,12 @@ def _local_share_status(
     if db_row and db_row.get("remote_id"):
         share_status = "shared"
         if local_status == "changed":
-            share_status = "remote changed"
+            if _local_edit_after_sync(db_row, mtime):
+                share_status = "remote changed"
+            else:
+                # Pulled/shared DB is newer than disk — not an outbound sync.
+                local_status = "indexed"
+                share_status = "shared"
 
     return local_status, share_status
 
@@ -104,7 +124,7 @@ def scan_pending(
             for r in conn.execute(
                 """
                 SELECT path, title, body_hash, storage, origin, remote_id, shared_at,
-                       author_name, updated_at, published_at, sync_ignored_at,
+                       synced_at, author_name, updated_at, published_at, sync_ignored_at,
                        sync_ignore_reason, sync_locked
                 FROM documents
                 """
@@ -125,10 +145,13 @@ def scan_pending(
 
         try:
             body_hash = _file_hash(path)
+            mtime = _mtime_iso(path)
         except OSError:
             continue
 
-        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
+        local_status, share_status = _local_share_status(
+            db_row, body_hash=body_hash, mtime=mtime
+        )
 
         if not show_all and local_status == "indexed" and share_status == "shared":
             continue
@@ -139,7 +162,6 @@ def scan_pending(
         except OSError:
             pass
 
-        mtime = _mtime_iso(path)
         row_dict = {
             "path": rel,
             "kind": file_kind,
@@ -279,7 +301,9 @@ def scan_recent_locally_changed(
         if activity_at < since:
             continue
 
-        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
+        local_status, share_status = _local_share_status(
+            db_row, body_hash=body_hash, mtime=mtime
+        )
         excerpt = db_row.get("excerpt") if db_row else ""
         if not excerpt:
             try:
@@ -361,7 +385,9 @@ def scan_potential_secret_files(
         db_row = indexed.get(rel)
         if db_row and db_row.get("sync_ignored_at"):
             continue
-        local_status, share_status = _local_share_status(db_row, body_hash=body_hash)
+        local_status, share_status = _local_share_status(
+            db_row, body_hash=body_hash, mtime=mtime
+        )
         item = {
             "path": rel,
             "kind": file_kind,

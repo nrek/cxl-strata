@@ -8,6 +8,8 @@
   --muted: #8b95a8;
   --accent: #6ea8fe;
   --accent-dim: #3d5a8a;
+  --accent-soft: rgba(110, 168, 254, 0.18);
+  --accent-text: #9ec5ff;
   --chip: #1e222c;
   --handoff: #4ade80;
   --section: #fbbf24;
@@ -1713,6 +1715,100 @@ dialog h2 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
+}
+
+.content-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.accent-theme-picker {
+  position: relative;
+}
+
+.accent-theme-btn {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  width: 2.15rem;
+  height: 2.15rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.accent-theme-btn:hover,
+.accent-theme-btn[aria-expanded="true"] {
+  border-color: var(--accent-dim);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.accent-theme-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.45rem);
+  z-index: 60;
+  width: 13rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.65rem;
+  background: var(--panel);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+
+.accent-theme-menu-head {
+  padding: 0.55rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.accent-theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.45rem;
+  padding: 0.7rem;
+}
+
+.accent-theme-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.4rem 0.5rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.accent-theme-option:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+.accent-theme-option.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--bg-elevated);
+}
+
+.accent-theme-swatch {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  flex-shrink: 0;
 }
 
 .graph-topbar {

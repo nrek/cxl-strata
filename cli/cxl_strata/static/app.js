@@ -79,9 +79,62 @@ const state = {
   updateAvailable: false,
   localVersion: "",
   remoteVersion: "",
+  accentTheme: "blue",
   graphProject: null,
   graphReturnView: "home",
 };
+
+const ACCENT_STORAGE_KEY = "strata:accent-theme";
+const ACCENT_THEMES = [
+  {
+    id: "blue",
+    label: "Blue",
+    accent: "#6ea8fe",
+    dim: "#3d5a8a",
+    soft: "rgba(110, 168, 254, 0.18)",
+    text: "#9ec5ff",
+  },
+  {
+    id: "purple",
+    label: "Purple",
+    accent: "#a78bfa",
+    dim: "#5b4a8a",
+    soft: "rgba(167, 139, 250, 0.18)",
+    text: "#c4b5fd",
+  },
+  {
+    id: "red",
+    label: "Red",
+    accent: "#f87171",
+    dim: "#8a3d3d",
+    soft: "rgba(248, 113, 113, 0.18)",
+    text: "#fca5a5",
+  },
+  {
+    id: "green",
+    label: "Green",
+    accent: "#4ade80",
+    dim: "#2f6b45",
+    soft: "rgba(74, 222, 128, 0.18)",
+    text: "#86efac",
+  },
+  {
+    id: "orange",
+    label: "Orange",
+    accent: "#fb923c",
+    dim: "#8a5530",
+    soft: "rgba(251, 146, 60, 0.18)",
+    text: "#fdba74",
+  },
+  {
+    id: "gray",
+    label: "Gray",
+    accent: "#94a3b8",
+    dim: "#4b5563",
+    soft: "rgba(148, 163, 184, 0.18)",
+    text: "#cbd5e1",
+  },
+];
 
 const MOJIBAKE_MARKERS = /â[\u0080-\u00BF]|Ã.|Â.|\uFFFD/;
 
@@ -2192,6 +2245,98 @@ function renderApiStatus(cfg) {
   }
 }
 
+function accentThemeById(id) {
+  return ACCENT_THEMES.find((theme) => theme.id === id) || ACCENT_THEMES[0];
+}
+
+function applyAccentTheme(themeId) {
+  const theme = accentThemeById(themeId);
+  const root = document.documentElement;
+  root.style.setProperty("--accent", theme.accent);
+  root.style.setProperty("--accent-dim", theme.dim);
+  root.style.setProperty("--accent-soft", theme.soft);
+  root.style.setProperty("--accent-text", theme.text);
+  root.dataset.accentTheme = theme.id;
+  state.accentTheme = theme.id;
+  document.querySelectorAll("[data-accent-option]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.accentOption === theme.id);
+  });
+}
+
+function closeAccentMenus(except) {
+  document.querySelectorAll("[data-accent-picker]").forEach((picker) => {
+    if (except && picker === except) return;
+    const menu = picker.querySelector("[data-accent-menu]");
+    const toggle = picker.querySelector("[data-accent-toggle]");
+    if (menu) menu.hidden = true;
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+  });
+}
+
+function renderAccentMenus() {
+  document.querySelectorAll("[data-accent-grid]").forEach((grid) => {
+    grid.innerHTML = ACCENT_THEMES.map(
+      (theme) => `
+      <button
+        type="button"
+        class="accent-theme-option${theme.id === state.accentTheme ? " active" : ""}"
+        data-accent-option="${esc(theme.id)}"
+        title="${esc(theme.label)}"
+      >
+        <span class="accent-theme-swatch" style="background:${esc(theme.accent)}"></span>
+        ${esc(theme.label)}
+      </button>`
+    ).join("");
+  });
+}
+
+function initAccentThemePicker() {
+  let saved = "blue";
+  try {
+    saved = localStorage.getItem(ACCENT_STORAGE_KEY) || "blue";
+  } catch (_) {
+    saved = "blue";
+  }
+  state.accentTheme = accentThemeById(saved).id;
+  applyAccentTheme(state.accentTheme);
+  renderAccentMenus();
+
+  document.querySelectorAll("[data-accent-picker]").forEach((picker) => {
+    const toggle = picker.querySelector("[data-accent-toggle]");
+    const menu = picker.querySelector("[data-accent-menu]");
+    if (!toggle || !menu) return;
+
+    toggle.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const willOpen = menu.hidden;
+      closeAccentMenus(picker);
+      menu.hidden = !willOpen;
+      toggle.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    });
+
+    menu.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-accent-option]");
+      if (!btn) return;
+      const themeId = btn.dataset.accentOption;
+      applyAccentTheme(themeId);
+      try {
+        localStorage.setItem(ACCENT_STORAGE_KEY, themeId);
+      } catch (_) {
+        /* private mode */
+      }
+      closeAccentMenus();
+    });
+  });
+
+  document.addEventListener("mousedown", (event) => {
+    if (event.target.closest("[data-accent-picker]")) return;
+    closeAccentMenus();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeAccentMenus();
+  });
+}
+
 function renderUpdateCta(status) {
   const btn = $("#client-update-btn");
   if (!btn) return;
@@ -2431,6 +2576,7 @@ async function loadRemoteConfig(stats) {
 }
 
 async function init() {
+  initAccentThemePicker();
   bindHomeTabControls();
   switchHomeTab("recent");
 

@@ -196,6 +196,14 @@ def test_tool_drawer_static_wiring() -> None:
     assert ".tool-drawer-dot" in style
     assert 'id="client-update-btn"' in index
     assert "[ update ]" in index
+    assert 'data-accent-picker' in index
+    assert "fa-paintbrush" in index
+    assert "function initAccentThemePicker()" in app_js
+    assert "function applyAccentTheme(themeId)" in app_js
+    assert 'strata:accent-theme' in app_js
+    assert "ACCENT_THEMES" in app_js
+    assert ".accent-theme-picker" in style
+    assert ".accent-theme-menu" in style
     assert "function renderUpdateCta(status)" in app_js
     assert "async function refreshUpdateStatus()" in app_js
     assert "async function runClientUpdate()" in app_js

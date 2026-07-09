@@ -6,7 +6,7 @@ from cxl_strata.version import __version__, client_version
 
 def test_client_version_matches_bundled_constant() -> None:
     assert client_version()
-    assert __version__ == "0.3.1"
+    assert __version__ == "0.3.2"
 
 
 def test_update_status_offline_when_manifest_unreachable(
@@ -55,7 +55,7 @@ def test_update_status_hides_cta_when_versions_match(monkeypatch) -> None:
 
 
 def test_update_status_hides_cta_when_local_is_ahead(monkeypatch) -> None:
-    monkeypatch.setattr(client_update, "client_version", lambda: "0.3.1")
+    monkeypatch.setattr(client_update, "client_version", lambda: "0.3.2")
     monkeypatch.setattr(client_update, "_api_base", lambda: "https://strata.example.com")
     monkeypatch.setattr(
         client_update,
@@ -64,8 +64,8 @@ def test_update_status_hides_cta_when_local_is_ahead(monkeypatch) -> None:
     )
     status = client_update.update_status()
     assert status["update_available"] is False
-    assert client_update.is_remote_newer("0.3.1", "0.3.0") is False
-    assert client_update.is_remote_newer("0.3.0", "0.3.1") is True
+    assert client_update.is_remote_newer("0.3.2", "0.3.0") is False
+    assert client_update.is_remote_newer("0.3.0", "0.3.2") is True
 
 
 def test_run_client_update_refuses_invalid_base(monkeypatch) -> None:
@@ -73,7 +73,7 @@ def test_run_client_update_refuses_invalid_base(monkeypatch) -> None:
         client_update,
         "update_status",
         lambda: {
-            "local_version": "0.3.1",
+            "local_version": "0.3.2",
             "remote_version": "9.9.9",
             "update_available": True,
             "online": True,
@@ -102,7 +102,7 @@ def test_run_client_update_invokes_install_script(monkeypatch) -> None:
         "update_status",
         lambda: {
             "local_version": "0.3.0",
-            "remote_version": "0.3.1",
+            "remote_version": "0.3.2",
             "update_available": True,
             "online": True,
             "api_base_url": "https://strata.example.com",

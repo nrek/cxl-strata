@@ -40,6 +40,15 @@
         <button type="button" id="client-update-btn" class="client-update-btn" hidden title="A newer STRATA client is available">
           [ update ]
         </button>
+        <div class="accent-theme-picker" data-accent-picker>
+          <button type="button" class="ghost-btn accent-theme-btn" data-accent-toggle title="Accent color" aria-label="Accent color" aria-expanded="false" aria-haspopup="true">
+            <i class="fa-solid fa-paintbrush" aria-hidden="true"></i>
+          </button>
+          <div class="accent-theme-menu" data-accent-menu hidden>
+            <div class="accent-theme-menu-head">Accent</div>
+            <div class="accent-theme-grid" data-accent-grid></div>
+          </div>
+        </div>
         <button type="button" id="home-graph-btn" class="ghost-btn graph-open-btn" title="Explore the knowledge graph">
           <i class="fa-solid fa-circle-nodes" aria-hidden="true"></i> Graph
         </button>
@@ -226,9 +235,20 @@
           <span class="content-label">Project</span>
           <h1 id="active-project">—</h1>
         </div>
-        <button type="button" id="scoped-graph-btn" class="ghost-btn graph-open-btn" title="Graph this project and its cross-project neighbors">
-          <i class="fa-solid fa-circle-nodes" aria-hidden="true"></i> Graph
-        </button>
+        <div class="content-header-actions">
+          <div class="accent-theme-picker" data-accent-picker>
+            <button type="button" class="ghost-btn accent-theme-btn" data-accent-toggle title="Accent color" aria-label="Accent color" aria-expanded="false" aria-haspopup="true">
+              <i class="fa-solid fa-paintbrush" aria-hidden="true"></i>
+            </button>
+            <div class="accent-theme-menu" data-accent-menu hidden>
+              <div class="accent-theme-menu-head">Accent</div>
+              <div class="accent-theme-grid" data-accent-grid></div>
+            </div>
+          </div>
+          <button type="button" id="scoped-graph-btn" class="ghost-btn graph-open-btn" title="Graph this project and its cross-project neighbors">
+            <i class="fa-solid fa-circle-nodes" aria-hidden="true"></i> Graph
+          </button>
+        </div>
       </header>
 
       <form id="scoped-search-form" class="search-bar" role="search">

@@ -194,6 +194,14 @@ def test_tool_drawer_static_wiring() -> None:
     assert "function setToolActionDot(hasActions)" in app_js
     assert 'id="tool-drawer-dot"' in index
     assert ".tool-drawer-dot" in style
+    assert 'id="client-update-btn"' in index
+    assert "[ update ]" in index
+    assert "function renderUpdateCta(status)" in app_js
+    assert "async function refreshUpdateStatus()" in app_js
+    assert "async function runClientUpdate()" in app_js
+    assert "/api/update/status" in app_js
+    assert "/api/update/run" in app_js
+    assert ".client-update-btn" in style
     assert "remote-sync-btn" not in app_js
     assert "stats-sync-btn" not in style
     assert "function pullRemote(" not in app_js

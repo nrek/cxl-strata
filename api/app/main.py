@@ -28,7 +28,7 @@ from app.services.document_service import DocumentService, comment_to_dict, docu
 from app.services.key_service import KeyService
 from app.services.memory_service import MemoryService, event_to_dict
 
-app = FastAPI(title="STRATA", version="0.3.0", description="Shared project memory API")
+app = FastAPI(title="STRATA", version="0.3.1", description="Shared project memory API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 ICONS_DIR = STATIC_DIR / "icons"
 LANDING_PATH = STATIC_DIR / "index.html"

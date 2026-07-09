@@ -76,6 +76,9 @@ const state = {
   localActorName: "",
   hasSearched: false,
   remotePending: 0,
+  updateAvailable: false,
+  localVersion: "",
+  remoteVersion: "",
   graphProject: null,
   graphReturnView: "home",
 };
@@ -2189,6 +2192,84 @@ function renderApiStatus(cfg) {
   }
 }
 
+function renderUpdateCta(status) {
+  const btn = $("#client-update-btn");
+  if (!btn) return;
+  const available = Boolean(status?.update_available);
+  state.updateAvailable = available;
+  state.localVersion = status?.local_version || "";
+  state.remoteVersion = status?.remote_version || "";
+  btn.hidden = !available;
+  if (available) {
+    const local = state.localVersion || "?";
+    const remote = state.remoteVersion || "?";
+    btn.title = `Update STRATA client ${local} → ${remote}`;
+  }
+}
+
+async function refreshUpdateStatus() {
+  try {
+    const status = await api("/api/update/status");
+    renderUpdateCta(status);
+  } catch (_) {
+    renderUpdateCta({ update_available: false });
+  }
+}
+
+async function runClientUpdate() {
+  const btn = $("#client-update-btn");
+  if (!btn || btn.disabled || btn.hidden) return;
+  if (
+    !window.confirm(
+      `Update STRATA client from ${state.localVersion || "current"} to ${state.remoteVersion || "latest"}?\n\nThis runs the remote install script and restarts the local app.`
+    )
+  ) {
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "updating…";
+  showToast("Updating STRATA client…", { timeout: 8000 });
+  try {
+    const res = await fetch("/api/update/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const raw = await res.text();
+    let result = {};
+    try {
+      result = raw ? JSON.parse(raw) : {};
+    } catch (_) {
+      result = { error: raw || "Update failed" };
+    }
+    if (!res.ok || !result.ok) {
+      throw new Error(result.error || raw || "Update failed");
+    }
+    showToast("Update complete — restarting app…", { timeout: 10000 });
+    btn.textContent = "restarting…";
+    // Server schedules a restart; poll until the new process answers.
+    for (let i = 0; i < 40; i += 1) {
+      await new Promise((r) => setTimeout(r, 1500));
+      try {
+        const probe = await fetch("/api/update/status", { cache: "no-store" });
+        if (probe.ok) {
+          window.location.reload();
+          return;
+        }
+      } catch (_) {
+        /* still restarting */
+      }
+    }
+    showToast("Update finished — reload the page if the app does not reopen.");
+    btn.hidden = true;
+  } catch (err) {
+    showToast(`Update failed: ${err.message}`, { timeout: 6000 });
+    btn.disabled = false;
+    btn.textContent = "[ update ]";
+    await refreshUpdateStatus();
+  }
+}
+
 function renderStatsLine(stats) {
   const el = $("#stats-line");
   if (!el) return;
@@ -2346,6 +2427,7 @@ async function loadRemoteConfig(stats) {
   }
   if (stats) renderStatsLine(stats);
   await refreshToolCounts();
+  await refreshUpdateStatus();
 }
 
 async function init() {
@@ -2435,6 +2517,7 @@ async function init() {
     }
   });
 
+  $("#client-update-btn")?.addEventListener("click", () => runClientUpdate());
   $("#home-graph-btn")?.addEventListener("click", () => openGraphView(null));
   $("#scoped-graph-btn")?.addEventListener("click", () => openGraphView(state.activeProject));
   $("#graph-back-btn")?.addEventListener("click", closeGraphView);

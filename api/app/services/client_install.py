@@ -413,7 +413,7 @@ def client_manifest() -> dict:
     mcp_spec = f"git+{git_url}@{git_ref}#subdirectory=mcp"
     return {
         "api": "strata",
-        "version": "0.3.0",
+        "version": settings.strata_client_version,
         "public_url": base,
         "default_org": settings.strata_default_org,
         "install": {
@@ -421,10 +421,15 @@ def client_manifest() -> dict:
             "unix_with_init": (
                 f"curl -fsSL {base}/install.sh | bash -s -- --org {settings.strata_default_org} --init"
             ),
+            "unix_update": f"curl -fsSL {base}/install.sh | bash",
             "windows_one_liner": f"irm {base}/install.ps1 | iex",
             "windows_with_init": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
                 f"-Org {settings.strata_default_org} -Init"
+            ),
+            "windows_update": (
+                f"& ([scriptblock]::Create((irm {base}/install.ps1))) "
+                f"-Org {settings.strata_default_org}"
             ),
             "windows_with_cursor": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) -Cursor"

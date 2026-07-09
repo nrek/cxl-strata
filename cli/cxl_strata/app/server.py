@@ -12,9 +12,10 @@ from pathlib import Path
 from urllib import request
 from urllib.parse import parse_qs, urlparse
 
-from .. import cursor_rule, local_store
+from .. import client_update, cursor_rule, local_store
 from ..documents import archive_paths, archive_prefix, delete_remote_path, stash_paths
 from ..local_store import load_config
+from ..version import client_version
 from ..workspace_index import db, graph, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
 
@@ -180,9 +181,14 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                 "api_base_url": cfg.get("api_base_url"),
                 "organization": cfg.get("organization_slug"),
                 "actor_name": cfg.get("actor_name"),
+                "client_version": client_version(),
                 **_api_online(),
             }
             _json_response(self, payload)
+            return
+
+        if path == "/api/update/status":
+            _json_response(self, client_update.update_status())
             return
 
         if path == "/api/setup/status":
@@ -544,6 +550,16 @@ class StrataAppHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/index/run":
             stats = indexer.index_all(prune=False)
             _json_response(self, stats)
+            return
+
+        if parsed.path == "/api/update/run":
+            result = client_update.run_client_update()
+            status = (
+                HTTPStatus.OK
+                if result.get("ok")
+                else HTTPStatus.BAD_GATEWAY
+            )
+            _json_response(self, result, status)
             return
 
         if parsed.path == "/api/sync/index":

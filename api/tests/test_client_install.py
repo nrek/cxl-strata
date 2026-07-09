@@ -49,8 +49,12 @@ def test_client_manifest(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["api"] == "strata"
+    assert body["version"]
     assert "install" in body
     assert "curl -fsSL" in body["install"]["unix_one_liner"]
+    assert "unix_update" in body["install"]
+    assert "windows_update" in body["install"]
+    assert "-Init" not in body["install"]["windows_update"]
     assert "packages" in body
     assert "cli" in body["packages"]
     assert "#subdirectory=cli" in body["packages"]["cli"]["pip_spec"]

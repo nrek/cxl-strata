@@ -106,6 +106,33 @@ body {
   text-align: right;
 }
 
+.client-update-btn {
+  background: none;
+  border: 1px solid rgba(74, 222, 128, 0.45);
+  border-radius: 999px;
+  padding: 0.22rem 0.65rem;
+  margin: 0;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #4ade80;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.client-update-btn:hover:not(:disabled) {
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.12);
+  color: #86efac;
+}
+
+.client-update-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .home-center {
   width: min(920px, 100%);
   display: flex;

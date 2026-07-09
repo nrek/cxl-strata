@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     strata_client_git_url: str = "https://github.com/nrek/cxl-strata.git"
     strata_client_git_ref: str = "main"
     strata_default_org: str = "your-org"
+    # Advertised client package version — bump when shipping a client release.
+    # Local apps compare this to their installed version and show [ update ].
+    strata_client_version: str = "0.3.1"
 
     def allowed_api_keys(self) -> list[str]:
         return [key.strip() for key in self.strata_api_keys.split(",") if key.strip()]

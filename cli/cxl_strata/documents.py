@@ -106,6 +106,8 @@ def stash_paths(
                 remote_id=row.get("remote_id", ""),
                 author_name=author_name,
                 author_email=author_email,
+                remote_updated_at=row.get("updated_at") or row.get("remote_updated_at"),
+                body_hash=row.get("body_hash"),
             )
             comment_errors.extend(
                 push_unsynced_comments(

@@ -776,6 +776,72 @@ def test_stash_payload_includes_published_at(
     assert captured[0]["published_at"] == "2026-06-30T12:00:00Z"
 
 
+def test_stash_clears_remote_pending_for_author_own_docs(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After stash, the author's own docs must not inflate Pull-from-Remote pending."""
+    from cxl_strata import pull
+
+    indexer.index_all(prune=False)
+    path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
+    remote_updated = "2026-07-10T12:00:00Z"
+
+    def fake_import_batch(payload: list[dict]) -> dict:
+        doc = payload[0]
+        return {
+            "synced": [
+                {
+                    "path": doc["path"],
+                    "remote_id": "remote-own-1",
+                    "status": "upserted",
+                    "body_hash": doc["body_hash"],
+                    "updated_at": remote_updated,
+                }
+            ],
+            "failed": [],
+        }
+
+    monkeypatch.setattr(documents, "_author_from_config", lambda: ("Author", "a@example.com"))
+    monkeypatch.setattr(documents.api_client, "documents_import_batch", fake_import_batch)
+
+    result = documents.stash_paths([path])
+    assert result["synced"]
+    assert not result["failed"]
+
+    with db.connect() as conn:
+        db.init_db(conn)
+        row = conn.execute(
+            "SELECT remote_id, remote_updated_at, body_hash, origin FROM documents WHERE path = ?",
+            (path,),
+        ).fetchone()
+    assert row["remote_id"] == "remote-own-1"
+    assert row["remote_updated_at"] == remote_updated
+    assert row["origin"] == "shared"
+    local_hash = row["body_hash"]
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        if kwargs.get("offset", 0) != 0:
+            return []
+        return [
+            {
+                "id": "remote-own-1",
+                "path": path,
+                "kind": "handoff",
+                "project_slug": "test-proj",
+                "title": "Handoff",
+                "body_hash": local_hash,
+                "updated_at": remote_updated,
+                "author_name": "Author",
+            }
+        ]
+
+    monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
+    pending = pull.count_remote_pending()
+    assert pending["pending"] == 0
+    assert pending["total_remote"] == 1
+
+
 def test_local_comments_persist_and_sync_on_stash(
     workspace: Path,
     monkeypatch: pytest.MonkeyPatch,

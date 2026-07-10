@@ -44,7 +44,12 @@ def needs_pull(row: dict[str, Any], existing: Any) -> bool:
         return False
     if existing["body_hash"] != row.get("body_hash"):
         return True
-    return existing["remote_updated_at"] != _remote_updated(row)
+    local_remote_updated = existing["remote_updated_at"]
+    # Older stash paths left remote_updated_at NULL while content already matched.
+    # Matching body_hash means there is nothing to pull for pending-count UX.
+    if local_remote_updated is None:
+        return False
+    return local_remote_updated != _remote_updated(row)
 
 
 def fetch_all_remote_documents(

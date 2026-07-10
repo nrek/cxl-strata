@@ -32,6 +32,13 @@ def test_needs_pull_when_fully_synced() -> None:
     assert needs_pull(row, existing) is False
 
 
+def test_needs_pull_when_hash_matches_and_remote_updated_null() -> None:
+    """Post-stash legacy rows: content matches but remote_updated_at was never stamped."""
+    row = {"path": ".md/handoff/x/a.md", "body_hash": "same", "updated_at": "2026-01-02T00:00:00Z"}
+    existing = {"body_hash": "same", "remote_updated_at": None}
+    assert needs_pull(row, existing) is False
+
+
 def test_needs_pull_skips_locally_archived_tombstone() -> None:
     row = {"path": ".md/handoff/x/a.md", "body_hash": "new", "updated_at": "2026-01-02T00:00:00Z"}
     existing = {

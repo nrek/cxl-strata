@@ -296,7 +296,20 @@ class DocumentService:
                 continue
             try:
                 row = self.upsert(raw)
-                synced.append({"path": raw.path, "remote_id": row.id, "status": "upserted"})
+                updated_at = (
+                    row.updated_at.isoformat()
+                    if row.updated_at
+                    else utcnow().isoformat()
+                )
+                synced.append(
+                    {
+                        "path": raw.path,
+                        "remote_id": row.id,
+                        "status": "upserted",
+                        "body_hash": row.body_hash or "",
+                        "updated_at": updated_at,
+                    }
+                )
             except Exception as exc:  # noqa: BLE001
                 failed.append({"path": raw.path, "error": str(exc)})
         return synced, failed

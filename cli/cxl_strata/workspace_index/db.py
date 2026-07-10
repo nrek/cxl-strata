@@ -226,23 +226,69 @@ def mark_shared(
     author_name: str | None,
     author_email: str | None,
     shared_at: str | None = None,
+    remote_updated_at: str | None = None,
+    body_hash: str | None = None,
 ) -> None:
+    """Mark a local doc as shared after a successful stash/import-batch.
+
+    Stamps ``remote_updated_at`` (and optionally ``body_hash``) so
+    ``count_remote_pending`` / ``needs_pull`` do not treat the author's own
+    just-synced content as still needing a pull.
+    """
     now = shared_at or utc_now()
-    conn.execute(
-        """
-        UPDATE documents SET
-            origin = 'shared',
-            remote_id = ?,
-            author_name = COALESCE(?, author_name),
-            author_email = COALESCE(?, author_email),
-            shared_at = ?,
-            synced_at = ?,
-            sync_ignored_at = NULL,
-            sync_ignore_reason = NULL
-        WHERE path = ?
-        """,
-        (remote_id, author_name, author_email, now, now, path.replace("\\", "/")),
-    )
+    remote_ts = remote_updated_at or now
+    if body_hash:
+        conn.execute(
+            """
+            UPDATE documents SET
+                origin = 'shared',
+                remote_id = ?,
+                author_name = COALESCE(?, author_name),
+                author_email = COALESCE(?, author_email),
+                shared_at = ?,
+                synced_at = ?,
+                remote_updated_at = ?,
+                body_hash = ?,
+                sync_ignored_at = NULL,
+                sync_ignore_reason = NULL
+            WHERE path = ?
+            """,
+            (
+                remote_id,
+                author_name,
+                author_email,
+                now,
+                now,
+                remote_ts,
+                body_hash,
+                path.replace("\\", "/"),
+            ),
+        )
+    else:
+        conn.execute(
+            """
+            UPDATE documents SET
+                origin = 'shared',
+                remote_id = ?,
+                author_name = COALESCE(?, author_name),
+                author_email = COALESCE(?, author_email),
+                shared_at = ?,
+                synced_at = ?,
+                remote_updated_at = ?,
+                sync_ignored_at = NULL,
+                sync_ignore_reason = NULL
+            WHERE path = ?
+            """,
+            (
+                remote_id,
+                author_name,
+                author_email,
+                now,
+                now,
+                remote_ts,
+                path.replace("\\", "/"),
+            ),
+        )
 
 
 def set_sync_locked(

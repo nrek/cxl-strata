@@ -85,6 +85,11 @@ def test_import_batch_shared_documents(client: TestClient) -> None:
     data = response.json()
     assert len(data["synced"]) == 1
     assert not data["failed"]
+    synced = data["synced"][0]
+    assert synced["path"] == ".md/blueprints/cxl-strata.md"
+    assert synced["remote_id"]
+    assert synced["body_hash"]
+    assert synced["updated_at"]
 
 
 def test_import_batch_rejects_scratch_paths(client: TestClient) -> None:

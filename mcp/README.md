@@ -2,7 +2,16 @@
 
 Stdio MCP server that calls the STRATA HTTP API for AI context retrieval.
 
+For the **local** SQLite index (handoffs, blueprints, graph neighbors, `handoff_write`), use the `workspace-knowledge` server shipped with the CLI package — see [Client Installation](../docs/client-installation.md#cursor).
+
 ## Environment
+
+```bash
+export STRATA_API_URL=https://strata.example.com
+export STRATA_API_KEY=strata_live_...
+```
+
+Local API development:
 
 ```bash
 export STRATA_API_URL=http://127.0.0.1:8015
@@ -16,7 +25,11 @@ cd mcp
 pip install -e .
 ```
 
+The one-line client installers install this package automatically.
+
 ## Cursor MCP config
+
+Recommended: both the central API server and the local workspace index:
 
 ```json
 {
@@ -25,15 +38,19 @@ pip install -e .
       "command": "python",
       "args": ["-m", "strata_mcp.server"],
       "env": {
-        "STRATA_API_URL": "http://127.0.0.1:8015",
-        "STRATA_API_KEY": "strata_dev_your_token"
+        "STRATA_API_URL": "https://strata.example.com",
+        "STRATA_API_KEY": "strata_live_your_personal_token"
       }
+    },
+    "workspace-knowledge": {
+      "command": "python",
+      "args": ["-m", "cxl_strata.workspace_index.mcp_server"]
     }
   }
 }
 ```
 
-## Tools
+## Tools (central API)
 
 | Tool | Description |
 |------|-------------|

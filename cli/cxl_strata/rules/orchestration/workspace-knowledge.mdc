@@ -1,0 +1,62 @@
+---
+description: Query workspace handoffs, plans, and blueprints via SQLite (MCP or CLI).
+alwaysApply: true
+---
+
+# Workspace knowledge (SQLite index + markdown files)
+
+**Mental model:** the SQLite index **routes** discovery; markdown files are the **payload**. Agents bootstrap context via the index first — see [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc).
+
+Canonical index: **`.md/workspace_index.sqlite`**. Handoffs and blueprints remain **markdown on disk** during the human-review window.
+
+| Kind | Active storage | After archival / completion |
+|------|----------------|---------------------------|
+| Handoffs | **File + DB** (`storage=file`) — `.md/handoff/<project>/*.md` | **DB only** after ~96h (`strata prune --archive-handoffs`) |
+| Plans `done` | **DB only** — pruned from disk | DB only |
+| Plans active (`draft` / `backlog` / `in_queue` / `in_progress`) | File + DB | — |
+| Blueprints, rules | File + DB (index on save) | — |
+
+## Access
+
+1. **MCP** `workspace-knowledge` (enable in Cursor MCP settings; restart after changes) — `knowledge_recent`, `knowledge_search`, `knowledge_get`, `knowledge_blueprint`, `knowledge_graph_neighbors`, `plan_list`, `plan_set_status`.
+2. **CLI:** `strata index`, `strata prune`, `strata stash`, `strata pull`, `strata app --open` (localhost UI for search, graph, and archived bodies).
+3. **Write handoff:** MCP `handoff_write` only — never edit `.md/handoff/**` files directly.
+
+## Handoff window
+
+Rolling **48 wall-clock hours** of activity for agent context; **carry_forward** up to 7 days when the window is empty (weekends).
+
+Human review uses **on-disk files** under `.md/handoff/` for ~96 hours before archival.
+
+## Prompt patterns
+
+| Intent | Example |
+|--------|---------|
+| Handoffs | `Query workspace DB: recent handoffs for synq-forge, 48 hour available window` |
+| Search | `Workspace search: aurora migration` |
+| Plans | `List plans in_queue for synq-forge` |
+| Get body | Read `.md/handoff/synq-forge/2026-05-26T22-30-00Z.md` or `knowledge_get` |
+| Write handoff | MCP `handoff_write`: new **Agent tab** → `project` + `content`; same tab → `path` + `content` (append) |
+| Plan status | MCP `plan_set_status` (works for db_only plans) |
+
+## Archive handoffs to SQLite (~96h)
+
+```bash
+strata prune --archive-handoffs              # dry run
+strata prune --archive-handoffs --execute
+strata prune --kinds plan --plan-status done --execute
+```
+
+Do not run `strata index --full` expecting handoff rows to disappear when files are gone — `db_only` rows are preserved.
+
+## Index freshness
+
+The index must be current for DB-first routing to work.
+
+- **On save:** `afterFileEdit` hook reindexes `.md/handoff/`, `.md/blueprints/`, `.cursor/plans/`, `.cursor/rules/`.
+- **Bulk / stale:** run `strata index` or STRATA app → **Files to Strata** when queries miss known docs or the pending badge is non-zero.
+- **Do not** compensate for a stale index by grepping the file tree — reindex first.
+
+## Team distribution
+
+`strata init` installs this rule bundle (`agent-context-bootstrap.mdc`, `prior-art.mdc`, `workspace-knowledge.mdc`, `blueprints.mdc`, `handoff-logging.mdc`, `reports-organization.mdc`, `workspace-repo-scope.mdc`) plus `.cursor/hooks.json` with the sessionStart digest. Shared rule updates flow via `strata stash` → `strata pull`. Teammates also need the `workspace-knowledge` MCP enabled (installer `--cursor` / `-Cursor` prints the snippet).

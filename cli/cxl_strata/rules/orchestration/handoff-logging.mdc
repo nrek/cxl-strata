@@ -1,0 +1,174 @@
+---
+description: Create or extend brief project handoff logs as linkable markdown files; archive to SQLite after ~96h.
+alwaysApply: true
+---
+
+# Handoff Logging
+
+## Purpose
+
+Handoffs are **human-review logs** of completed agent work. Agents write them instead of long chat summaries. The workspace SQLite index is for **search and archival**, not the primary review surface.
+
+## Chat vs handoff (response shape)
+
+<HARD-GATE>
+**Put the full answer in the handoff. Keep the chat reply short.**
+
+- **Handoff file** — full artifact: analysis, architecture notes, tables, code references, decisions, verification, deployment blocks, follow-ups, and any content the reviewer should see later.
+- **Chat reply** — at most a **simple summary** (one short paragraph or a few bullets). End with a markdown link to the exact handoff file path.
+- **Always link the handoff** — every final response after handoff logging must include the handoff file path as a clickable markdown link. Do not say "logged in the handoff" without linking the file.
+- Do **not** paste long analysis, multi-section writeups, duplicated tables, or extended code walkthroughs into chat — that content belongs in the handoff.
+- **Analysis-only prompts** (no code changes): append the complete analysis to handoff; chat might be as short as: *"No supplemental Linux group support today; full analysis in handoff."*
+- **Build/debug prompts**: chat states what changed and links handoff; detailed file lists, rationale, and deploy steps stay in handoff.
+</HARD-GATE>
+
+## Location
+
+**Canonical path (workspace root only):** `.md/handoff/<project-or-repo>/<UTC-timestamp>.md`
+
+Example: `.md/handoff/commonspace-app/2026-06-04T12-00-00Z.md`
+
+- Create `.md/handoff/<project-or-repo>/` if missing (folder name = project/repo slug).
+- **Always** write handoff markdown here when logging work.
+- **Never** use `.md/.handoff/` — deprecated; do not create or write there.
+- **Never** use per-repo handoff folders (e.g. `<repo>/.md/handoff/` or `<repo>/.md/.handoff/`).
+- Final chat response: link the **file path** (e.g. `.md/handoff/synq-forge/2026-05-27T12-00-00Z.md`) plus a **brief** summary only — never a long chat recap of what is already in the handoff.
+
+## Lifecycle
+
+| Phase | Storage | Who reads |
+|-------|---------|-----------|
+| **Active (~0–96h)** | File on disk + SQLite (`storage=file`) | Humans in IDE; agents via MCP/CLI |
+| **Archived (~96h+)** | SQLite only (`storage=db_only`); file pruned | Agents via MCP; humans via STRATA app |
+
+Archive (cron or manual):
+
+```bash
+strata prune --archive-handoffs            # dry run
+strata prune --archive-handoffs --execute
+```
+
+Read an archived (db_only) handoff via MCP `knowledge_get` or the STRATA app (`strata app --open`).
+
+## Before Work
+
+Load **rolling 48 hours of available handoff activity** (not calendar days).
+
+1. MCP **`workspace-knowledge`** → **`knowledge_recent`** with `project` + `kind: handoff`.
+2. **`knowledge_get`** or **Read** the file path for full body.
+
+## After Work
+
+<HARD-GATE>
+**Never use Write, StrReplace, or Edit on `.md/handoff/**` files.** Appends go **only** through MCP `handoff_write`. Direct file edits are what cause out-of-order `## iN` sections.
+</HARD-GATE>
+
+Write via MCP **`workspace-knowledge`** → **`handoff_write`**.
+
+**Windows / PowerShell:** Do not pass markdown with `` ` `` backticks through command-line arguments — PowerShell treats `` ` `` as escape and can inject control characters (BEL `0x07`, form-feed `0x0C`) that render as "box" glyphs and eat letters (`\app` → bell + `pp`). Always prefer MCP `handoff_write`, which avoids the shell entirely.
+
+### New file vs append (per Agent tab)
+
+| When | Action |
+|------|--------|
+| **New Agent tab** | Create one handoff file: `handoff_write` with `project` + `content` (no `path`). Filename = unique UTC timestamp at creation. |
+| **Same Agent tab** | Always append at the **end of the existing handoff document**: `handoff_write` with `path` of **this tab's** handoff + `content` (adds `## i{N}`). |
+
+- **One handoff file per Agent tab** for the whole conversation in that tab.
+- **Keep this tab's handoff path** from the first `handoff_write` response; pass it as `path` on every later log in the same tab.
+- **Do not** start a new file because the subject matter shifted — append the next iteration instead so work stays in chronological order.
+- **Append only — never insert in the middle.** New notes go at the **end of the file**, after every prior section (including all prior `## iN` blocks and `## Deployment` sections). Do not edit, reorder, or prepend earlier sections when appending — even if the new note relates to something above.
+- **Do not put `## iN` or leading `---` in append `content`.** The writer adds the separator and the next monotonic `## i{N}` at EOF. Body only: `- **Changed:**`, `- **Decisions:**`, etc., plus optional `## Deployment`.
+- **Iteration headings (`## i1` … `## i10+`), not repeated "Follow-up".** Use a monotonic count for the whole Agent tab: `## i1`, `## i2`, `## i3` … `## i10` and beyond as needed. Do **not** restart numbering mid-file. Preferred over `## Iteration 1`, `## Iteration 2`. When using MCP `handoff_write` append, the writer auto-increments `N` from the highest existing `i#` in the file. Legacy `## Follow-up — <timestamp>` sections remain valid for search/indexing but must not be used for new logs.
+- **Project folder** (`.md/handoff/<project>/`) is chosen on the **first** log in the tab; keep appending to that same file even if later prompts touch other repos (note the shift in the iteration body).
+
+**Deployment / Ubuntu commands (required for deployable work and server runbooks):** When the change touches a deployable repo, **or when the answer gives the user commands to run on an Ubuntu host**, always include a `## Deployment` section with **complete, copy-paste server CLI** — not a vague "restart the service" note. Pull steps from `.md/blueprints/<project>.md` → **Deployment (production)** (app root, venv, env file, restart command).
+
+**Default production stack:** Ubuntu hosts, **Apache2** for web/PHP (not nginx/PHP-FPM unless the blueprint says otherwise). End deploy blocks with Apache reload when the app is web-served:
+
+```bash
+sudo apache2ctl configtest
+sudo systemctl reload apache2 || sudo systemctl restart apache2
+```
+
+Include **every step that applies** to this handoff (omit only what did not change):
+
+| Step type | Examples (project-dependent) |
+|-----------|------------------------------|
+| Pull / checkout | `git pull` |
+| Env / venv | `source venv/bin/activate`, `set -a && source .env && set +a`, `npx dotenv -e .env.local -- …` |
+| Dependencies | `pip install -r requirements.txt`, `npm ci` / `npm install` |
+| DB migrations | Prisma `prisma migrate deploy`, Alembic `alembic upgrade head`, one-off scripts |
+| Build | `npm run build` |
+| Tests (when API/scripts touched) | `python -m pytest …`, `npm test` / CI script |
+| Service restart | `systemctl restart …`, service scripts, timers, etc. |
+| Web server | `sudo apache2ctl configtest` then `sudo systemctl reload apache2` (or `restart` if required) |
+
+- **Do not** skip migrations or builds because "maybe not needed" — if schema or frontend changed, list the command; note "skip if already applied" only when certain.
+- **Every deploy block must be runnable as-is** on the target host: `cd` to the blueprint app root, then every applicable step in order. No placeholders like "restart the service" without the exact command.
+- Multi-repo work: separate blocks per host/repo.
+- Use `## Deployment (n/a)` **only** for docs-only or local-only tooling with no server deploy path.
+
+### Ubuntu command handoffs
+
+If the prompt asks for a one-off Ubuntu/server command, watchdog, cron, systemd unit/timer, firewall, package install, service restart, or other host-side runbook, treat the handed-off command as deployment context even when no application source changed:
+
+- Log the **exact command block** given to the user in `## Deployment`, including heredocs and verification commands.
+- Name the target host or URL if known, plus service/unit names, ports, paths, env files, and timers touched.
+- State whether the command was only provided to the user or was actually run on the production host, when known.
+- Include the expected verification command/output target, for example `systemctl status ...`, `journalctl -u ...`, `curl ...`, `apache2ctl configtest`, or `nginx -t`.
+- Do **not** use `## Deployment (n/a)` for host commands just because the repo files were not changed.
+
+### handoff_write content shape
+
+**New file (first log in tab):**
+
+```markdown
+# Handoff — 2026-06-04T12-00-00Z
+
+- **Changed:**
+- **Decisions:**
+- **Verification:**
+- **Follow-up:**
+
+## Deployment
+
+```bash
+cd /var/www/example
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+# migrate / build / test as applicable
+sudo apache2ctl configtest
+sudo systemctl reload apache2 || sudo systemctl restart apache2
+```
+```
+
+**Append (same tab, later prompts):** pass `path` only — **no** `## i3` or `---` in `content` (writer adds both at EOF):
+
+```markdown
+- **Changed:**
+- **Decisions:**
+- **Verification:**
+- **Follow-up:**
+
+## Deployment
+
+```bash
+cd /var/www/example
+git pull
+# only steps that apply to this iteration
+sudo apache2ctl configtest
+sudo systemctl reload apache2 || sudo systemctl restart apache2
+```
+```
+
+(Written file will contain `---` then `## i3` then the body above. Continue `## i4` … `## i10` … for the same tab; never restart at `i1` mid-file.)
+
+Use `## Deployment (n/a)` only when no deploy is possible (docs-only, local-only tooling).
+
+## Format
+
+- Filename: unique UTC timestamp, e.g. `2026-05-13T05-30-00Z.md`.
+- Agent-useful context only: changed files, decisions, constraints, verification, follow-up.
+- Do not rewrite earlier sections when appending; only add the next `## iN` at the file end.

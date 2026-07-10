@@ -2,23 +2,24 @@
 
 This guide is for a developer whose workstation already has STRATA installed and a valid API key.
 
-STRATA has three local surfaces:
+STRATA has these local surfaces:
 
 - `.strata/` in the workspace or a repo: STRATA config and JSONL sync queue.
+- `.md/handoff/`, `.md/blueprints/`, `.md/reports/`: workspace knowledge folders (uniform home for markdown artifacts).
 - `.md/workspace_index.sqlite` at the workspace root: local searchable SQLite cache for handoffs, blueprints, plans, rules, and pulled shared docs.
 - `strata app --open`: localhost UI for browsing the local SQLite cache.
 
 The central API is separate. It stores team memory in PostgreSQL and serves search/MCP requests.
 
-Fresh installs create the SQLite cache during bootstrap (`--init`) and again when the app starts if it is missing. In Cursor workspaces, `--init` also installs `.cursor/skills/strata/SKILL.md` so Cursor can suggest `/strata`.
+Fresh installs scaffold the `.md/` layout and create the SQLite cache during bootstrap (`--init`). App startup does the same if anything is missing. Init also installs the Cursor STRATA skill, orchestration rules, and hooks so agents know where to write handoffs, blueprints, and reports.
 
-After installing and setting your API key, run the post-key bootstrap:
+After installing and setting your API key, run the post-key bootstrap from the workspace root:
 
 ```bash
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, creates `.md/workspace_index.sqlite`, installs Cursor skill support when a Cursor workspace is detected, and opens `http://127.0.0.1:8765`.
+This hardens PATH, creates the `.md/` knowledge folders and `.md/workspace_index.sqlite`, installs Cursor skill/rules/hooks, and opens `http://127.0.0.1:8765`.
 
 If this returns `No such option: --init`, refresh through the installer bootstrap instead:
 
@@ -60,7 +61,20 @@ strata init \
   --org example-org
 ```
 
-This writes `.strata/config.json` and local queue files without narrowing STRATA to one project or repo. Use `--project` only when you intentionally want capture commands to default to one project, and `--repo` only when you intentionally want notes scoped to one repo.
+This writes `.strata/config.json` and local queue files without narrowing STRATA to one project or repo. It also scaffolds:
+
+```text
+.md/handoff/
+.md/blueprints/
+.md/reports/
+.md/.gitignore
+.cursor/skills/strata/SKILL.md
+.cursor/rules/          (memory-capture + orchestration rules)
+.cursor/hooks.json
+.cursor/hooks/
+```
+
+Existing files are never overwritten. Use `--project` only when you intentionally want capture commands to default to one project, and `--repo` only when you intentionally want notes scoped to one repo.
 
 Create or refresh the local SQLite index:
 
@@ -69,6 +83,12 @@ strata index
 ```
 
 This creates `.md/workspace_index.sqlite` if it does not exist.
+
+After a client package update, fill in any newly packaged folders/rules/hooks without re-running full init:
+
+```bash
+strata refresh
+```
 
 ## 3. Capture A Memory Note
 
@@ -163,7 +183,7 @@ Default URL:
 http://127.0.0.1:8765
 ```
 
-The app browses the local SQLite cache, not the central PostgreSQL database directly. Use `strata index` for local files and `strata pull` for shared documents before expecting new material to appear.
+The app browses the local SQLite cache, not the central PostgreSQL database directly. On startup it also refreshes missing workspace assets (`.md/` folders, Cursor rules/hooks) and indexes local files. Use `strata index` for local files and `strata pull` for shared documents before expecting new material to appear.
 
 Optional autostart:
 
@@ -229,5 +249,6 @@ strata app --open
 Success means:
 
 - `strata stash` shares pending indexed workspace docs or reports nothing pending.
+- `.md/handoff/`, `.md/blueprints/`, and `.md/reports/` exist at the workspace root.
 - `.md/workspace_index.sqlite` exists at the workspace root.
 - The localhost app opens on `127.0.0.1:8765`.

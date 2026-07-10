@@ -1,0 +1,64 @@
+---
+description: Save generated reports under .md/reports/<repo-slug>/ matching the workspace repo folder.
+alwaysApply: true
+---
+
+# Reports organization
+
+## Purpose
+
+Reports are durable analysis, audits, digests, and export artifacts. Save them under a **repo-matching subfolder** so they stay findable alongside handoffs and blueprints.
+
+## Location
+
+**Canonical path:** `.md/reports/<repo-slug>/`
+
+Example: `.md/reports/commonspace-app/2026-06-09T12-00-00Z-dev-990-deploy-readiness.md`
+
+- `<repo-slug>` = the **top-level folder name** of the repo under the workspace `projects/` root (e.g. `synq-phalanx`, `commonspace-ui-v3`, `v5.prompli.com`).
+- Create `.md/reports/<repo-slug>/` if missing.
+- **Never** write reports loose at `.md/reports/` root.
+- **Never** use per-repo report folders (e.g. `<repo>/.md/reports/`).
+
+## When generating a report
+
+1. Identify the **primary repo** the report covers (the repo whose code, deploy, or Linear project is the main subject).
+2. Write the file under `.md/reports/<repo-slug>/`.
+3. Prefer a UTC timestamp prefix for dated/agent reports: `YYYY-MM-DDTHH-MM-SSZ-<topic>.md`.
+4. Companion artifacts (`.json`, `.csv`, export dirs) go in the **same** subfolder.
+
+## Repo slug resolution
+
+| If the work is about… | Use subfolder |
+|----------------------|---------------|
+| Commonspace API/backend | `commonspace-app` |
+| Commonspace frontend (Next) | `commonspace-ui-v3` |
+| Space Builder / import flow | `cs-space-builder` |
+| Designframe UI kit | `designframe-ui` |
+| Phalanx, DCM, fit metrics, stones backfill | `synq-phalanx` |
+| Forge UI/API, live trades | `synq-forge` |
+| SynQ filters | `synq-filters` |
+| JARVIS monitoring | `synq-jarvis` |
+| Blind Insight (any layer) | `blind-insight` |
+| Prompli v5 | `v5.prompli.com` |
+| Prompli v4 | `v4.prompli.com` |
+| Seersite backend / frontend | `seersite-server` / `seersite-frontend` |
+| Invivaria backend / frontend | `invivaria-backend` / `invivaria-frontend` |
+| Scout extension / SaaS | `cxl-scout` |
+| Sentinel, Spore, Synapse, etc. | `cxl-sentinel`, `cxl-spore`, `cxl-synapse`, … |
+
+When a report spans multiple repos, pick the **dominant** repo (where most changes or deploy steps live). Cross-repo reports may note secondary repos in the body; do not split one report across folders.
+
+## References
+
+If linking to a report from blueprints, handoffs, or plans, use the full path including the subfolder:
+
+```markdown
+See `.md/reports/synq-phalanx/PHALANX_ACTION_ABSTAIN_ALGO.md`.
+```
+
+## Not reports
+
+- **Handoffs** → `.md/handoff/<project>/` (see handoff-logging rule).
+- **Plans** → `.cursor/plans/<status>/`.
+- **Blueprints** → `.md/blueprints/`.

@@ -1,0 +1,57 @@
+---
+description: Parent projects folder is orchestration-only; scope edits and git to named repos.
+alwaysApply: true
+---
+# Workspace repo scope
+
+The parent `~/projects` directory (this workspace root) is an **orchestration workspace only** — not a single application repo.
+
+## Git
+
+- **Never** run `git init` in the parent workspace root.
+- **Never** stage, commit, push, or otherwise use git against the parent workspace root as if it were one repo.
+- Git operations (`status`, `diff`, `add`, `commit`, `push`, `pull`, branch/checkout) belong **only** inside an explicitly named repo directory (a top-level folder under `projects/` that has its own `.git`).
+
+## Repo-scoped prompts
+
+When a prompt **starts with** a bracketed repo list — e.g. `[synq-forge, synq-phalanx] …` — treat that list as the **active repo scope** for the entire turn unless the user explicitly widens it.
+
+While scoped, restrict to those repo directories:
+
+| Activity | Scope |
+|----------|--------|
+| File edits | Only paths under `<repo>/` for each named repo |
+| Search / read | Prefer `<repo>/`; do not broad-search sibling repos or workspace root code |
+| Terminal commands | `cd` into the target repo before running repo-specific commands |
+| Migrations, builds, tests | Run inside the named repo only |
+| Git | Only inside the named repo's directory |
+
+Repo folder names match the bracket tokens (e.g. `[commonspace-app]` → `projects/commonspace-app/`).
+
+## Orchestration paths (workspace root)
+
+These workspace-meta paths are **not** application repos; writing here for orchestration is allowed even under a repo-scoped prompt:
+
+- `.md/handoff/`, `.md/blueprints/`, `.md/reports/`
+- `.cursor/rules/`, `.cursor/plans/`
+
+Do **not** put application source, migrations, or deployable config in workspace root when a named repo exists for that project.
+
+## Default when no scope prefix
+
+- Do not modify files outside the repo clearly tied to the task.
+- If the task spans multiple repos, confirm scope from the prompt, blueprint, or Linear task — do not assume the whole monorepo-style workspace is one git repo.
+- Before any git command, verify the working directory is inside the intended repo (contains that repo's `.git`).
+
+## Examples
+
+```text
+[synq-forge] fix live trader timer
+→ edit/search/run commands only under synq-forge/; git only in synq-forge/
+
+[commonspace-app, commonspace-ui-v3] deploy readiness
+→ scope to those two folders; separate git blocks per repo
+
+Add handoff for synq-forge work (no prefix)
+→ may write .md/handoff/synq-forge/… at workspace root; code changes still under synq-forge/
+```

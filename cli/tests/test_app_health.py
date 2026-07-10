@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
-from cxl_strata import cursor_rule, local_store
+from cxl_strata import cursor_rule, local_store, workspace_scaffold
 from cxl_strata.app.server import (
     StrataAppHandler,
     bootstrap_workspace_index,
@@ -99,6 +99,7 @@ def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) ->
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
+    workspace_scaffold.ensure_workspace_layout(tmp_path)
     cursor_rule.install_cursor_integration()
 
     result = setup_status()
@@ -108,7 +109,12 @@ def test_setup_status_reports_local_requirements(tmp_path: Path, monkeypatch) ->
     assert checks["config"]["ok"] is True
     assert checks["api_key"]["ok"] is True
     assert checks["sqlite"]["ok"] is True
+    assert checks["md_handoff"]["ok"] is True
+    assert checks["md_blueprints"]["ok"] is True
+    assert checks["md_reports"]["ok"] is True
     assert checks["cursor_skill"]["ok"] is True
+    assert checks["orchestration_rules"]["ok"] is True
+    assert checks["cursor_hooks"]["ok"] is True
 
 
 def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkeypatch) -> None:
@@ -127,6 +133,7 @@ def test_setup_status_accepts_user_level_workspace_config(tmp_path: Path, monkey
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
+    workspace_scaffold.ensure_workspace_layout(tmp_path)
     cursor_rule.install_cursor_integration()
 
     result = setup_status()
@@ -156,7 +163,8 @@ def test_setup_status_checks_cursor_skill_at_workspace_root(tmp_path: Path, monk
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
-    cursor_rule.install_cursor_skill(dest=tmp_path / cursor_rule.SKILL_DEST)
+    workspace_scaffold.ensure_workspace_layout(tmp_path)
+    cursor_rule.install_cursor_integration(root=tmp_path)
 
     result = setup_status()
     checks = {item["id"]: item for item in result["checks"]}
@@ -185,12 +193,15 @@ def test_setup_status_does_not_require_cursor_skill_for_non_cursor_workspace(
     )
     paths.DB_PATH.parent.mkdir(parents=True)
     paths.DB_PATH.write_text("", encoding="utf-8")
+    workspace_scaffold.ensure_workspace_layout(tmp_path)
 
     result = setup_status()
     checks = {item["id"]: item for item in result["checks"]}
 
     assert result["ok"] is True
     assert "cursor_skill" not in checks
+    assert "orchestration_rules" not in checks
+    assert "cursor_hooks" not in checks
 
 
 def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None:
@@ -212,7 +223,33 @@ def test_setup_status_reports_missing_items(tmp_path: Path, monkeypatch) -> None
     assert "STRATA_API_KEY" in checks["api_key"]["fix"]
     assert checks["sqlite"]["ok"] is False
     assert "strata index" in checks["sqlite"]["fix"]
+    assert checks["md_handoff"]["ok"] is False
+    assert checks["md_blueprints"]["ok"] is False
+    assert checks["md_reports"]["ok"] is False
     assert "cursor_skill" not in checks
+
+
+def test_setup_status_reports_missing_orchestration_rules(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("STRATA_API_KEY", "strata_live_test")
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    set_workspace_root(tmp_path)
+    local_store.USER_GLOBAL_FILE.write_text(
+        json.dumps({"api_base_url": "https://strata.example.com", "organization_slug": "org"}),
+        encoding="utf-8",
+    )
+    paths.DB_PATH.parent.mkdir(parents=True)
+    paths.DB_PATH.write_text("", encoding="utf-8")
+    workspace_scaffold.ensure_workspace_layout(tmp_path)
+    (tmp_path / ".cursor").mkdir()
+
+    result = setup_status()
+    checks = {item["id"]: item for item in result["checks"]}
+
+    assert result["ok"] is False
+    assert checks["orchestration_rules"]["ok"] is False
+    assert "blueprints.mdc" in checks["orchestration_rules"]["path"]
+    assert checks["cursor_hooks"]["ok"] is False
 
 
 def test_potential_secrets_endpoint_returns_redacted_rows(tmp_path: Path) -> None:

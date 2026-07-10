@@ -6,7 +6,7 @@ from typing import Any
 
 from . import api_client
 from .path_guard import is_scratch_path
-from .workspace_index import db
+from .workspace_index import db, storage
 from .workspace_index.parsers import doc_id_for_path
 
 _PAGE_SIZE = 200
@@ -29,6 +29,11 @@ def _is_ignored(existing: Any) -> bool:
         return bool(existing["sync_ignored_at"])
     except (KeyError, IndexError):
         return False
+
+
+def _should_materialize_rule(rel: str, kind: str | None) -> bool:
+    """Shared rules must land on disk for Cursor alwaysApply to pick them up."""
+    return (kind or "") == "rule" and rel.startswith(".cursor/rules/") and rel.endswith(".mdc")
 
 
 def needs_pull(row: dict[str, Any], existing: Any) -> bool:
@@ -123,6 +128,7 @@ def pull_documents(
     ignored = 0
     blocked = 0
     comments_pulled = 0
+    materialized = 0
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -172,6 +178,10 @@ def pull_documents(
                 "synced_at": db.utc_now(),
                 "remote_updated_at": remote_updated,
             }
+            if _should_materialize_rule(rel, row.get("kind")):
+                storage.write_markdown_file(rel, row.get("body") or "")
+                payload["storage"] = "file"
+                materialized += 1
             db.upsert_document(conn, payload)
             pulled += 1
 
@@ -181,6 +191,7 @@ def pull_documents(
         "ignored": ignored,
         "blocked": blocked,
         "comments_pulled": comments_pulled,
+        "materialized": materialized,
         "total_remote": len(remote_rows),
     }
 

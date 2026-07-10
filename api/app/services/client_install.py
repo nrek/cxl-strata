@@ -161,6 +161,11 @@ if [[ "$DO_INIT" -eq 1 ]]; then
   APP_ARGS=(app --open)
   echo "==> Opening STRATA localhost UI"
   "${{STRATA_CMD[@]}}" "${{APP_ARGS[@]}}"
+else
+  # Update mode: refresh workspace assets (.md scaffold, Cursor rules, hooks)
+  # in the current directory. Non-destructive; no-op outside a STRATA workspace.
+  echo "==> Refreshing STRATA workspace assets"
+  "${{STRATA_CMD[@]}}" refresh || echo "==> Workspace refresh skipped (older CLI?); run: strata refresh"
 fi
 
 if [[ "$DO_CURSOR" -eq 1 ]]; then
@@ -177,11 +182,16 @@ if [[ "$DO_CURSOR" -eq 1 ]]; then
         "STRATA_API_URL": "${{STRATA_API_URL}}",
         "STRATA_API_KEY": "strata_live_YOUR_TOKEN"
       }}
+    }},
+    "workspace-knowledge": {{
+      "command": "python",
+      "args": ["-m", "cxl_strata.workspace_index.mcp_server"]
     }}
   }}
 }}
 
 Merge into existing mcpServers; set STRATA_API_KEY to your token (or rely on ~/.strata/secrets.json via env).
+"strata" talks to the central API; "workspace-knowledge" serves the local SQLite index (knowledge_recent, handoff_write, graph).
 EOF
 fi
 
@@ -198,11 +208,14 @@ Next steps:
      — or: strata init --api ${{STRATA_API_URL}} --org ${{STRATA_ORG}}
   4. Verify: strata whoami
      If this shell was already open before install: python3 -m cxl_strata.cli whoami
-  5. --init initializes SQLite and installs .cursor/skills/strata/SKILL.md when a Cursor workspace is detected
-  6. Refresh local index later with: strata index
-  7. Open local UI: strata app --open
-  8. Optional autostart (never installed silently): strata app install-autostart
-  9. Optional Cursor MCP: re-run with --cursor for JSON snippet
+  5. --init scaffolds .md/handoff, .md/blueprints, .md/reports, initializes SQLite, and installs
+     the Cursor STRATA skill, orchestration rules (.cursor/rules/), and hooks (.cursor/hooks.json)
+  6. Re-running this installer without --init (update mode) refreshes workspace
+     assets via: strata refresh
+  7. Refresh local index later with: strata index
+  8. Open local UI: strata app --open
+  9. Optional autostart (never installed silently): strata app install-autostart
+  10. Optional Cursor MCP: re-run with --cursor for JSON snippet
 
 Manifest: {public_url}/v1/client/manifest
 EOF
@@ -336,6 +349,15 @@ if ($Init) {{
   $appArgs = @("app", "--open")
   Write-Host "==> Opening STRATA localhost UI"
   Invoke-Strata @appArgs
+}} else {{
+  # Update mode: refresh workspace assets (.md scaffold, Cursor rules, hooks)
+  # in the current directory. Non-destructive; no-op outside a STRATA workspace.
+  Write-Host "==> Refreshing STRATA workspace assets"
+  try {{
+    Invoke-Strata refresh
+  }} catch {{
+    Write-Warning "Workspace refresh skipped (older CLI?); run: strata refresh"
+  }}
 }}
 
 if ($Cursor) {{
@@ -352,9 +374,15 @@ if ($Cursor) {{
         `"STRATA_API_URL`": `"$ApiUrl`",
         `"STRATA_API_KEY`": `"strata_live_YOUR_TOKEN`"
       }}
+    }},
+    `"workspace-knowledge`": {{
+      `"command`": `"python`",
+      `"args`": [`"-m`", `"cxl_strata.workspace_index.mcp_server`"]
     }}
   }}
 }}
+
+'strata' talks to the central API; 'workspace-knowledge' serves the local SQLite index.
 "@
 }}
 
@@ -373,11 +401,14 @@ Next steps:
      Or after opening a new terminal: strata whoami
   5. Init this workspace (pass switches to the scriptblock, NOT to iex):
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Org craftxlogic -Init
-  6. -Init initializes SQLite and installs .cursor\\skills\\strata\\SKILL.md when a Cursor workspace is detected
-  7. Refresh local index later with: strata index
-  8. Open UI: strata app --open
-  9. Optional autostart: strata app install-autostart
-  10. Optional MCP snippet:
+  6. -Init scaffolds .md\\handoff, .md\\blueprints, .md\\reports, initializes SQLite, and installs
+     the Cursor STRATA skill, orchestration rules (.cursor\\rules\\), and hooks (.cursor\\hooks.json)
+  7. Re-running this installer without -Init (update mode) refreshes workspace
+     assets via: strata refresh
+  8. Refresh local index later with: strata index
+  9. Open UI: strata app --open
+  10. Optional autostart: strata app install-autostart
+  11. Optional MCP snippet:
      & ([scriptblock]::Create((irm {public_url}/install.ps1))) -Cursor
 
 Quick test now: python -m cxl_strata.cli whoami
@@ -452,6 +483,7 @@ def client_manifest() -> dict:
         },
         "workspace_knowledge": {
             "index": "strata index",
+            "refresh": "strata refresh",
             "prune": "strata prune --archive-handoffs",
             "prune_project": "strata prune YOUR_PROJECT --archive-handoffs",
             "prune_execute": "strata prune --archive-handoffs --execute",
@@ -463,6 +495,26 @@ def client_manifest() -> dict:
             "autostart": "strata app install-autostart",
             "cursor_skill": ".cursor/skills/strata/SKILL.md",
             "cursor_rule": ".cursor/rules/strata-memory-capture.mdc",
+            "cursor_orchestration_rules": [
+                ".cursor/rules/agent-context-bootstrap.mdc",
+                ".cursor/rules/blueprints.mdc",
+                ".cursor/rules/handoff-logging.mdc",
+                ".cursor/rules/prior-art.mdc",
+                ".cursor/rules/reports-organization.mdc",
+                ".cursor/rules/workspace-knowledge.mdc",
+                ".cursor/rules/workspace-repo-scope.mdc",
+            ],
+            "cursor_hooks": [
+                ".cursor/hooks.json",
+                ".cursor/hooks/strata-session-digest.py",
+                ".cursor/hooks/reindex-workspace.py",
+            ],
+            "workspace_layout": [
+                ".md/handoff/",
+                ".md/blueprints/",
+                ".md/reports/",
+                ".md/.gitignore",
+            ],
             "post_key_bootstrap": "python -m cxl_strata.cli --init",
             "post_key_bootstrap_fallback_windows": (
                 f"& ([scriptblock]::Create((irm {base}/install.ps1))) "

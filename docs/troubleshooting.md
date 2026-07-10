@@ -284,7 +284,7 @@ The all-in-one post-key bootstrap is:
 python -m cxl_strata.cli --init
 ```
 
-It hardens PATH, creates `.md/workspace_index.sqlite`, and opens the browser UI.
+It hardens PATH, scaffolds `.md/handoff/`, `.md/blueprints/`, and `.md/reports/`, creates `.md/workspace_index.sqlite`, installs Cursor skill/rules/hooks, and opens the browser UI.
 
 If the command fails with `No such option: --init`, the workstation is still running an older installed CLI. On Windows, use the installer bootstrap fallback:
 
@@ -334,6 +334,62 @@ PowerShell:
 $env:STRATA_WORKSPACE_ROOT = "C:\path\to\workspace"
 strata index
 ```
+
+## Missing `.md/handoff`, Blueprints, Or Reports
+
+Init and refresh create the standard knowledge folders. From the workspace root:
+
+```bash
+strata refresh
+```
+
+Or re-run full workspace init (safe; does not overwrite existing files):
+
+```bash
+strata init --api https://strata.example.com --org example-org
+```
+
+Confirm:
+
+```bash
+ls .md/handoff .md/blueprints .md/reports
+```
+
+PowerShell:
+
+```powershell
+Test-Path .md\handoff
+Test-Path .md\blueprints
+Test-Path .md\reports
+```
+
+If `strata refresh` prints that nothing was refreshed, you are not inside a detected STRATA workspace (no `.strata/config.json`, `.cursor/`, or `.md/`). `cd` to the workspace root first.
+
+## Cursor Rules Or Hooks Missing After An Update
+
+Client updates install newly packaged Cursor assets without overwriting customized files:
+
+```bash
+strata refresh
+```
+
+Or re-run the installer without `--init` (update mode), then open the app:
+
+```bash
+strata app --open
+```
+
+Confirm:
+
+```text
+.cursor/skills/strata/SKILL.md
+.cursor/rules/strata-memory-capture.mdc
+.cursor/rules/handoff-logging.mdc
+.cursor/hooks.json
+.cursor/hooks/strata-session-digest.py
+```
+
+If a file already exists with local edits, STRATA leaves it alone. Delete or rename the local file only if you intentionally want the packaged version reinstalled.
 
 ## Localhost App Opens But Looks Empty
 

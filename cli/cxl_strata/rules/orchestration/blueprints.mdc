@@ -1,0 +1,80 @@
+---
+description: Load or create project blueprints before any repo work; blueprints are mandatory operational maps.
+alwaysApply: true
+---
+
+# Blueprints
+
+Blueprints are **paramount**. They are the first thing agents load — or create — before planning, debugging, or building in a repo.
+
+## Trigger
+
+Before **any** Ask, Plan, Debug, or Build work inside a project/repo.
+
+## First-pass blueprint (unknown or unseen repo)
+
+<HARD-GATE>
+If there is **no** blueprint for the active repo (MCP/`.md/blueprints/` miss, or you have never worked in that repo in this workspace), **do not start implementation**. Create a first-pass blueprint **first**, then proceed.
+</HARD-GATE>
+
+1. Scan the repo: entry points, deploy scripts, env samples, README, cron/systemd, Apache/nginx config if present.
+2. Write `.md/blueprints/<project-or-repo>.md` (or update a stub) and index it (`strata index --path .md/blueprints/<repo>.md` or MCP `knowledge_reindex`).
+3. Mark gaps explicitly (`TBD — verify on host`) rather than guessing.
+
+### Required first-pass sections
+
+Every blueprint must answer these four questions:
+
+| Section | Must cover |
+|---------|------------|
+| **Core function** | What the app/service does in one paragraph; primary user or ops outcome. |
+| **What lives where** | Module/directory map — which functions, commands, jobs, and APIs live in which paths. |
+| **Imports & flow** | How data/control moves: main imports, pipeline order, external DB/API/exchange dependencies. |
+| **Deployment (production)** | Host path(s), env/venv, dependency install, migrations/build, **explicit CLI** restart/reload. Default stack: **Ubuntu + Apache2** unless this repo documents otherwise. |
+
+Optional but valuable: Linear team/project, sibling repos, cron/systemd timers, test commands.
+
+### First-pass skeleton
+
+```markdown
+# <Project> — Architecture Blueprint
+
+| Key | Value |
+|-----|-------|
+| Repo | `<folder>/` |
+| Core function | … |
+| Deploy path | `/var/www/…` |
+| Host | Ubuntu; Apache2 (or note exception) |
+
+## What lives where
+…
+
+## Flow & imports
+…
+
+## Deployment (production)
+```bash
+cd /var/www/…
+git pull
+# venv, env, deps, migrate, build, test
+sudo apache2ctl configtest
+sudo systemctl reload apache2 || sudo systemctl restart apache2
+```
+```
+
+## Existing blueprint
+
+1. Prefer MCP **`workspace-knowledge`** → **`knowledge_blueprint`** with the active project/repo alias.
+2. Otherwise read `.md/blueprints/` for a matching file **before** planning or implementation.
+3. Use blueprint Linear project/team as the default for related Linear work.
+4. If the blueprint is stale vs code you just read, update it in the same session (minimal diff). Team sync is handled by STRATA — no manual upload step.
+
+## Known Mappings
+
+- Commonspace web uses `commonspace-app` and `commonspace-ui-v3`.
+- Commonspace mobile uses `commonspace-mobile-ui`
+- Seersite uses `seersite-server` for backend work and `seersite-frontend` for frontend work.
+- Phalanx uses synq-phalanx, synq-filters, and testing is done on synq-forge (simulations)
+- Blind LLM is blind-llm under blind-insight; this uses server, ui, proxy all under the blind-insight folder
+- Invivaria uses `invivaria-frontend` and `invivaria-backend`
+- synq net scrapers is `synq-net-scrapers` (Tokyo Binance); social/news on Stones is `synq-market-scrapers`

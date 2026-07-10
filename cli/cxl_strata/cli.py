@@ -13,7 +13,7 @@ import typer
 from rich import print as rprint
 from rich.prompt import Prompt
 
-from . import api_client, cursor_rule, local_store
+from . import api_client, cursor_rule, local_store, workspace_scaffold
 from .content_safety import find_secret_markers
 from .workspace_index import paths
 from .workspace_cmds import register as register_workspace_cmds
@@ -118,17 +118,37 @@ def harden_user_path() -> dict[str, object]:
     return {"scripts_dir": str(scripts_dir), "changed": changed}
 
 
+def _report_cursor_integration(integration_result: dict) -> None:
+    cursor_result = integration_result.get("cursor")
+    if not cursor_result:
+        rprint("[dim]No Cursor workspace detected; skipping Cursor integration install.[/dim]")
+        return
+    skill_result = cursor_result["skill"]
+    rprint(f"[green]Cursor skill {skill_result['status']}[/green] {skill_result['path']}")
+    rules = cursor_result.get("orchestration_rules", {})
+    installed_rules = [name for name, r in rules.items() if r["status"] == "installed"]
+    if installed_rules:
+        rprint(f"[green]Installed orchestration rules[/green] {', '.join(sorted(installed_rules))}")
+    else:
+        rprint("[dim]Orchestration rules already present.[/dim]")
+    hooks = cursor_result.get("hooks", {})
+    installed_hooks = [name for name, r in hooks.items() if r["status"] == "installed"]
+    if installed_hooks:
+        rprint(f"[green]Installed Cursor hooks[/green] {', '.join(sorted(installed_hooks))}")
+
+
+def _report_scaffold(scaffold_result: dict[str, str]) -> None:
+    created = [rel for rel, status in scaffold_result.items() if status == "created"]
+    if created:
+        rprint(f"[green]Created workspace layout[/green] {', '.join(sorted(created))}")
+    else:
+        rprint("[dim].md workspace layout already present.[/dim]")
+
+
 def bootstrap_client_environment() -> None:
-    """Post-install bootstrap: PATH, SQLite cache, and localhost UI."""
+    """Post-install bootstrap: PATH, workspace scaffold, SQLite cache, and localhost UI."""
     path_result = harden_user_path()
     rprint(f"[green]PATH includes[/green] {path_result['scripts_dir']}")
-    integration_result = cursor_rule.install_supported_agent_integrations(paths.WORKSPACE_ROOT)
-    cursor_result = integration_result.get("cursor")
-    if cursor_result:
-        skill_result = cursor_result["skill"]
-        rprint(f"[green]Cursor skill {skill_result['status']}[/green] {skill_result['path']}")
-    else:
-        rprint("[dim]No Cursor workspace detected; skipping Cursor skill install.[/dim]")
 
     project: str | None = None
     try:
@@ -136,6 +156,15 @@ def bootstrap_client_environment() -> None:
         project = cfg.get("project_slug")
     except Exception:
         project = None
+
+    scaffold_result = workspace_scaffold.ensure_workspace_layout(
+        paths.WORKSPACE_ROOT, project=project
+    )
+    _report_scaffold(scaffold_result)
+    integration_result = cursor_rule.install_supported_agent_integrations(
+        paths.WORKSPACE_ROOT, force=True
+    )
+    _report_cursor_integration(integration_result)
 
     from .app.server import bootstrap_workspace_index, run_app
 
@@ -236,15 +265,46 @@ def init_cmd(
     elif repo:
         cfg["workspace_id"] = f"{org}-{repo}"
     local_store.CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-    integration_result = cursor_rule.install_supported_agent_integrations(paths.WORKSPACE_ROOT)
     rprint("[green]Initialized[/green] .strata/config.json")
-    cursor_result = integration_result.get("cursor")
-    if cursor_result:
-        skill_result = cursor_result["skill"]
-        rprint(f"[green]Cursor skill {skill_result['status']}[/green] {skill_result['path']}")
-    else:
-        rprint("[dim]No Cursor workspace detected; skipping Cursor skill install.[/dim]")
+    scaffold_result = workspace_scaffold.ensure_workspace_layout(
+        paths.WORKSPACE_ROOT, project=project
+    )
+    _report_scaffold(scaffold_result)
+    integration_result = cursor_rule.install_supported_agent_integrations(
+        paths.WORKSPACE_ROOT, force=True
+    )
+    _report_cursor_integration(integration_result)
     rprint("Set access token: export STRATA_API_KEY=strata_dev_...  or  .strata/secrets.json")
+
+
+@app.command("refresh")
+def refresh_cmd() -> None:
+    """Refresh workspace assets after a client update: .md scaffold, Cursor rules, hooks.
+
+    Idempotent and non-destructive — existing files are never overwritten.
+    No-op outside a STRATA workspace.
+    """
+    root = paths.WORKSPACE_ROOT
+    detected = (
+        (root / ".strata" / "config.json").is_file()
+        or (root / ".cursor").is_dir()
+        or (root / ".md").is_dir()
+    )
+    if not detected:
+        rprint("[dim]No STRATA workspace detected here; nothing to refresh.[/dim]")
+        return
+
+    project: Optional[str] = None
+    try:
+        cfg = local_store.load_config()
+        project = cfg.get("project_slug")
+    except Exception:
+        project = None
+
+    scaffold_result = workspace_scaffold.ensure_workspace_layout(root, project=project)
+    _report_scaffold(scaffold_result)
+    integration_result = cursor_rule.install_supported_agent_integrations(root)
+    _report_cursor_integration(integration_result)
 
 
 @app.command("add")

@@ -1,0 +1,37 @@
+---
+alwaysApply: true
+---
+
+# Prior-art gate (knowledge graph)
+
+The workspace has a knowledge graph over all handoffs, blueprints, plans, and rules (STRATA index). It links documents by shared Linear tickets, changed files, tags, and TF-IDF content similarity. **Consult it before designing or building anything non-trivial** — the solution or a close variant may already exist in another project.
+
+## When to query
+
+Run a prior-art lookup **before**:
+
+- Planning a feature, refactor, or debugging strategy (Plan mode entry).
+- Starting implementation of any task that is more than a one-file trivial edit.
+- Designing something that "feels new" — auth flows, schedulers, scrapers, sync pipelines, UI patterns, deploy runbooks. These are the highest-risk reinvention zones.
+
+Skip only for: pure Q&A about visible code, single-line fixes, or when the same session already queried for this task.
+
+## How to query
+
+Use **free-text query mode** with a one-line task description (not a doc path — path mode is for when you already know a related doc):
+
+1. **MCP (preferred):** `workspace-knowledge` → `knowledge_graph_neighbors` with `path_or_query: "<one-line task description>"`.
+2. **FTS fallback** (when step 1 returns nothing useful or all weights &lt; 0.15): MCP `knowledge_search(query)`.
+3. **UI fallback** (MCP unavailable): STRATA localhost app search and graph (`strata app --open`).
+
+## How to act on results
+
+- Treat hits with `link_type: explicit` or `weight >= 0.15` as **prior art**: read the document (`knowledge_get` or Read the file) before designing.
+- Weaker hits are noise — ignore them; do not pad plans with marginal references.
+- If prior art solves the problem, **reuse the approach** and cite the doc in your plan/handoff instead of re-deriving it.
+- If prior art shows the approach failed before, say so and explain what differs this time.
+- Only after graph **and** FTS fallback: note briefly "no prior art found" and proceed.
+
+## Relationship to other gates
+
+Full ordered bootstrap: [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc). Complements the blueprint gate in [blueprints.mdc](blueprints.mdc) and the 48-hour handoff window in [handoff-logging.mdc](handoff-logging.mdc). Order: blueprint → recent handoffs → prior-art graph query → FTS fallback → deep read → plan/build.

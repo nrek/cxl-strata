@@ -6,39 +6,43 @@ Local capture, workspace knowledge indexing, and central sync for STRATA project
 
 ```bash
 pip install -e .
-strata init --api https://strata.craftxlogic.com --org craftxlogic
+strata init --api https://strata.example.com --org example-org
 export STRATA_API_KEY=strata_live_...
 python -m cxl_strata.cli --init
 strata whoami
 ```
 
-`strata init` and `python -m cxl_strata.cli --init` install `.cursor/skills/strata/SKILL.md` when a Cursor workspace is detected. Claude Code and Codex users can use the same CLI commands directly from their agent shells.
+`strata init` and `python -m cxl_strata.cli --init` scaffold the workspace knowledge layout (`.md/handoff/`, `.md/blueprints/`, `.md/reports/`), create `.md/workspace_index.sqlite`, and install Cursor skill, orchestration rules, and hooks. Claude Code and Codex users can use the same CLI commands directly from their agent shells.
 
 ## Workspace knowledge (hybrid local + shared)
 
 Local SQLite (`.md/workspace_index.sqlite`) is the fast offline cache. Shared full artifacts live in the central API.
 
 ```bash
+# Scaffold / fill missing .md folders + Cursor rules/hooks (non-destructive)
+strata refresh
+
 # Create/refresh .md/workspace_index.sqlite from workspace root
 # Includes handoffs, blueprints, plans, Cursor skills/rules, CLAUDE.md, and AGENTS.md
 strata index
 
 # Archive old handoffs into SQLite (dry-run by default)
 strata prune --archive-handoffs
-strata prune synq-phalanx --archive-handoffs
+strata prune my-project --archive-handoffs
 strata prune --archive-handoffs --execute
-strata prune synq-phalanx --archive-handoffs --execute
+strata prune my-project --archive-handoffs --execute
 
 # Push indexed docs to central API (author from API token)
 strata stash
-strata stash --project synq-phalanx
-strata stash --path .md/handoff/synq-phalanx/2026-06-30T12-00-00Z.md
+strata stash --project my-project
+strata stash --path .md/handoff/my-project/2026-06-30T12-00-00Z.md
 
 # Pull shared docs into local SQLite for offline search
+# (kind=rule docs under .cursor/rules/ are also written to disk)
 strata pull
-strata pull --project synq-phalanx
+strata pull --project my-project
 
-# Local UI on http://127.0.0.1:8765 — bootstraps SQLite if missing
+# Local UI on http://127.0.0.1:8765 — bootstraps SQLite + refreshes assets if missing
 strata app --open
 
 # Opt-in autostart (never installed by one-line installer)
@@ -47,9 +51,7 @@ strata app status
 strata app uninstall-autostart
 ```
 
-Set `STRATA_WORKSPACE_ROOT` to override workspace discovery (defaults: walk up from cwd for `.md/handoff`).
-
-Legacy scripts (`python scripts/index_workspace.py`, `workspace_explorer.py`) remain as thin wrappers calling `strata`.
+Set `STRATA_WORKSPACE_ROOT` to override workspace discovery (defaults: walk up from cwd for `.md/`, `.cursor/`, or `.strata/`).
 
 ## Memory events
 
@@ -86,7 +88,7 @@ Profile files live at `~/.strata/orgs/{alias}.json`:
 {
   "api_key": "strata_live_...",
   "org": "example-org",
-  "api_base_url": "https://strata.craftxlogic.com"
+  "api_base_url": "https://strata.example.com"
 }
 ```
 

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "python .cursor/hooks/strata-session-digest.py",
+        "timeout": 15
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "python .cursor/hooks/reindex-workspace.py",
+        "matcher": "Write|Edit"
+      }
+    ]
+  }
+}

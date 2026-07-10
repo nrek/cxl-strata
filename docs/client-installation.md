@@ -2,12 +2,13 @@
 
 This guide installs STRATA on developer workstations and connects Cursor, Claude, Codex, or any terminal-based workflow to the central API.
 
-The installer does three things:
+The installer:
 
 1. Installs the STRATA CLI (`strata`).
 2. Installs the STRATA MCP server package.
 3. Writes user-level defaults in `~/.strata/global.json` and `~/.strata/secrets.json`.
-4. When run with bootstrap init, creates the local SQLite workspace index used by the localhost UI.
+4. When run with bootstrap init (`--init` / `-Init`), scaffolds the `.md/` knowledge layout, creates the local SQLite workspace index, installs Cursor skill/rules/hooks, and opens the localhost UI.
+5. When re-run without init (update mode), upgrades packages and runs `strata refresh` so newly packaged workspace assets appear without overwriting existing files.
 
 It does not grant access by itself. Each user still needs a personal token from an admin.
 
@@ -61,7 +62,7 @@ On macOS/Linux systems where Python is named `python3`:
 python3 -m cxl_strata.cli --init
 ```
 
-This command hardens PATH, creates `.md/workspace_index.sqlite`, installs `.cursor/skills/strata/SKILL.md` when a Cursor workspace is detected, and opens the browser UI.
+This command hardens PATH, scaffolds the workspace knowledge layout (`.md/handoff/`, `.md/blueprints/`, `.md/reports/`), creates `.md/workspace_index.sqlite`, installs the Cursor STRATA skill, the orchestration rule bundle (`.cursor/rules/`), and Cursor hooks (`.cursor/hooks.json`), and opens the browser UI.
 
 If PowerShell reports `No such option: --init`, the installed CLI is older than the docs. Rerun the installer bootstrap instead:
 
@@ -121,27 +122,31 @@ python -m cxl_strata.cli whoami
 
 The installer adds the Python user Scripts directory to the current session, the user PATH environment variable, and your PowerShell profile when possible. The user PATH update is what makes `strata` available to new PowerShell, Cursor, Claude, and Codex terminals.
 
-## Local SQLite And UI Bootstrap
+## Workspace Layout, Local SQLite, And UI Bootstrap
 
-The localhost UI reads from a local SQLite cache at:
+STRATA expects a uniform knowledge layout at the workspace root:
 
 ```text
-.md/workspace_index.sqlite
+.md/handoff/                 per-project handoffs
+.md/blueprints/              architecture blueprints
+.md/reports/                 audits, digests, exports
+.md/workspace_index.sqlite   local searchable cache
+.md/.gitignore               ignores sqlite + wal/shm
 ```
 
-Fresh workstations should not have to create that file by hand.
+Fresh workstations should not create these by hand.
 
-After setting the API key, users should run:
+After setting the API key, users should run from the workspace root:
 
 ```bash
 python -m cxl_strata.cli --init
 ```
 
-This is the easiest all-in-one command: it adds STRATA to PATH for future terminals, creates the local SQLite database, indexes local Cursor/Claude/Codex context files, pulls shared docs when possible, and opens the localhost UI.
+This is the easiest all-in-one command: it adds STRATA to PATH for future terminals, scaffolds the `.md/` folders, creates the local SQLite database, installs Cursor skill/rules/hooks, indexes local Cursor/Claude/Codex context files, pulls shared docs when possible, and opens the localhost UI.
 
 If `--init` is not recognized, rerun the installer with `-Init`; the installer bootstrap is the compatibility fallback for older local CLI installs.
 
-When you install with workspace initialization, STRATA now runs `strata index` automatically after `strata init`:
+When you install with workspace initialization, STRATA runs `strata index` automatically after `strata init`:
 
 ```bash
 curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org --init
@@ -153,9 +158,9 @@ PowerShell:
 & ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
-That creates `.md/workspace_index.sqlite` in the detected workspace/repo root and indexes local agent context files.
+That creates `.md/workspace_index.sqlite` in the detected workspace root and indexes local agent context files.
 
-The UI also bootstraps the database when it starts:
+The UI also bootstraps the database and refreshes missing packaged assets when it starts:
 
 ```bash
 strata app --open
@@ -179,6 +184,26 @@ If the UI opens but looks empty, run:
 strata index
 strata pull
 strata app --open
+```
+
+## Updating An Existing Client
+
+Re-run the installer without `--init` / `-Init` to upgrade the CLI and MCP packages (this is also what the in-app **Update** button runs):
+
+```bash
+curl -fsSL https://strata.example.com/install.sh | bash
+```
+
+```powershell
+irm https://strata.example.com/install.ps1 | iex
+```
+
+Update mode also runs `strata refresh` in the current directory: it re-scaffolds any missing `.md/` folders and installs any newly packaged Cursor rules and hooks. The refresh is non-destructive — files that already exist on disk are never overwritten — and it is a no-op outside a STRATA workspace. `strata app` performs the same refresh on startup, so the app restart after an in-app update picks up new assets too.
+
+Run it manually anytime:
+
+```bash
+strata refresh
 ```
 
 ## Set The API Key
@@ -235,7 +260,17 @@ This creates:
 .strata/events.jsonl
 .strata/synced.jsonl
 .strata/failed.jsonl
+.md/handoff/
+.md/blueprints/
+.md/reports/
+.md/.gitignore
+.cursor/rules/            (STRATA rule + 7 orchestration rules)
+.cursor/skills/strata/SKILL.md
+.cursor/hooks.json
+.cursor/hooks/            (strata-session-digest.py, reindex-workspace.py)
 ```
+
+The `.md/` tree is the uniform home for workspace knowledge: handoffs, blueprints, reports, and the SQLite index (`.md/workspace_index.sqlite`). The orchestration rules teach agents to write handoffs to `.md/handoff/<project>/`, blueprints to `.md/blueprints/`, and reports to `.md/reports/<repo-slug>/`. Existing files are never overwritten — re-running init is safe.
 
 Recommended `.gitignore` entries:
 
@@ -276,7 +311,9 @@ Expected output includes actor, organization, scopes, and API.
 
 ## Cursor
 
-`python -m cxl_strata.cli --init` and installer `-Init` automatically write the project Cursor skill to `.cursor/skills/strata/SKILL.md` when `.cursor/` exists in the workspace. A legacy rule is also written to `.cursor/rules/strata-memory-capture.mdc` for compatibility.
+`strata init`, `python -m cxl_strata.cli --init`, and installer `-Init` automatically write the project Cursor skill to `.cursor/skills/strata/SKILL.md`, the STRATA rule `.cursor/rules/strata-memory-capture.mdc`, the seven orchestration rules (`agent-context-bootstrap`, `blueprints`, `handoff-logging`, `prior-art`, `reports-organization`, `workspace-knowledge`, `workspace-repo-scope`), and Cursor hooks (`.cursor/hooks.json` plus `.cursor/hooks/strata-session-digest.py` and `.cursor/hooks/reindex-workspace.py`). The `.cursor/` folder is created if missing. Existing files are never overwritten.
+
+Shared rule updates continue to flow after init: `strata pull` writes pulled `kind: rule` documents to `.cursor/rules/` on disk so Cursor `alwaysApply` picks them up.
 
 If `/strata` is not suggested, confirm the skill exists, then restart or reload Cursor's skills:
 
@@ -284,7 +321,7 @@ If `/strata` is not suggested, confirm the skill exists, then restart or reload 
 
 Without the Cursor skill, use the CLI equivalents directly: `strata stash`, `strata stash --project <project>`, `strata prune --archive-handoffs`, and `strata prune <project> --archive-handoffs --execute`.
 
-For MCP retrieval, add a server config such as:
+For MCP retrieval, add both servers — `strata` talks to the central API; `workspace-knowledge` serves the local SQLite index (`knowledge_recent`, `knowledge_search`, `knowledge_graph_neighbors`, `handoff_write`, and more):
 
 ```json
 {
@@ -296,6 +333,10 @@ For MCP retrieval, add a server config such as:
         "STRATA_API_URL": "https://strata.example.com",
         "STRATA_API_KEY": "strata_live_your_personal_token"
       }
+    },
+    "workspace-knowledge": {
+      "command": "python",
+      "args": ["-m", "cxl_strata.workspace_index.mcp_server"]
     }
   }
 }

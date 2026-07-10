@@ -51,9 +51,10 @@ Team search, recent history, shared docs, MCP retrieval
 There is also a local workstation cache:
 
 ```text
-Workspace markdown files + pulled shared docs
+Workspace knowledge layout
+  .md/handoff/  .md/blueprints/  .md/reports/
       |
-      | strata index / strata pull
+      | strata index / strata pull / strata refresh
       v
 .md/workspace_index.sqlite
       |
@@ -62,7 +63,7 @@ Workspace markdown files + pulled shared docs
 http://127.0.0.1:8765
 ```
 
-The central API stores shared team memory in PostgreSQL. The local SQLite database powers fast local browsing for Cursor, Claude, Codex, and terminal workflows.
+The central API stores shared team memory in PostgreSQL. The local SQLite database powers fast local browsing for Cursor, Claude, Codex, and terminal workflows. Init and refresh keep a uniform `.md/` layout so the index, handoffs, blueprints, and reports always live in the same place.
 
 ## Repository Layout
 
@@ -104,13 +105,13 @@ Add your token:
 
 Store it in `~/.strata/secrets.json` or `%USERPROFILE%\.strata\secrets.json`.
 
-Run the post-key bootstrap:
+Run the post-key bootstrap from your workspace root:
 
 ```bash
 python -m cxl_strata.cli --init
 ```
 
-This hardens PATH, creates `.md/workspace_index.sqlite`, opens the local UI, and installs `.cursor/skills/strata/SKILL.md` when a Cursor workspace is detected.
+This hardens PATH, scaffolds the workspace knowledge folders (`.md/handoff/`, `.md/blueprints/`, `.md/reports/`), creates `.md/workspace_index.sqlite`, installs the Cursor STRATA skill plus orchestration rules and hooks, and opens the local UI.
 
 If that returns `No such option: --init`, the workstation still has an older CLI. On Windows, rerun the installer bootstrap instead:
 
@@ -118,13 +119,15 @@ If that returns `No such option: --init`, the workstation still has an older CLI
 & ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
-Initialize the workspace:
+Initialize the workspace (or use installer `--init` / `-Init` above):
 
 ```bash
 strata init \
   --api https://strata.example.com \
   --org example-org
 ```
+
+`strata init` is idempotent: it creates missing `.md/` folders and Cursor assets, and never overwrites files that already exist.
 
 Verify:
 
@@ -154,7 +157,9 @@ strata pull
 strata app --open
 ```
 
-`strata index` creates `.md/workspace_index.sqlite` if it does not exist. The app also initializes this SQLite cache on startup, and indexes Cursor (`.cursor/rules/*.mdc`, `.cursor/skills/**/SKILL.md`), Claude (`CLAUDE.md`, `.claude/**/*.md`), and Codex (`AGENTS.md`, `.codex/**/*.md`) instruction files as local rules.
+`strata index` creates `.md/workspace_index.sqlite` if it does not exist. The app also initializes this SQLite cache on startup, refreshes missing workspace assets, and indexes Cursor (`.cursor/rules/*.mdc`, `.cursor/skills/**/SKILL.md`), Claude (`CLAUDE.md`, `.claude/**/*.md`), and Codex (`AGENTS.md`, `.codex/**/*.md`) instruction files as local rules.
+
+To upgrade an existing client later, re-run the installer without `--init`, or run `strata refresh` in the workspace. See [Client Installation — Updating](docs/client-installation.md#updating-an-existing-client).
 
 See [Quick Start](docs/quickstart.md) for the full local workflow.
 
@@ -252,13 +257,13 @@ curl -fsSL https://strata.example.com/install.sh | bash
 irm https://strata.example.com/install.ps1 | iex
 ```
 
-After a user sets their token, have them run:
+After a user sets their token, have them run from the workspace root:
 
 ```bash
 python -m cxl_strata.cli --init
 ```
 
-That post-key bootstrap hardens PATH, creates the local SQLite cache, and opens the browser UI. Both installers also persist Python's user scripts directory to PATH where possible so `strata` works in new terminals, including agent terminals in Cursor, Claude, and Codex. When installed with workspace init, they also run `strata index` so the local SQLite cache exists before the UI opens. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
+That post-key bootstrap hardens PATH, scaffolds `.md/handoff/`, `.md/blueprints/`, and `.md/reports/`, creates the local SQLite cache, installs Cursor skill/rules/hooks, and opens the browser UI. Both installers also persist Python's user scripts directory to PATH where possible so `strata` works in new terminals, including agent terminals in Cursor, Claude, and Codex. When installed with workspace init, they also run `strata index` so the local SQLite cache exists before the UI opens. The fallback command is `python -m cxl_strata.cli ...` or `python3 -m cxl_strata.cli ...`.
 
 If a client sees `No such option: --init`, they are running an older installed CLI. Have them rerun the scriptblock installer with `-Init`; that path does not require the root `--init` option.
 
@@ -272,21 +277,27 @@ curl -fsSL https://strata.example.com/install.sh | bash -s -- --org example-org 
 & ([scriptblock]::Create((irm https://strata.example.com/install.ps1))) -Org example-org -Init
 ```
 
+To update packages later without re-init, re-run the installer without `--init` / `-Init`. Update mode runs `strata refresh` to fill in any newly packaged workspace assets without overwriting existing files.
+
 See [Client Installation](docs/client-installation.md).
 
 ## Cursor, Claude, Codex, And MCP
 
-STRATA has two integration layers:
+STRATA has three integration layers:
 
 1. CLI capture: `strata add`, `strata summary`, `strata sync`, `strata search`.
-2. MCP retrieval: `strata_search`, `strata_recent`, `strata_get`, `strata_context`.
+2. Central MCP retrieval: `strata_search`, `strata_recent`, `strata_get`, `strata_context`.
+3. Local workspace MCP (`workspace-knowledge`): search/browse the SQLite index, graph neighbors, and write handoffs.
 
 Cursor:
 
 - Install the CLI.
-- Run `python -m cxl_strata.cli --init` from a Cursor workspace to install the project Cursor skill.
-- Use `/strata` from Cursor once `.cursor/skills/strata/SKILL.md` is installed.
-- Configure the MCP server if you want AI context retrieval.
+- Run `python -m cxl_strata.cli --init` (or `strata init`) from the workspace root. This installs:
+  - `.cursor/skills/strata/SKILL.md` (`/strata` commands)
+  - `.cursor/rules/strata-memory-capture.mdc` plus seven orchestration rules for handoffs, blueprints, reports, and agent context
+  - `.cursor/hooks.json` and hook scripts (session digest + reindex on edit)
+- Use `/strata` from Cursor once the skill is installed.
+- Configure both MCP servers if you want central API retrieval and local index tools.
 
 Claude:
 
@@ -312,6 +323,10 @@ MCP config example:
         "STRATA_API_URL": "https://strata.example.com",
         "STRATA_API_KEY": "strata_live_your_personal_token"
       }
+    },
+    "workspace-knowledge": {
+      "command": "python",
+      "args": ["-m", "cxl_strata.workspace_index.mcp_server"]
     }
   }
 }
@@ -342,6 +357,7 @@ Local SQLite and app:
 ```bash
 strata index
 strata pull
+ls .md/handoff .md/blueprints .md/reports
 ls .md/workspace_index.sqlite
 strata app --open
 ```
@@ -350,6 +366,13 @@ PowerShell SQLite check:
 
 ```powershell
 Test-Path .md\workspace_index.sqlite
+Test-Path .md\handoff
+```
+
+After a client update, confirm workspace assets:
+
+```bash
+strata refresh
 ```
 
 See [Quick Start](docs/quickstart.md#10-smoke-test).
@@ -365,6 +388,7 @@ Common issues:
 - Sync failures
 - Secret detection `422`
 - Local SQLite database missing
+- Missing `.md/handoff` / blueprints / reports folders
 - Localhost app opens but looks empty
 - MCP tools do not appear
 - Apache/Nginx reverse proxy `502`

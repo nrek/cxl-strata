@@ -22,11 +22,13 @@ PostgreSQL
 Search, recent history, shared docs, MCP retrieval
 ```
 
-The workstation also keeps a local SQLite cache:
+The workstation also keeps a local knowledge layout and SQLite cache:
 
 ```text
-Workspace markdown files + pulled shared docs
+.md/handoff/  .md/blueprints/  .md/reports/
+  + pulled shared docs + agent rules
       |
+      | strata init / strata refresh
       | strata index / strata pull
       v
 .md/workspace_index.sqlite
@@ -36,15 +38,19 @@ Workspace markdown files + pulled shared docs
 http://127.0.0.1:8765
 ```
 
+`strata init` (and installer `--init`) create the `.md/` folders and install Cursor skill/rules/hooks. `strata refresh` and app startup re-apply missing packaged assets after client updates without overwriting existing files.
+
 ## Components
 
 | Component | Path | Role |
 |-----------|------|------|
 | Central API | `api/` | FastAPI app, auth, memory events, shared documents, key management |
 | CLI | `cli/` | `strata` command, repo config, JSONL queue, sync/search, local workspace index |
+| Workspace scaffold | `cli/cxl_strata/workspace_scaffold.py` | Idempotent `.md/handoff`, `.md/blueprints`, `.md/reports` layout |
 | Local app | `cli/cxl_strata/app/` | Browser UI over `.md/workspace_index.sqlite` |
 | MCP server | `mcp/` | Stdio MCP server that reads from the central API |
-| Agent integrations | `cli/cxl_strata/skills/`, `cursor-rules/` | Cursor skill support for `/strata`; Claude/Codex use CLI, MCP, and their normal instruction files |
+| Local workspace MCP | `cli/cxl_strata/workspace_index/mcp_server.py` | MCP tools over the local SQLite index (`workspace-knowledge`) |
+| Agent integrations | `cli/cxl_strata/skills/`, `cli/cxl_strata/rules/`, `cli/cxl_strata/hooks/` | Cursor skill, orchestration rules, hooks; Claude/Codex use CLI, MCP, and their normal instruction files |
 | Docs | `docs/` | Server setup, provisioning, client install, security, troubleshooting |
 
 ## Storage
@@ -56,7 +62,11 @@ http://127.0.0.1:8765
 | `.strata/config.json` | Each repo | API URL, org, project, repo, actor hints |
 | `~/.strata/global.json` | Workstation | User-level API defaults from installers |
 | `~/.strata/secrets.json` | Workstation | User-level API key |
+| `.md/handoff/` | Workspace root | Per-project handoff markdown |
+| `.md/blueprints/` | Workspace root | Architecture blueprints |
+| `.md/reports/` | Workspace root | Audits, digests, and export artifacts |
 | `.md/workspace_index.sqlite` | Workspace root | Local searchable cache for the browser app and agent context |
+| `.cursor/rules/`, `.cursor/hooks/` | Workspace root | Packaged agent rules and Cursor hooks (installed by init/refresh) |
 
 ## API Boundaries
 

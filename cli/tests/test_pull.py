@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from cxl_strata import pull as pull_mod
 from cxl_strata.path_guard import is_scratch_path
 from cxl_strata.pull import needs_pull
+from cxl_strata.workspace_index import db
+from cxl_strata.workspace_index.paths import set_workspace_root
 
 
 def test_needs_pull_when_missing_local() -> None:
@@ -50,3 +55,55 @@ def test_is_scratch_path_allows_workspace_knowledge() -> None:
     assert is_scratch_path(".cursor/skills/strata/SKILL.md") is False
     assert is_scratch_path(".codex/AGENTS.md") is False
     assert is_scratch_path("") is False
+
+
+def _remote_row(*, kind: str, path: str, body: str) -> dict:
+    return {
+        "id": f"remote-{kind}-1",
+        "kind": kind,
+        "project_slug": "test-proj",
+        "path": path,
+        "title": "Shared doc",
+        "body": body,
+        "body_hash": "hash1",
+        "created_at": "2026-07-01T00:00:00Z",
+        "updated_at": "2026-07-01T00:00:00Z",
+    }
+
+
+def test_pull_materializes_rule_to_disk(tmp_path: Path, monkeypatch) -> None:
+    set_workspace_root(tmp_path)
+    rows = [_remote_row(kind="rule", path=".cursor/rules/blueprints.mdc", body="# Rule body\n")]
+    monkeypatch.setattr(pull_mod.api_client, "list_documents", lambda **kwargs: rows)
+
+    result = pull_mod.pull_documents()
+
+    assert result["pulled"] == 1
+    assert result["materialized"] == 1
+    rule_file = tmp_path / ".cursor" / "rules" / "blueprints.mdc"
+    assert rule_file.is_file()
+    assert rule_file.read_text(encoding="utf-8") == "# Rule body\n"
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT storage FROM documents WHERE path = ?",
+            (".cursor/rules/blueprints.mdc",),
+        ).fetchone()
+    assert row["storage"] == "file"
+
+
+def test_pull_does_not_materialize_handoffs(tmp_path: Path, monkeypatch) -> None:
+    set_workspace_root(tmp_path)
+    rows = [
+        _remote_row(
+            kind="handoff",
+            path=".md/handoff/test-proj/2026-07-01T00-00-00Z.md",
+            body="# Handoff\n",
+        )
+    ]
+    monkeypatch.setattr(pull_mod.api_client, "list_documents", lambda **kwargs: rows)
+
+    result = pull_mod.pull_documents()
+
+    assert result["pulled"] == 1
+    assert result["materialized"] == 0
+    assert not (tmp_path / ".md" / "handoff" / "test-proj" / "2026-07-01T00-00-00Z.md").exists()

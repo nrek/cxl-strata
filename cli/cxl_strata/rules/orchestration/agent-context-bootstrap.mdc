@@ -1,0 +1,71 @@
+---
+description: DB-first agent context bootstrap — SQLite routes discovery; markdown holds full payloads.
+alwaysApply: true
+---
+
+# Agent context bootstrap (DB routes, markdown payloads)
+
+The workspace SQLite index (`.md/workspace_index.sqlite`, STRATA) is the **genesis point for discovery**. Markdown handoffs, blueprints, and plans are the **payload** — read in full only after the index narrows candidates.
+
+<HARD-GATE>
+Before **Plan** or **Build** on any non-trivial task (more than a one-file trivial edit), run this sequence in order. Skip only for pure Q&A about visible code or when this session already ran the sequence for the same task.
+</HARD-GATE>
+
+## Bootstrap sequence
+
+| Step | Action | MCP tool (`workspace-knowledge`) | Fallback |
+|------|--------|----------------------------------|----------|
+| 1 | Blueprint for the active repo | `knowledge_blueprint(project)` | Read `.md/blueprints/<repo>.md` |
+| 2 | Recent handoffs (48h window) | `knowledge_recent(project, kind=handoff, hours=48)` | STRATA app search (`strata app --open`) |
+| 3 | Cross-project prior art | `knowledge_graph_neighbors(path_or_query="<one-line task>")` | STRATA app graph view |
+| 4 | FTS fallback if step 3 is empty or all weights &lt; 0.15 | `knowledge_search(query)` | STRATA app search |
+| 5 | Deep read survivors only | `knowledge_get(path)` or **Read** the file | Read the file on disk (storage=file only) |
+
+Use **free-text** for step 3 (task description), not a doc path — path mode is for when you already know the anchor document.
+
+## Thresholds and discipline
+
+- Treat graph hits with `link_type: explicit` or `weight >= 0.15` as prior art — read before designing.
+- Weaker graph hits are noise; do not pad plans with marginal references.
+- After steps 3–4, read **full bodies only for the 2–5 best candidates** — not every search hit.
+- If prior art solves the problem, **reuse and cite** the doc in plan/handoff instead of re-deriving.
+- If prior art shows a failed approach, say what differs this time.
+- Valid outcome: note briefly "no prior art found" and proceed.
+
+## Do not
+
+- **Do not** grep or walk `.md/handoff/**`, `.md/blueprints/**`, or `.cursor/plans/**` for discovery — use the index.
+- **Do not** use the file tree as the entry point for cross-repo context.
+
+## Archived and storage modes
+
+| `storage` | Read full body via |
+|-----------|-------------------|
+| `file` (active handoff, &lt; ~96h) | `knowledge_get` or **Read** on disk path |
+| `db_only` (archived handoff, pruned plan) | **`knowledge_get` only** — disk path may not exist |
+
+## MCP unavailable
+
+If `workspace-knowledge` MCP is not connected, use the STRATA localhost app (`strata app --open`) for search and graph — do not skip bootstrap and grep instead.
+
+## Index freshness
+
+If queries miss documents you know exist, index before falling back to file-tree search:
+
+```bash
+strata index
+# or STRATA app → Files to Strata
+```
+
+The `afterFileEdit` hook reindexes handoffs, blueprints, plans, and rules on save; bulk or stale indexes need an explicit `strata index`.
+
+## Multi-repo scoped prompts
+
+When the prompt starts with `[repo-a, repo-b]`, run steps 1–2 **per scoped repo**, then step 3 once with the combined task description (graph links across projects).
+
+## Related rules
+
+- Blueprint gate: [blueprints.mdc](blueprints.mdc)
+- Handoff write/read lifecycle: [handoff-logging.mdc](handoff-logging.mdc)
+- Graph prior-art detail: [prior-art.mdc](prior-art.mdc)
+- MCP/CLI reference: [workspace-knowledge.mdc](workspace-knowledge.mdc)

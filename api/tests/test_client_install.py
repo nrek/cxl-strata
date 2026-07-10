@@ -21,7 +21,12 @@ def test_install_sh_served(client: TestClient) -> None:
     assert '"${STRATA_CMD[@]}" "${INDEX_ARGS[@]}"' in body
     assert 'APP_ARGS=(app --open)' in body
     assert "python3 -m cxl_strata.cli --init" in body
-    assert "installs .cursor/skills/strata/SKILL.md when a Cursor workspace is detected" in body
+    assert "scaffolds .md/handoff, .md/blueprints, .md/reports" in body
+    assert "orchestration rules (.cursor/rules/)" in body
+    assert "workspace-knowledge" in body
+    assert "cxl_strata.workspace_index.mcp_server" in body
+    assert 'refresh || echo "==> Workspace refresh skipped' in body
+    assert "Refreshing STRATA workspace assets" in body
 
 
 def test_install_ps1_served(client: TestClient) -> None:
@@ -41,7 +46,12 @@ def test_install_ps1_served(client: TestClient) -> None:
     assert "Invoke-Strata @indexArgs" in body
     assert '$appArgs = @("app", "--open")' in body
     assert "python -m cxl_strata.cli --init" in body
-    assert "installs .cursor\\skills\\strata\\SKILL.md when a Cursor workspace is detected" in body
+    assert "scaffolds .md\\handoff, .md\\blueprints, .md\\reports" in body
+    assert "orchestration rules (.cursor\\rules\\)" in body
+    assert "workspace-knowledge" in body
+    assert "cxl_strata.workspace_index.mcp_server" in body
+    assert "Invoke-Strata refresh" in body
+    assert "Refreshing STRATA workspace assets" in body
 
 
 def test_client_manifest(client: TestClient) -> None:
@@ -61,6 +71,17 @@ def test_client_manifest(client: TestClient) -> None:
     assert body["workspace_knowledge"]["post_key_bootstrap"] == "python -m cxl_strata.cli --init"
     assert body["workspace_knowledge"]["cursor_skill"] == ".cursor/skills/strata/SKILL.md"
     assert body["workspace_knowledge"]["cursor_rule"] == ".cursor/rules/strata-memory-capture.mdc"
+    orchestration = body["workspace_knowledge"]["cursor_orchestration_rules"]
+    assert len(orchestration) == 7
+    assert ".cursor/rules/handoff-logging.mdc" in orchestration
+    assert ".cursor/rules/blueprints.mdc" in orchestration
+    assert ".cursor/rules/reports-organization.mdc" in orchestration
+    assert ".cursor/hooks.json" in body["workspace_knowledge"]["cursor_hooks"]
+    assert body["workspace_knowledge"]["refresh"] == "strata refresh"
+    layout = body["workspace_knowledge"]["workspace_layout"]
+    assert ".md/handoff/" in layout
+    assert ".md/blueprints/" in layout
+    assert ".md/reports/" in layout
     assert "-Init" in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
     assert "-Project" not in body["workspace_knowledge"]["post_key_bootstrap_fallback_windows"]
 

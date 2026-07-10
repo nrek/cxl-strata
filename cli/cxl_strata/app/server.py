@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib import request
 from urllib.parse import parse_qs, urlparse
 
-from .. import client_update, cursor_rule, local_store
+from .. import client_update, cursor_rule, local_store, workspace_scaffold
 from ..documents import archive_paths, archive_prefix, delete_remote_path, stash_paths
 from ..local_store import load_config
 from ..version import client_version
@@ -28,10 +28,23 @@ def bootstrap_workspace_index(
     project: str | None = None,
     pull_shared: bool = False,
 ) -> dict:
-    """Create and warm the local SQLite index before the UI opens."""
+    """Create and warm the local SQLite index before the UI opens.
+
+    Also refreshes workspace assets (scaffold + Cursor rules/hooks) so clients
+    pick up new packaged assets after a client update: run_client_update()
+    relaunches `strata app`, which lands here with the upgraded package.
+    """
     stats: dict = {
         "db_path": str(paths.DB_PATH),
         "workspace_root": str(paths.WORKSPACE_ROOT),
+        "scaffold": workspace_scaffold.ensure_workspace_layout(
+            paths.WORKSPACE_ROOT, project=project
+        ),
+        # Detection-gated (no force): only refreshes existing Cursor workspaces,
+        # and install_* never overwrite files that already exist on disk.
+        "integrations": cursor_rule.install_supported_agent_integrations(
+            paths.WORKSPACE_ROOT
+        ),
         "index": indexer.index_all(prune=False),
     }
     if pull_shared:
@@ -118,12 +131,40 @@ def setup_status() -> dict:
             "fix": "strata index",
         },
     ]
+    md_root = paths.WORKSPACE_ROOT / ".md"
+    for sub in ("handoff", "blueprints", "reports"):
+        checks.append({
+            "id": f"md_{sub}",
+            "label": f".md/{sub} directory",
+            "ok": (md_root / sub).is_dir(),
+            "path": str(md_root / sub),
+            "fix": "python -m cxl_strata.cli --init",
+        })
     if is_cursor_workspace:
         checks.append({
             "id": "cursor_skill",
             "label": "Cursor STRATA skill",
             "ok": _cursor_skill_ok(skill_path),
             "path": str(skill_path),
+            "fix": "python -m cxl_strata.cli --init",
+        })
+        rules_dir = paths.WORKSPACE_ROOT / cursor_rule.RULES_DIR_DEST
+        missing_rules = [
+            name for name in cursor_rule.ORCHESTRATION_RULES
+            if not (rules_dir / name).is_file()
+        ]
+        checks.append({
+            "id": "orchestration_rules",
+            "label": "Cursor orchestration rules",
+            "ok": not missing_rules,
+            "path": str(rules_dir) + (f" (missing: {', '.join(missing_rules)})" if missing_rules else ""),
+            "fix": "python -m cxl_strata.cli --init",
+        })
+        checks.append({
+            "id": "cursor_hooks",
+            "label": "Cursor hooks",
+            "ok": (paths.WORKSPACE_ROOT / cursor_rule.HOOKS_JSON_DEST).is_file(),
+            "path": str(paths.WORKSPACE_ROOT / cursor_rule.HOOKS_JSON_DEST),
             "fix": "python -m cxl_strata.cli --init",
         })
     return {

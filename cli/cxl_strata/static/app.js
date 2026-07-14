@@ -498,6 +498,11 @@ function confirmLargeSync(count) {
 function setToolCount(id, value) {
   const el = $(id);
   if (!el) return;
+  if (value === null || value === undefined) {
+    el.textContent = "(?)";
+    el.hidden = false;
+    return;
+  }
   const n = Number(value);
   if (Number.isFinite(n) && n > 0) {
     el.textContent = `(${n})`;
@@ -515,37 +520,43 @@ function setToolActionDot(hasActions) {
 }
 
 async function refreshToolCounts() {
-  let indexCount = 0;
-  let syncCount = 0;
-  let pullCount = 0;
-
+  const project =
+    state.view === "app" && state.activeProject ? state.activeProject : null;
+  const query = project ? `?project=${encodeURIComponent(project)}` : "";
   try {
-    const indexPending = await api("/api/index/pending");
-    indexCount = Number(indexPending.count) || 0;
-  } catch (_) {
-    indexCount = 0;
-  }
-  setToolCount("#count-index-pending", indexCount);
-
-  try {
-    await loadSyncLocal({ resetPage: false });
-    syncCount = batchSyncPaths(state.syncItems).length;
-  } catch (_) {
-    syncCount = 0;
-  }
-  setToolCount("#count-sync-pending", syncCount);
-
-  if (state.apiOnline) {
-    try {
-      const remotePending = await api("/api/sync/remote-pending");
-      state.remotePending = remotePending.pending || 0;
-    } catch (_) {
-      /* keep current count */
+    const status = await api(`/api/sync/status${query}`);
+    state.transferStatus = status;
+    const indexCount = status.index?.available ? status.index.count : null;
+    const syncCount = status.sync?.available ? status.sync.count : null;
+    const pullCount = status.pull?.available ? status.pull.count : null;
+    state.remotePending = pullCount || 0;
+    setToolCount("#count-index-pending", indexCount);
+    setToolCount("#count-sync-pending", syncCount);
+    setToolCount("#count-pull-pending", pullCount);
+    const conflicts = Number(status.pull?.conflicts) || 0;
+    if (conflicts > 0) {
+      const pullBadge = $("#count-pull-pending");
+      if (pullBadge) {
+        pullBadge.textContent = `(${Number(pullCount) || 0} · ${conflicts} conflict${
+          conflicts === 1 ? "" : "s"
+        })`;
+        pullBadge.hidden = false;
+      }
     }
+    setToolActionDot(
+      Number(indexCount || 0) +
+        Number(syncCount || 0) +
+        Number(pullCount || 0) +
+        conflicts >
+        0
+    );
+  } catch (_) {
+    state.transferStatus = null;
+    setToolCount("#count-index-pending", null);
+    setToolCount("#count-sync-pending", null);
+    setToolCount("#count-pull-pending", null);
+    setToolActionDot(false);
   }
-  pullCount = state.apiOnline ? Number(state.remotePending) || 0 : 0;
-  setToolCount("#count-pull-pending", pullCount);
-  setToolActionDot(indexCount + syncCount + pullCount > 0);
 }
 
 async function runToolCommand(command) {
@@ -563,34 +574,24 @@ async function runToolCommand(command) {
         setToolStatus("Remote API is offline. Local search remains available.");
         return;
       }
-      await api("/api/pull", {
+      const result = await api("/api/pull", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(scopedProject ? { project: scopedProject } : {}),
       });
       await refreshDashboard();
       if (scopedProject) await refreshActiveProjectResults();
-      await refreshToolCounts();
       setToolStatus(
-        scopedProject
-          ? `Remote pull complete for ${scopedProject}.`
-          : "Remote pull complete."
+        `Pulled ${result.pulled || 0} remote artifact${result.pulled === 1 ? "" : "s"}${
+          result.conflicts ? `; ${result.conflicts} conflict${result.conflicts === 1 ? "" : "s"} require review` : ""
+        }${scopedProject ? ` for ${scopedProject}` : ""}.`
       );
       return;
     }
 
     if (command === "sync-local") {
-      let items = state.syncItems;
-      if (scopedProject) {
-        const params = filesFilterParams();
-        params.set("project", scopedProject);
-        const data = await api(`/api/sync/local?${params.toString()}`);
-        items = data.items || [];
-      } else if (!items.length) {
-        await loadSyncLocal({ resetPage: false });
-        items = state.syncItems;
-      }
-      const paths = batchSyncPaths(items);
+      await refreshToolCounts();
+      const paths = state.transferStatus?.sync?.paths || [];
       if (!paths.length) {
         setToolStatus("All local artifacts are already shared or locked.");
         return;
@@ -599,11 +600,13 @@ async function runToolCommand(command) {
         setToolStatus("Sync cancelled.");
         return;
       }
-      await syncPaths(paths);
-      await refreshRemotePending();
-      await refreshToolCounts();
+      const result = await syncPaths(paths);
+      const syncedCount = result?.synced?.length || 0;
+      const failedCount = result?.failed?.length || 0;
       setToolStatus(
-        `Shared ${paths.length} local artifact${paths.length === 1 ? "" : "s"}${scopedProject ? ` from ${scopedProject}` : ""}.`
+        `Shared ${syncedCount} local artifact${syncedCount === 1 ? "" : "s"}${
+          failedCount ? `; ${failedCount} failed` : ""
+        }${scopedProject ? ` from ${scopedProject}` : ""}.`
       );
       return;
     }
@@ -612,7 +615,7 @@ async function runToolCommand(command) {
       const stats = await api("/api/index/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify(scopedProject ? { project: scopedProject } : {}),
       });
       await Promise.all([
         loadRecentLocal({ resetPage: false }),
@@ -622,7 +625,7 @@ async function runToolCommand(command) {
       const indexed = stats.indexed ?? 0;
       setToolStatus(
         indexed
-          ? `Added ${indexed} file${indexed === 1 ? "" : "s"} to Strata.`
+          ? `Indexed ${indexed} file${indexed === 1 ? "" : "s"} in Strata.`
           : "All workspace files are already in Strata."
       );
       return;
@@ -1496,8 +1499,6 @@ async function indexSearchResult(path) {
   await indexPaths([path]);
   if (btn) setActionIdle(btn, ACTION.indexLabel);
   await refreshActiveProjectResults();
-  await loadRecentLocal({ resetPage: false });
-  await loadPotentialSecrets({ resetPage: false });
 }
 
 async function shareDocFromModal() {
@@ -1533,6 +1534,7 @@ async function toggleSyncLock(path, btn) {
     if (state.view === "app" && state.activeProject) {
       await refreshActiveProjectResults();
     }
+    await refreshToolCounts();
   } catch (err) {
     showToast(`Lock update failed: ${err.message}`);
   } finally {
@@ -1554,8 +1556,6 @@ async function indexDocFromModal() {
   setActionBusy(btn, ACTION.indexBusy);
   try {
     await indexPaths([path]);
-    await loadRecentLocal({ resetPage: false });
-    await loadPotentialSecrets({ resetPage: false });
   } finally {
     setActionIdle(btn, ACTION.indexLabel);
   }
@@ -1618,6 +1618,7 @@ async function executeDeleteFromStrata(path) {
     if (state.view === "app" && state.activeProject) {
       await refreshActiveProjectResults();
     }
+    await refreshToolCounts();
   } catch (err) {
     showToast(`Delete failed: ${err.message}`);
   } finally {
@@ -1659,6 +1660,7 @@ async function archiveDocPath(path) {
     if (state.view === "app" && state.activeProject) {
       await refreshActiveProjectResults();
     }
+    await refreshToolCounts();
   } catch (err) {
     showToast(`Archive failed: ${err.message}`);
   }
@@ -2186,7 +2188,7 @@ async function syncPaths(paths) {
   if (!paths.length) {
     showToast("Nothing to share — reload the Share tab or unlock files.");
     setToolStatus("Nothing to share.");
-    return;
+    return { synced: [], failed: [], skipped: [] };
   }
   showToast("redacting secrets from sync...", { timeout: 1800 });
   setToolStatus("redacting secrets from sync...");
@@ -2216,7 +2218,8 @@ async function syncPaths(paths) {
   await loadRecentLocal({ resetPage: false });
   await loadPotentialSecrets({ resetPage: false });
   await refreshActiveProjectResults();
-  await refreshRemotePending();
+  await refreshToolCounts();
+  return result;
 }
 
 async function indexPaths(paths) {
@@ -2228,6 +2231,7 @@ async function indexPaths(paths) {
   await loadSyncLocal();
   await loadRecentLocal({ resetPage: false });
   await loadPotentialSecrets({ resetPage: false });
+  await refreshToolCounts();
 }
 
 function renderApiStatus(cfg) {
@@ -2426,11 +2430,9 @@ function renderStatsLine(stats) {
 async function refreshRemotePending() {
   if (!state.apiOnline) return;
   try {
-    const remotePending = await api("/api/sync/remote-pending");
-    state.remotePending = remotePending.pending || 0;
+    await refreshToolCounts();
     const stats = await api("/api/stats");
     renderStatsLine(stats);
-    await refreshToolCounts();
   } catch (_) {
     /* keep current stats */
   }

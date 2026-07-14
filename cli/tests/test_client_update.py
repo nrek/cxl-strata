@@ -6,7 +6,7 @@ from cxl_strata.version import __version__, client_version
 
 def test_client_version_matches_bundled_constant() -> None:
     assert client_version()
-    assert __version__ == "0.3.2"
+    assert __version__ == "0.3.3"
 
 
 def test_update_status_offline_when_manifest_unreachable(

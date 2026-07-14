@@ -44,6 +44,9 @@ _MIGRATION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("sync_ignored_at", "TEXT"),
     ("sync_ignore_reason", "TEXT"),
     ("sync_locked", "INTEGER NOT NULL DEFAULT 0"),
+    ("indexed_file_body_hash", "TEXT"),
+    ("last_pushed_body_hash", "TEXT"),
+    ("remote_body_hash", "TEXT"),
 )
 
 
@@ -51,9 +54,32 @@ def init_db(conn: sqlite3.Connection) -> None:
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     conn.executescript(schema)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(documents)").fetchall()}
+    added_columns: set[str] = set()
     for name, typedef in _MIGRATION_COLUMNS:
         if name not in cols:
             conn.execute(f"ALTER TABLE documents ADD COLUMN {name} {typedef}")
+            added_columns.add(name)
+    # Legacy shared/pulled rows stored the acknowledged remote hash in
+    # ``body_hash``. Seed both checkpoints as clean; future local indexing only
+    # changes ``body_hash`` while transfers advance these checkpoint columns.
+    if {"last_pushed_body_hash", "remote_body_hash"} & added_columns:
+        conn.execute(
+            """
+            UPDATE documents
+            SET last_pushed_body_hash = COALESCE(last_pushed_body_hash, body_hash),
+                remote_body_hash = COALESCE(remote_body_hash, body_hash)
+            WHERE remote_id IS NOT NULL
+            """
+        )
+    if "indexed_file_body_hash" in added_columns:
+        conn.execute(
+            """
+            UPDATE documents
+            SET indexed_file_body_hash = body_hash
+            WHERE indexed_file_body_hash IS NULL AND remote_id IS NULL
+                  AND COALESCE(storage, 'file') = 'file'
+            """
+        )
     # Index on a migrated column must be created after the ALTERs on legacy DBs.
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_documents_published ON documents(published_at)"
@@ -100,6 +126,9 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         "shared_at": None,
         "synced_at": None,
         "remote_updated_at": None,
+        "indexed_file_body_hash": None,
+        "last_pushed_body_hash": None,
+        "remote_body_hash": None,
         "sync_ignored_at": None,
         "sync_ignore_reason": None,
         "sync_locked": 0,
@@ -112,15 +141,18 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             body, body_hash, plan_status, linear_task_id, files_changed,
             deploy_commands, tags, folder_status, status_mismatch, storage,
             origin, remote_id, author_name, author_email, shared_at, synced_at,
-            remote_updated_at, sync_ignored_at, sync_ignore_reason, sync_locked
+            remote_updated_at, indexed_file_body_hash, last_pushed_body_hash, remote_body_hash,
+            sync_ignored_at, sync_ignore_reason, sync_locked
         ) VALUES (
             :id, :kind, :project, :path, :title, :created_at, :updated_at, :published_at,
             :body, :body_hash, :plan_status, :linear_task_id, :files_changed,
             :deploy_commands, :tags, :folder_status, :status_mismatch,
             COALESCE(:storage, 'file'),
             COALESCE(:origin, 'local'), :remote_id, :author_name, :author_email,
-            :shared_at, :synced_at, :remote_updated_at, :sync_ignored_at,
-            :sync_ignore_reason, COALESCE(:sync_locked, 0)
+            :shared_at, :synced_at, :remote_updated_at, :indexed_file_body_hash,
+            :last_pushed_body_hash,
+            :remote_body_hash, :sync_ignored_at, :sync_ignore_reason,
+            COALESCE(:sync_locked, 0)
         )
         ON CONFLICT(path) DO UPDATE SET
             kind = excluded.kind,
@@ -147,6 +179,15 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             synced_at = COALESCE(excluded.synced_at, documents.synced_at),
             remote_updated_at = COALESCE(
                 excluded.remote_updated_at, documents.remote_updated_at
+            ),
+            indexed_file_body_hash = COALESCE(
+                excluded.indexed_file_body_hash, documents.indexed_file_body_hash
+            ),
+            last_pushed_body_hash = COALESCE(
+                excluded.last_pushed_body_hash, documents.last_pushed_body_hash
+            ),
+            remote_body_hash = COALESCE(
+                excluded.remote_body_hash, documents.remote_body_hash
             ),
             sync_ignored_at = COALESCE(
                 documents.sync_ignored_at, excluded.sync_ignored_at
@@ -227,68 +268,43 @@ def mark_shared(
     author_email: str | None,
     shared_at: str | None = None,
     remote_updated_at: str | None = None,
-    body_hash: str | None = None,
+    remote_body_hash: str | None = None,
 ) -> None:
     """Mark a local doc as shared after a successful stash/import-batch.
 
-    Stamps ``remote_updated_at`` (and optionally ``body_hash``) so
-    ``count_remote_pending`` / ``needs_pull`` do not treat the author's own
-    just-synced content as still needing a pull.
+    Preserve ``body_hash`` as the current local SQLite revision. The local
+    revision just pushed and the server revision acknowledged are separate
+    checkpoints because server-side redaction can change the remote hash.
     """
     now = shared_at or utc_now()
     remote_ts = remote_updated_at or now
-    if body_hash:
-        conn.execute(
-            """
-            UPDATE documents SET
-                origin = 'shared',
-                remote_id = ?,
-                author_name = COALESCE(?, author_name),
-                author_email = COALESCE(?, author_email),
-                shared_at = ?,
-                synced_at = ?,
-                remote_updated_at = ?,
-                body_hash = ?,
-                sync_ignored_at = NULL,
-                sync_ignore_reason = NULL
-            WHERE path = ?
-            """,
-            (
-                remote_id,
-                author_name,
-                author_email,
-                now,
-                now,
-                remote_ts,
-                body_hash,
-                path.replace("\\", "/"),
-            ),
-        )
-    else:
-        conn.execute(
-            """
-            UPDATE documents SET
-                origin = 'shared',
-                remote_id = ?,
-                author_name = COALESCE(?, author_name),
-                author_email = COALESCE(?, author_email),
-                shared_at = ?,
-                synced_at = ?,
-                remote_updated_at = ?,
-                sync_ignored_at = NULL,
-                sync_ignore_reason = NULL
-            WHERE path = ?
-            """,
-            (
-                remote_id,
-                author_name,
-                author_email,
-                now,
-                now,
-                remote_ts,
-                path.replace("\\", "/"),
-            ),
-        )
+    conn.execute(
+        """
+        UPDATE documents SET
+            origin = 'shared',
+            remote_id = ?,
+            author_name = COALESCE(?, author_name),
+            author_email = COALESCE(?, author_email),
+            shared_at = ?,
+            synced_at = ?,
+            remote_updated_at = ?,
+            last_pushed_body_hash = body_hash,
+            remote_body_hash = COALESCE(?, remote_body_hash, body_hash),
+            sync_ignored_at = NULL,
+            sync_ignore_reason = NULL
+        WHERE path = ?
+        """,
+        (
+            remote_id,
+            author_name,
+            author_email,
+            now,
+            now,
+            remote_ts,
+            remote_body_hash,
+            path.replace("\\", "/"),
+        ),
+    )
 
 
 def set_sync_locked(
@@ -322,6 +338,9 @@ def mark_remote_deleted(
             remote_id = NULL,
             shared_at = NULL,
             synced_at = NULL,
+            remote_updated_at = NULL,
+            last_pushed_body_hash = NULL,
+            remote_body_hash = NULL,
             sync_ignored_at = ?,
             sync_ignore_reason = ?
         WHERE path = ?
@@ -358,6 +377,9 @@ def archive_document(
             remote_id = NULL,
             shared_at = NULL,
             synced_at = NULL,
+            remote_updated_at = NULL,
+            last_pushed_body_hash = NULL,
+            remote_body_hash = NULL,
             sync_ignored_at = ?,
             sync_ignore_reason = ?,
             body = '',

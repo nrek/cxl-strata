@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -119,6 +119,13 @@ class MemoryEvent(Base):
 
 class SharedDocument(Base):
     __tablename__ = "shared_documents"
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id",
+            "path",
+            name="uq_shared_documents_organization_path",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)

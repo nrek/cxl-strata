@@ -101,10 +101,19 @@ def _disk_stale_vs_synced(row, path: Path) -> bool:
         return False
 
 
-def pending_paths(conn) -> list[str]:
+def _project_from_rel(rel: str) -> str | None:
+    parts = rel.replace("\\", "/").split("/")
+    if len(parts) >= 3 and parts[:2] == [".md", "handoff"]:
+        return parts[2]
+    if len(parts) >= 3 and parts[:2] == [".md", "blueprints"]:
+        return parts[2].removesuffix(".md")
+    return None
+
+
+def pending_paths(conn, *, project: str | None = None) -> list[str]:
     """Workspace files on disk that are new or changed vs the local index."""
     out: list[str] = []
-    for _kind, path in discover_files():
+    for file_kind, path in discover_files():
         rel = _rel(path)
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -113,16 +122,39 @@ def pending_paths(conn) -> list[str]:
         body_hash = hashlib.sha256(text.encode()).hexdigest()
         row = conn.execute(
             """
-            SELECT body_hash, sync_ignored_at, remote_id, synced_at, shared_at
+            SELECT body_hash, indexed_file_body_hash, sync_ignored_at,
+                   remote_id, synced_at, shared_at, project
             FROM documents WHERE path = ?
             """,
             (rel,),
         ).fetchone()
+        doc_project = row["project"] if row is not None else _project_from_rel(rel)
+        if project and doc_project is None and row is None:
+            try:
+                doc_project = parse_document(
+                    rel, text, kind=file_kind, path_obj=path
+                ).project
+            except (OSError, ValueError):
+                doc_project = None
+        if project and doc_project != project:
+            continue
         if row is not None and row["sync_ignored_at"]:
             continue
-        if row is not None and row["body_hash"] != body_hash and _disk_stale_vs_synced(row, path):
+        if row is None:
+            out.append(rel)
             continue
-        if row is None or row["body_hash"] != body_hash:
+        indexed_hash = row["indexed_file_body_hash"]
+        if indexed_hash is None:
+            # One-time migration for rows pulled/shared before file checkpoints
+            # existed. Preserve a lagging unchanged file as the disk baseline.
+            if _disk_stale_vs_synced(row, path):
+                conn.execute(
+                    "UPDATE documents SET indexed_file_body_hash = ? WHERE path = ?",
+                    (body_hash, rel),
+                )
+                continue
+            indexed_hash = row["body_hash"]
+        if indexed_hash != body_hash:
             out.append(rel)
     return out
 
@@ -154,17 +186,28 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
 
     existing = conn.execute(
         """
-        SELECT body_hash, published_at, remote_id, synced_at, shared_at
+        SELECT body_hash, indexed_file_body_hash, published_at, remote_id,
+               synced_at, shared_at
         FROM documents WHERE path = ?
         """,
         (rel_path,),
     ).fetchone()
-    if existing and existing["body_hash"] == body_hash:
+    if existing and existing["indexed_file_body_hash"] == body_hash:
         if not existing["published_at"]:
             _backfill_published_at(conn, rel_path, path, text, kind)
         return False
-    # Keep a fresher pulled/shared SQLite body; do not clobber it with stale disk.
-    if existing and existing["body_hash"] != body_hash and _disk_stale_vs_synced(existing, path):
+    # One-time migration for a pulled/shared row whose unchanged file predates
+    # explicit disk checkpoints.
+    if (
+        existing
+        and existing["indexed_file_body_hash"] is None
+        and existing["body_hash"] != body_hash
+        and _disk_stale_vs_synced(existing, path)
+    ):
+        conn.execute(
+            "UPDATE documents SET indexed_file_body_hash = ? WHERE path = ?",
+            (body_hash, rel_path),
+        )
         return False
 
     parsed = parse_document(rel_path, text, kind=kind, path_obj=path)
@@ -198,6 +241,7 @@ def index_file(conn, path: Path, kind: str | None = None) -> bool:
         "published_at": published,
         "body": text,
         "body_hash": body_hash,
+        "indexed_file_body_hash": body_hash,
         "plan_status": parsed.plan_status,
         "linear_task_id": parsed.linear_task_id,
         "files_changed": dumps_json(parsed.files_changed),

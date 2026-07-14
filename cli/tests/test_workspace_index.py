@@ -786,6 +786,7 @@ def test_stash_clears_remote_pending_for_author_own_docs(
     indexer.index_all(prune=False)
     path = ".md/handoff/test-proj/2026-06-30T12-00-00Z.md"
     remote_updated = "2026-07-10T12:00:00Z"
+    remote_hash = "remote-redacted-hash"
 
     def fake_import_batch(payload: list[dict]) -> dict:
         doc = payload[0]
@@ -795,7 +796,7 @@ def test_stash_clears_remote_pending_for_author_own_docs(
                     "path": doc["path"],
                     "remote_id": "remote-own-1",
                     "status": "upserted",
-                    "body_hash": doc["body_hash"],
+                    "body_hash": remote_hash,
                     "updated_at": remote_updated,
                 }
             ],
@@ -812,13 +813,20 @@ def test_stash_clears_remote_pending_for_author_own_docs(
     with db.connect() as conn:
         db.init_db(conn)
         row = conn.execute(
-            "SELECT remote_id, remote_updated_at, body_hash, origin FROM documents WHERE path = ?",
+            """
+            SELECT remote_id, remote_updated_at, body_hash, origin,
+                   last_pushed_body_hash, remote_body_hash
+            FROM documents WHERE path = ?
+            """,
             (path,),
         ).fetchone()
     assert row["remote_id"] == "remote-own-1"
     assert row["remote_updated_at"] == remote_updated
     assert row["origin"] == "shared"
     local_hash = row["body_hash"]
+    assert row["last_pushed_body_hash"] == local_hash
+    assert row["remote_body_hash"] == remote_hash
+    assert local_hash != remote_hash
 
     def fake_list_documents(**kwargs) -> list[dict]:
         if kwargs.get("offset", 0) != 0:
@@ -830,7 +838,7 @@ def test_stash_clears_remote_pending_for_author_own_docs(
                 "kind": "handoff",
                 "project_slug": "test-proj",
                 "title": "Handoff",
-                "body_hash": local_hash,
+                "body_hash": remote_hash,
                 "updated_at": remote_updated,
                 "author_name": "Author",
             }
@@ -1266,6 +1274,16 @@ def test_pull_does_not_create_outbound_sync_loop(
 
     monkeypatch.setattr(pull.api_client, "list_documents", fake_list_documents)
     indexer.index_all(prune=False)
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.mark_shared(
+            conn,
+            path=path,
+            remote_id="remote-loop-1",
+            author_name="Author",
+            author_email="author@example.com",
+            remote_updated_at="2026-07-08T12:00:00Z",
+        )
     assert pull.pull_documents()["pulled"] == 1
 
     # Disk still has the pre-pull body (mtime older than synced_at).
@@ -1287,7 +1305,7 @@ def test_pull_does_not_create_outbound_sync_loop(
     assert row["body"] == remote_body
     assert row["body_hash"] == remote_hash
 
-    # A real local edit after the pull still surfaces for Sync to Remote.
+    # A real local edit advances through Files-to-Strata before Sync-to-Remote.
     disk.write_text(
         "# Handoff — local edit after pull\n\n- **Changed:** mine\n",
         encoding="utf-8",
@@ -1295,7 +1313,13 @@ def test_pull_does_not_create_outbound_sync_loop(
     future = (datetime.now(timezone.utc) + timedelta(minutes=5)).timestamp()
     os.utime(disk, (future, future))
     pending_after_edit = sync_review.scan_pending()
-    assert path in {item["path"] for item in pending_after_edit}
+    assert path not in {item["path"] for item in pending_after_edit}
+    with db.connect() as conn:
+        db.init_db(conn)
+        assert path in indexer.pending_paths(conn)
+        assert indexer.index_file(conn, disk.resolve(), "handoff") is True
+    pending_after_index = sync_review.scan_pending()
+    assert path in {item["path"] for item in pending_after_index}
 
 
 def test_pending_paths_reports_new_and_changed_files(workspace: Path) -> None:

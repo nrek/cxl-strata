@@ -76,20 +76,19 @@ def _local_share_status(
         return "ignored", "ignored"
     if db_row is None:
         local_status = "new"
-    elif body_hash is not None and db_row.get("body_hash") != body_hash:
+    elif (
+        body_hash is not None
+        and db_row.get("indexed_file_body_hash", db_row.get("body_hash")) != body_hash
+    ):
         local_status = "changed"
     elif db_row.get("storage") == "db_only":
         local_status = "db_only"
 
     if db_row and db_row.get("remote_id"):
         share_status = "shared"
-        if local_status == "changed":
-            if _local_edit_after_sync(db_row, mtime):
-                share_status = "remote changed"
-            else:
-                # Pulled/shared DB is newer than disk — not an outbound sync.
-                local_status = "indexed"
-                share_status = "shared"
+        pushed_hash = db_row.get("last_pushed_body_hash")
+        if not pushed_hash or db_row.get("body_hash") != pushed_hash:
+            share_status = "local changed"
 
     return local_status, share_status
 
@@ -113,7 +112,11 @@ def scan_pending(
     author: str | None = None,
     show_all: bool = False,
 ) -> list[dict[str, Any]]:
-    """Return local artifacts that are new/changed/unshared vs SQLite."""
+    """Return indexed SQLite revisions that still need an outbound transfer.
+
+    Disk-only changes belong exclusively to ``Files to Strata``. They are not
+    eligible here until indexing advances the SQLite ``body_hash``.
+    """
     rows: list[dict[str, Any]] = []
     kind_list = _kinds_filter(kind, kinds)
 
@@ -125,7 +128,8 @@ def scan_pending(
                 """
                 SELECT path, title, body_hash, storage, origin, remote_id, shared_at,
                        synced_at, author_name, updated_at, published_at, sync_ignored_at,
-                       sync_ignore_reason, sync_locked
+                       sync_ignore_reason, sync_locked, last_pushed_body_hash,
+                       remote_body_hash, project
                 FROM documents
                 """
             ).fetchall()
@@ -136,6 +140,8 @@ def scan_pending(
             continue
         rel = path.relative_to(paths.WORKSPACE_ROOT).as_posix()
         db_row = indexed.get(rel)
+        if db_row is None:
+            continue
         if db_row and db_row.get("sync_ignored_at"):
             continue
         if project:
@@ -149,12 +155,28 @@ def scan_pending(
         except OSError:
             continue
 
-        local_status, share_status = _local_share_status(
-            db_row, body_hash=body_hash, mtime=mtime
+        # A disk revision not yet represented in SQLite is Files-to-Strata
+        # work, not an upload candidate. Uploading the older DB body here would
+        # make the pipeline race itself.
+        disk_pending = body_hash != db_row.get("body_hash")
+        outbound_pending = (
+            not db_row.get("remote_id")
+            or not db_row.get("last_pushed_body_hash")
+            or db_row.get("body_hash") != db_row.get("last_pushed_body_hash")
         )
-
-        if not show_all and local_status == "indexed" and share_status == "shared":
+        if disk_pending and not show_all:
             continue
+        if not outbound_pending and not show_all:
+            continue
+
+        local_status = "changed" if disk_pending else (
+            "archived" if db_row.get("storage") == "db_only" else "indexed"
+        )
+        share_status = (
+            "not shared"
+            if not db_row.get("remote_id")
+            else ("local changed" if outbound_pending else "shared")
+        )
 
         excerpt = ""
         try:
@@ -176,8 +198,16 @@ def scan_pending(
             "synced_at": db_row.get("synced_at") if db_row else None,
             "sync_ignored_at": db_row.get("sync_ignored_at") if db_row else None,
             "sync_locked": bool(db_row.get("sync_locked")) if db_row else False,
+            "body_hash": db_row.get("body_hash"),
+            "last_pushed_body_hash": db_row.get("last_pushed_body_hash"),
         }
         enriched = _with_sync_status(row_dict)
+        enriched["sync_status"] = (
+            "not_shared"
+            if not db_row.get("remote_id")
+            else ("changed" if outbound_pending else "shared")
+        )
+        enriched["syncable"] = outbound_pending and not bool(db_row.get("sync_locked"))
         enriched["local_status"] = local_status
         enriched["share_status"] = share_status
         rows.append(enriched)
@@ -199,7 +229,8 @@ def _append_db_only_pending(
     seen = {r["path"] for r in rows}
     clauses = [
         "COALESCE(storage, 'file') = 'db_only'",
-        "remote_id IS NULL",
+        "(remote_id IS NULL OR last_pushed_body_hash IS NULL"
+        " OR body_hash != last_pushed_body_hash)",
         "sync_ignored_at IS NULL",
         "COALESCE(sync_locked, 0) = 0",
     ]
@@ -219,6 +250,7 @@ def _append_db_only_pending(
             SELECT path, kind, project, title, updated_at, created_at, published_at,
                    origin, remote_id, shared_at, synced_at, sync_ignored_at,
                    sync_ignore_reason, sync_locked, author_name, storage,
+                   body_hash, last_pushed_body_hash,
                    substr(body, 1, 180) AS excerpt
             FROM documents
             WHERE {" AND ".join(clauses)}
@@ -241,14 +273,20 @@ def _append_db_only_pending(
             "share_status": "not shared",
             "author_name": effective_author_name(dict(db_row)),
             "excerpt": db_row["excerpt"] or "",
-            "remote_id": None,
+            "remote_id": db_row["remote_id"],
             "synced_at": db_row["synced_at"],
             "sync_ignored_at": None,
             "sync_locked": bool(db_row["sync_locked"]),
             "storage": "db_only",
             "origin": db_row["origin"] or "local",
+            "body_hash": db_row["body_hash"],
+            "last_pushed_body_hash": db_row["last_pushed_body_hash"],
         }
         enriched = _with_sync_status(row_dict)
+        enriched["sync_status"] = (
+            "not_shared" if not db_row["remote_id"] else "changed"
+        )
+        enriched["syncable"] = not bool(db_row["sync_locked"])
         enriched["local_status"] = "archived"
         enriched["share_status"] = "not shared"
         rows.append(enriched)
@@ -277,6 +315,7 @@ def scan_recent_locally_changed(
                 """
                 SELECT path, kind, project, title, created_at, published_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
+                       indexed_file_body_hash, last_pushed_body_hash,
                        storage, author_name, sync_ignored_at, sync_ignore_reason,
                        sync_locked, substr(body, 1, 180) AS excerpt
                 FROM documents
@@ -360,6 +399,7 @@ def scan_potential_secret_files(
                 """
                 SELECT path, kind, project, title, created_at, published_at, origin,
                        remote_id, shared_at, synced_at, updated_at, body_hash,
+                       indexed_file_body_hash, last_pushed_body_hash,
                        storage, author_name, sync_ignored_at, sync_ignore_reason,
                        sync_locked
                 FROM documents

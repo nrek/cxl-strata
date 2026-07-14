@@ -191,7 +191,9 @@ def register(app: typer.Typer) -> None:
         project: Optional[str] = typer.Option(None, "--project"),
         kind: Optional[str] = typer.Option(None, "--kind"),
         since: Optional[str] = typer.Option(None, "--since"),
-        limit: int = typer.Option(200, "--limit"),
+        limit: Optional[int] = typer.Option(
+            None, "--limit", help="Optional cap; defaults to all remote documents."
+        ),
     ) -> None:
         """Download shared documents from central API into local SQLite."""
         result = pull.pull_documents(project=project, kind=kind, since=since, limit=limit)

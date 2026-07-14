@@ -61,8 +61,6 @@ def document_to_dict(
     }
     if include_body:
         payload["body"] = row.body
-    else:
-        payload["body"] = row.body[:500]
     if include_comments:
         payload["comments"] = [comment_to_dict(c) for c in row.comments]
     return payload
@@ -227,7 +225,8 @@ class DocumentService:
             stmt.order_by(
                 func.coalesce(
                     SharedDocument.published_at, SharedDocument.created_at
-                ).desc()
+                ).desc(),
+                SharedDocument.id.desc(),
             )
             .offset(offset)
             .limit(limit)

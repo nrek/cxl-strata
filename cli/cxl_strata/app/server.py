@@ -280,17 +280,74 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/index/pending":
+            qs = parse_qs(parsed.query)
+            project = (qs.get("project") or [None])[0]
             with db.connect() as conn:
                 db.init_db(conn)
-                pending = indexer.pending_paths(conn)
+                pending = indexer.pending_paths(conn, project=project)
             _json_response(self, {"count": len(pending), "paths": pending[:100]})
             return
 
-        if path == "/api/sync/remote-pending":
+        if path == "/api/sync/status":
+            qs = parse_qs(parsed.query)
+            project = (qs.get("project") or [None])[0]
+            with db.connect() as conn:
+                db.init_db(conn)
+                index_pending = indexer.pending_paths(conn, project=project)
+            sync_items = sync_review.scan_pending(project=project)
+            sync_paths = [
+                item["path"] for item in sync_items if not item.get("sync_locked")
+            ]
+            remote: dict[str, object] = {
+                "available": False,
+                "count": None,
+                "conflicts": None,
+            }
             try:
                 from ..pull import count_remote_pending
 
-                _json_response(self, {"online": True, **count_remote_pending()})
+                remote_pending = count_remote_pending(project=project)
+                conflict_paths = set(remote_pending.get("conflict_paths") or [])
+                if conflict_paths:
+                    sync_paths = [p for p in sync_paths if p not in conflict_paths]
+                remote = {
+                    "available": True,
+                    "count": remote_pending["pending"],
+                    "conflicts": remote_pending.get("conflicts", 0),
+                    "conflict_paths": sorted(conflict_paths),
+                    "total_remote": remote_pending["total_remote"],
+                }
+            except Exception as exc:  # noqa: BLE001
+                remote["error"] = str(exc)
+            _json_response(
+                self,
+                {
+                    "project": project,
+                    "index": {
+                        "available": True,
+                        "count": len(index_pending),
+                        "paths": index_pending,
+                    },
+                    "sync": {
+                        "available": True,
+                        "count": len(sync_paths),
+                        "paths": sync_paths,
+                    },
+                    "pull": remote,
+                },
+            )
+            return
+
+        if path == "/api/sync/remote-pending":
+            qs = parse_qs(parsed.query)
+            project = (qs.get("project") or [None])[0]
+            try:
+                from ..pull import count_remote_pending
+
+                _json_response(
+                    self,
+                    {"online": True, **count_remote_pending(project=project)},
+                )
             except FileNotFoundError as exc:
                 _json_response(
                     self,
@@ -589,7 +646,15 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             return
 
         if parsed.path == "/api/index/run":
-            stats = indexer.index_all(prune=False)
+            body = _read_json(self)
+            project = body.get("project")
+            with db.connect() as conn:
+                db.init_db(conn)
+                pending = indexer.pending_paths(conn, project=project)
+            stats = indexer.index_paths(
+                [(paths.WORKSPACE_ROOT / rel).resolve() for rel in pending]
+            )
+            stats["pending_before"] = len(pending)
             _json_response(self, stats)
             return
 
@@ -605,16 +670,16 @@ class StrataAppHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/sync/index":
             body = _read_json(self)
-            paths = body.get("paths") or []
-            stats = sync_review.index_paths([str(p) for p in paths])
+            index_paths = body.get("paths") or []
+            stats = sync_review.index_paths([str(p) for p in index_paths])
             _json_response(self, stats)
             return
 
         if parsed.path == "/api/sync/upload":
             body = _read_json(self)
-            paths = [str(p) for p in (body.get("paths") or [])]
+            upload_paths = [str(p) for p in (body.get("paths") or [])]
             allow_locked = bool(body.get("allow_locked"))
-            result = stash_paths(paths, allow_locked=allow_locked)
+            result = stash_paths(upload_paths, allow_locked=allow_locked)
             _json_response(self, result)
             return
 
@@ -696,7 +761,11 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                     repo=body.get("repo"),
                     kind=body.get("kind"),
                     since=body.get("since"),
-                    limit=int(body.get("limit", 2000)),
+                    limit=(
+                        int(body["limit"])
+                        if body.get("limit") is not None
+                        else None
+                    ),
                 )
                 _json_response(self, result)
             except Exception as exc:  # noqa: BLE001

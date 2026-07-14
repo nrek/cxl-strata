@@ -107,7 +107,7 @@ def stash_paths(
                 author_name=author_name,
                 author_email=author_email,
                 remote_updated_at=row.get("updated_at") or row.get("remote_updated_at"),
-                body_hash=row.get("body_hash"),
+                remote_body_hash=row.get("body_hash"),
             )
             comment_errors.extend(
                 push_unsynced_comments(
@@ -239,7 +239,8 @@ def stash_filtered(
     with db.connect() as conn:
         db.init_db(conn)
         clauses = [
-            "(COALESCE(origin, 'local') != 'shared' OR remote_id IS NULL)",
+            "(remote_id IS NULL OR last_pushed_body_hash IS NULL"
+            " OR body_hash != last_pushed_body_hash)",
             "sync_ignored_at IS NULL",
             "COALESCE(sync_locked, 0) = 0",
         ]

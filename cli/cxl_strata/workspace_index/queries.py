@@ -32,6 +32,11 @@ def _sync_status(row: dict[str, Any]) -> str:
         return "ignored"
     if not row.get("remote_id"):
         return "not_shared"
+    if "last_pushed_body_hash" in row and row.get("body_hash"):
+        pushed_hash = row.get("last_pushed_body_hash")
+        if not pushed_hash or row.get("body_hash") != pushed_hash:
+            return "changed"
+        return "shared"
     updated_at = str(row.get("updated_at") or "")
     synced_at = str(row.get("synced_at") or "")
     if updated_at and synced_at and updated_at > synced_at:
@@ -326,6 +331,7 @@ def list_recent_local_documents(
         SELECT path, kind, project, title, created_at, updated_at, published_at,
                origin, remote_id, shared_at, synced_at, sync_ignored_at,
                sync_ignore_reason, author_name, storage, sync_locked,
+               body_hash, last_pushed_body_hash,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}
@@ -405,6 +411,7 @@ def list_shared_from_team_documents(
         f"""
         SELECT path, kind, project, title, created_at, updated_at, published_at,
                origin, remote_id, shared_at, synced_at, author_name, storage,
+               body_hash, last_pushed_body_hash,
                substr(body, 1, 180) AS excerpt
         FROM documents
         WHERE {" AND ".join(clauses)}

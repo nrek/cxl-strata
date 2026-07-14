@@ -26,7 +26,10 @@ CREATE TABLE IF NOT EXISTS documents (
     storage TEXT NOT NULL DEFAULT 'file',
     sync_ignored_at TEXT,
     sync_ignore_reason TEXT,
-    sync_locked INTEGER NOT NULL DEFAULT 0
+    sync_locked INTEGER NOT NULL DEFAULT 0,
+    indexed_file_body_hash TEXT,
+    last_pushed_body_hash TEXT,
+    remote_body_hash TEXT
 );
 
 CREATE TABLE IF NOT EXISTS plans (

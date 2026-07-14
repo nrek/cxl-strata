@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 
-from cxl_strata import cursor_rule, local_store, workspace_scaffold
+from cxl_strata import cursor_rule, local_store, pull, workspace_scaffold
 from cxl_strata.app.server import (
     StrataAppHandler,
     bootstrap_workspace_index,
@@ -276,3 +276,56 @@ def test_potential_secrets_endpoint_returns_redacted_rows(tmp_path: Path) -> Non
     assert len(payload["items"]) == 1
     assert payload["items"][0]["path"] == ".cursor/plans/draft/secret-plan.md"
     assert "supersecret123" not in payload["items"][0]["excerpt"]
+
+
+def test_sync_status_and_index_action_share_exact_project_scope(
+    tmp_path: Path, monkeypatch
+) -> None:
+    for project in ("alpha", "beta"):
+        folder = tmp_path / ".md" / "handoff" / project
+        folder.mkdir(parents=True)
+        (folder / "2026-07-14T12-00-00Z.md").write_text(
+            f"# Handoff — {project}\n", encoding="utf-8"
+        )
+    set_workspace_root(tmp_path)
+    seen_projects: list[str | None] = []
+
+    def fake_remote_pending(*, project=None, **kwargs) -> dict:
+        seen_projects.append(project)
+        return {
+            "pending": 2,
+            "conflicts": 0,
+            "pending_paths": ["remote-a", "remote-b"],
+            "conflict_paths": [],
+            "total_remote": 2,
+        }
+
+    monkeypatch.setattr(pull, "count_remote_pending", fake_remote_pending)
+    server, port = _serve_once(StrataAppHandler)
+    try:
+        import urllib.request
+
+        url = f"http://127.0.0.1:{port}/api/sync/status?project=alpha"
+        with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310
+            before = json.loads(response.read().decode("utf-8"))
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/index/run",
+            data=json.dumps({"project": "alpha"}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310
+            indexed = json.loads(response.read().decode("utf-8"))
+        with urllib.request.urlopen(url, timeout=3) as response:  # noqa: S310
+            after = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        server.server_close()
+
+    assert before["index"]["count"] == 1
+    assert before["sync"]["count"] == 0
+    assert before["pull"]["count"] == 2
+    assert indexed["indexed"] == 1
+    assert after["index"]["count"] == 0
+    assert after["sync"]["count"] == 1
+    assert seen_projects == ["alpha", "alpha"]

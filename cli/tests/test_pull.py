@@ -4,7 +4,7 @@ from pathlib import Path
 
 from cxl_strata import pull as pull_mod
 from cxl_strata.path_guard import is_scratch_path
-from cxl_strata.pull import needs_pull
+from cxl_strata.pull import needs_pull, remote_transfer_state
 from cxl_strata.workspace_index import db
 from cxl_strata.workspace_index.paths import set_workspace_root
 
@@ -20,10 +20,10 @@ def test_needs_pull_when_hash_differs() -> None:
     assert needs_pull(row, existing) is True
 
 
-def test_needs_pull_when_remote_updated_differs() -> None:
+def test_needs_pull_ignores_timestamp_format_or_value_when_hash_matches() -> None:
     row = {"path": ".md/handoff/x/a.md", "body_hash": "same", "updated_at": "2026-01-02T00:00:00Z"}
     existing = {"body_hash": "same", "remote_updated_at": "2026-01-01T00:00:00Z"}
-    assert needs_pull(row, existing) is True
+    assert needs_pull(row, existing) is False
 
 
 def test_needs_pull_when_fully_synced() -> None:
@@ -47,6 +47,41 @@ def test_needs_pull_skips_locally_archived_tombstone() -> None:
         "sync_ignored_at": "2026-01-01T12:00:00Z",
     }
     assert needs_pull(row, existing) is False
+
+
+def test_remote_change_conflicts_with_unpushed_local_revision() -> None:
+    row = {
+        "path": ".md/handoff/x/a.md",
+        "body_hash": "remote-new",
+        "updated_at": "2026-01-02T00:00:00Z",
+    }
+    existing = {
+        "body_hash": "local-new",
+        "last_pushed_body_hash": "shared-base",
+        "remote_body_hash": "shared-base",
+        "remote_id": "remote-1",
+        "remote_updated_at": "2026-01-01T00:00:00+00:00",
+        "sync_ignored_at": None,
+    }
+
+    assert remote_transfer_state(row, existing) == "conflict"
+    assert needs_pull(row, existing) is False
+
+
+def test_fetch_all_remote_documents_has_no_legacy_2000_row_cap(monkeypatch) -> None:
+    rows = [
+        {"id": f"remote-{i}", "path": f".md/handoff/x/{i}.md", "body_hash": str(i)}
+        for i in range(2105)
+    ]
+
+    def fake_list_documents(**kwargs) -> list[dict]:
+        offset = kwargs["offset"]
+        limit = kwargs["limit"]
+        return rows[offset : offset + limit]
+
+    monkeypatch.setattr(pull_mod.api_client, "list_documents", fake_list_documents)
+
+    assert len(pull_mod.fetch_all_remote_documents()) == 2105
 
 
 def test_is_scratch_path_blocks_hidden_subdirectories() -> None:

@@ -213,7 +213,7 @@ def test_tool_drawer_static_wiring() -> None:
     assert "remote-sync-btn" not in app_js
     assert "stats-sync-btn" not in style
     assert "function pullRemote(" not in app_js
-    assert "/api/index/pending" in app_js
+    assert "/api/sync/status" in app_js
     assert "/api/index/run" in app_js
     assert "Are you sure you want to sync ${count} files to Strata?" in app_js
     assert ".tool-count" in style
@@ -311,7 +311,7 @@ def test_sync_commands_scope_to_active_project() -> None:
 
     assert "const scopedProject =" in app_js
     assert 'JSON.stringify(scopedProject ? { project: scopedProject } : {})' in app_js
-    assert 'params.set("project", scopedProject)' in app_js
+    assert "project=${encodeURIComponent(project)}" in app_js
 
 
 def test_results_sort_by_published_date() -> None:

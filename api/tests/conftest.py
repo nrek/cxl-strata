@@ -2,8 +2,14 @@ from __future__ import annotations
 
 import os
 
-# Use in-memory SQLite for tests unless a real DATABASE_URL is explicitly set.
+# Tests must not inherit production `.env` identity/auth settings. These values
+# are read once when app.core.config is imported below.
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+os.environ["STRATA_API_KEYS"] = "strata_dev_example"
+os.environ["BOOTSTRAP_ORG_SLUG"] = "bootstrap-org"
+os.environ["BOOTSTRAP_ORG_NAME"] = "Bootstrap Organization"
+os.environ["API_KEY_PEPPER"] = "test-pepper"
+os.environ["STRATA_ENV"] = "test"
 
 import pytest
 from fastapi.testclient import TestClient

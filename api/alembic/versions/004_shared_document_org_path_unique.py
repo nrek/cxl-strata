@@ -7,7 +7,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "004_shared_document_org_path_unique"
+# Production's alembic_version.version_num is VARCHAR(32).
+revision: str = "004_shared_doc_path_unique"
 down_revision: Union[str, None] = "003_published_at_comments"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None

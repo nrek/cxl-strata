@@ -396,6 +396,7 @@ def test_migration_004_deduplicates_reparents_and_enforces_uniqueness() -> None:
     assert spec and spec.loader
     migration = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(migration)
+    assert len(migration.revision) <= 32
 
     old_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
     new_at = datetime(2026, 7, 2, tzinfo=timezone.utc)

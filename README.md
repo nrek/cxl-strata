@@ -209,6 +209,14 @@ See [Server Setup](docs/server-setup.md).
 
 Each developer should have their own token. Install scripts are public bootstrap scripts; they do not grant access.
 
+Production should keep `STRATA_API_KEYS=` blank. That variable is a plaintext
+development/bootstrap fallback with admin scopes, not the normal team credential
+store; never use the default `strata_dev_example` value in production. Team tokens
+are `strata_live_*` values generated below and stored as peppered hashes in
+PostgreSQL. Keep `API_KEY_PEPPER` strong and stable, because changing it invalidates
+existing tokens. See [Server Setup](docs/server-setup.md#production-api-keys) for
+the complete production requirements and test guidance.
+
 Create the first admin key on the API host:
 
 ```bash

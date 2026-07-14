@@ -123,6 +123,41 @@ STRATA_CLIENT_GIT_REF=main
 STRATA_DEFAULT_ORG=example-org
 ```
 
+### Production API keys
+
+Keep `STRATA_API_KEYS` blank in production:
+
+```env
+STRATA_API_KEYS=
+```
+
+This setting is a legacy bootstrap allowlist, not the normal team-token store. Any raw
+token listed there is accepted without a matching `api_keys` row, is attached to
+`BOOTSTRAP_ORG_SLUG`, and receives bootstrap scopes including `keys:manage` and
+`admin`. The default `strata_dev_example` value is for local development and tests
+only; never copy it into a production `.env`.
+
+Production user/admin tokens should be generated with `scripts/seed_key.py` or the
+admin API. STRATA stores only each token's prefix and peppered hash in PostgreSQL;
+the raw `strata_live_*` token is shown once and must be delivered through a secure
+channel.
+
+`API_KEY_PEPPER` is the required production secret for those hashes. Generate a
+strong random value before creating the first token, keep it stable, and back it up
+securely. Changing it later invalidates every existing database-backed token.
+`BOOTSTRAP_ORG_SLUG` and `BOOTSTRAP_ORG_NAME` are consulted only when
+`STRATA_API_KEYS` contains a bootstrap token.
+
+The API tests define their own isolated development key and organization before the
+application is imported. After sourcing the production `.env`, run tests normally:
+
+```bash
+python -m pytest tests -q
+```
+
+Do not export `STRATA_API_KEYS=strata_dev_example` on the production host to make
+tests pass.
+
 Create the database and apply migrations:
 
 ```bash

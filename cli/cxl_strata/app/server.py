@@ -436,6 +436,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             qs = parse_qs(parsed.query)
             project = (qs.get("project") or [None])[0]
             kinds = _csv_list((qs.get("kinds") or [None])[0])
+            authors = _csv_list((qs.get("authors") or [None])[0])
             hours_raw = (qs.get("hours") or [None])[0]
             hours: int | None = None
             if hours_raw:
@@ -457,6 +458,7 @@ class StrataAppHandler(BaseHTTPRequestHandler):
                     project=project or None,
                     kinds=kinds,
                     hours=hours,
+                    authors=authors,
                     min_weight=min_weight,
                 )
             _json_response(self, payload)

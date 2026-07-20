@@ -1371,6 +1371,63 @@ function ensureGraphInstance() {
   return graphInstance;
 }
 
+function graphAuthorsFilter() {
+  return selectedKinds("#graph-author-options");
+}
+
+function updateGraphAuthorCount() {
+  const countEl = $("#graph-author-count");
+  if (!countEl) return;
+  const n = graphAuthorsFilter().length;
+  countEl.textContent = n ? String(n) : "";
+}
+
+function populateGraphAuthors() {
+  const box = $("#graph-author-options");
+  if (!box) return;
+  const prev = new Set(graphAuthorsFilter());
+  if (!state.authors.length) {
+    box.innerHTML = `<p class="graph-author-empty muted">No authors indexed</p>`;
+    updateGraphAuthorCount();
+    return;
+  }
+  box.innerHTML = state.authors
+    .map(
+      (name) =>
+        `<label><input type="checkbox" value="${esc(name)}"${
+          prev.has(name) ? " checked" : ""
+        } /><span>${esc(name)}</span></label>`
+    )
+    .join("");
+  updateGraphAuthorCount();
+}
+
+function graphTimeframeDays() {
+  const el = $("#graph-timeframe");
+  if (!el) return 0;
+  const days = parseInt(el.value || "0", 10);
+  return Number.isFinite(days) && days > 0 ? days : 0;
+}
+
+function updateGraphTimeframeLabel() {
+  const out = $("#graph-timeframe-value");
+  if (!out) return;
+  const days = graphTimeframeDays();
+  out.textContent = days > 0 ? `${days}d` : "All";
+}
+
+function applyGraphTimeframeMeta(meta) {
+  const el = $("#graph-timeframe");
+  if (!el) return;
+  const maxDays = Math.max(1, parseInt((meta && meta.max_days) || "1", 10) || 1);
+  const prev = graphTimeframeDays();
+  el.max = String(maxDays);
+  if (prev > maxDays) el.value = String(maxDays);
+  else if (prev > 0) el.value = String(prev);
+  else el.value = "0";
+  updateGraphTimeframeLabel();
+}
+
 async function loadGraphData() {
   const instance = ensureGraphInstance();
   const statsEl = $("#graph-stats");
@@ -1383,6 +1440,10 @@ async function loadGraphData() {
   if (state.graphProject) params.set("project", state.graphProject);
   const kinds = graphKindsFilter();
   if (kinds.length) params.set("kinds", kinds.join(","));
+  const authors = graphAuthorsFilter();
+  if (authors.length) params.set("authors", authors.join(","));
+  const days = graphTimeframeDays();
+  if (days > 0) params.set("hours", String(days * 24));
   const threshold = parseFloat(($("#graph-threshold") || {}).value || "0");
   if (threshold > 0) params.set("min_weight", String(threshold));
 
@@ -1395,6 +1456,7 @@ async function loadGraphData() {
     return;
   }
 
+  applyGraphTimeframeMeta(data.meta || {});
   instance.graphData({ nodes: data.nodes || [], links: data.links || [] });
   sizeGraphCanvas();
   applyGraphHighlight(($("#graph-highlight") || {}).value || "");
@@ -1409,13 +1471,15 @@ function scheduleGraphReload() {
   graphReloadTimer = window.setTimeout(() => loadGraphData(), 250);
 }
 
-function openGraphView(project) {
+async function openGraphView(project) {
   if (state.view !== "graph") state.graphReturnView = state.view;
   state.graphProject = project || null;
   $("#graph-scope").textContent = project
     ? `${project} + neighbors`
     : "All projects";
   showView("graph");
+  if (!state.authors.length) await loadAuthors();
+  else populateGraphAuthors();
   loadGraphData();
 }
 
@@ -1726,6 +1790,7 @@ async function loadAuthors() {
     el.innerHTML = options;
     if (prev && state.authors.includes(prev)) el.value = prev;
   }
+  populateGraphAuthors();
   updateAuthorFilterVisibility();
 }
 
@@ -2659,6 +2724,19 @@ async function init() {
   $("#scoped-graph-btn")?.addEventListener("click", () => openGraphView(state.activeProject));
   $("#graph-back-btn")?.addEventListener("click", closeGraphView);
   $("#graph-filter-kinds")?.addEventListener("change", () => loadGraphData());
+  $("#graph-author-options")?.addEventListener("change", () => {
+    updateGraphAuthorCount();
+    loadGraphData();
+  });
+  document.addEventListener("click", (e) => {
+    const dropdown = $("#graph-filter-authors");
+    if (!dropdown?.open) return;
+    if (!dropdown.contains(e.target)) dropdown.removeAttribute("open");
+  });
+  $("#graph-timeframe")?.addEventListener("input", () => {
+    updateGraphTimeframeLabel();
+    scheduleGraphReload();
+  });
   $("#graph-threshold")?.addEventListener("input", () => {
     const value = parseFloat($("#graph-threshold").value || "0");
     const out = $("#graph-threshold-value");

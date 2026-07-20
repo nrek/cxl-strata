@@ -309,6 +309,45 @@ def invalidate_cache() -> None:
     _cache["graph"] = None
 
 
+def _parse_activity_dt(raw: str) -> datetime | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _corpus_max_days(nodes: dict[str, dict[str, Any]]) -> int:
+    """Calendar-day span from oldest document activity_at to now (min 1)."""
+    now = datetime.now(timezone.utc)
+    oldest: datetime | None = None
+    for node in nodes.values():
+        dt = _parse_activity_dt(str(node.get("activity_at") or ""))
+        if dt is None:
+            continue
+        if oldest is None or dt < oldest:
+            oldest = dt
+    if oldest is None:
+        return 1
+    seconds = max(0.0, (now - oldest).total_seconds())
+    return max(1, math.ceil(seconds / 86400.0))
+
+
+def _node_author_key(node: dict[str, Any]) -> str:
+    """Case-insensitive author key; matches Files filter via effective_author_name."""
+    from .queries import effective_author_name
+
+    name = (effective_author_name(node) or node.get("author_name") or "").strip()
+    return name.lower()
+
+
 # ---------------------------------------------------------------------------
 # Public API
 
@@ -319,23 +358,36 @@ def build_graph(
     project: str | None = None,
     kinds: list[str] | None = None,
     hours: int | None = None,
+    authors: list[str] | None = None,
     min_weight: float | None = None,
 ) -> dict[str, Any]:
-    """Filtered ``{nodes, links}`` payload for the graph explorer UI.
+    """Filtered ``{nodes, links, meta}`` payload for the graph explorer UI.
 
     ``project`` keeps that project's documents plus their direct
     cross-project neighbors. ``min_weight`` applies to similarity edges
-    only (explicit metadata links always survive).
+    only (explicit metadata links always survive). ``authors`` is a
+    case-insensitive multi-select on effective author name.
     """
     full = _full_graph(conn)
     nodes: dict[str, dict[str, Any]] = full["nodes"]
     doc_links: dict[tuple[str, str], dict[str, Any]] = full["doc_links"]
+    max_days = _corpus_max_days(nodes)
 
     kind_set = {k.strip() for k in kinds if k and k.strip()} if kinds else None
+    author_set = (
+        {a.strip().lower() for a in authors if a and str(a).strip()}
+        if authors
+        else None
+    )
+    if author_set is not None and not author_set:
+        author_set = None
+
     since = ""
+    applied_hours: int | None = None
     if hours and hours > 0:
+        applied_hours = int(hours)
         since = (
-            (datetime.now(timezone.utc) - timedelta(hours=hours))
+            (datetime.now(timezone.utc) - timedelta(hours=applied_hours))
             .isoformat()
             .replace("+00:00", "Z")
         )
@@ -344,6 +396,8 @@ def build_graph(
         if kind_set and node.get("kind") not in kind_set:
             return False
         if since and (node.get("activity_at") or "") < since:
+            return False
+        if author_set is not None and _node_author_key(node) not in author_set:
             return False
         return True
 
@@ -423,6 +477,11 @@ def build_graph(
             "projects": len(hub_members),
             "links": len(out_links),
             "project": project,
+        },
+        "meta": {
+            "max_days": max_days,
+            "hours": applied_hours,
+            "authors": sorted(author_set) if author_set is not None else [],
         },
     }
 

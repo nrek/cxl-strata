@@ -301,6 +301,19 @@
           <label class="kind-chip"><input type="checkbox" value="plan" /><span>plan</span></label>
           <label class="kind-chip"><input type="checkbox" value="rule" /><span>rule</span></label>
         </div>
+        <details id="graph-filter-authors" class="graph-author-dropdown">
+          <summary class="graph-author-summary">
+            Author <span id="graph-author-count" class="graph-author-count"></span>
+          </summary>
+          <div id="graph-author-options" class="graph-author-options" role="group" aria-label="Author filter">
+            <p class="graph-author-empty muted">No authors indexed</p>
+          </div>
+        </details>
+        <label class="graph-slider" title="Limit graph to documents active in the last N full days (0 = all)">
+          <span>Timeframe</span>
+          <input type="range" id="graph-timeframe" min="0" max="1" step="1" value="0" />
+          <output id="graph-timeframe-value">All</output>
+        </label>
         <label class="graph-slider" title="Hide weaker similarity links">
           <span>Similarity</span>
           <input type="range" id="graph-threshold" min="0" max="0.8" step="0.05" value="0.2" />

@@ -157,6 +157,76 @@ def test_kind_filter_limits_nodes(workspace: Path) -> None:
     assert all(n["kind"] == "plan" for n in doc_nodes)
 
 
+def test_authors_filter_limits_nodes(workspace: Path) -> None:
+    with db.connect() as conn:
+        db.init_db(conn)
+        conn.execute(
+            "UPDATE documents SET author_name = ? WHERE path = ?",
+            ("Alice", PATH_A),
+        )
+        conn.execute(
+            "UPDATE documents SET author_name = ? WHERE path = ?",
+            ("Bob", PATH_B),
+        )
+        conn.execute(
+            "UPDATE documents SET author_name = ? WHERE path = ?",
+            ("Alice", PATH_TICKET),
+        )
+        conn.commit()
+        graph.invalidate_cache()
+        data = graph.build_graph(conn, authors=["Alice"])
+
+    doc_nodes = [n for n in data["nodes"] if n["type"] == "document"]
+    ids = {n["id"] for n in doc_nodes}
+    assert PATH_A in ids
+    assert PATH_TICKET in ids
+    assert PATH_B not in ids
+    assert data["meta"]["authors"] == ["alice"]
+
+
+def test_hours_filter_and_meta_max_days(workspace: Path) -> None:
+    old = "2026-01-01T00:00:00Z"
+    recent = "2026-07-20T12:00:00Z"
+    with db.connect() as conn:
+        db.init_db(conn)
+        # activity_at = max(published, updated, created); pin times so the
+        # hours window is deterministic (file mtime from fixtures is "now").
+        conn.execute(
+            """
+            UPDATE documents
+            SET published_at = ?, updated_at = ?, created_at = ?
+            WHERE path = ?
+            """,
+            (old, old, old, PATH_A),
+        )
+        conn.execute(
+            """
+            UPDATE documents
+            SET published_at = ?, updated_at = ?, created_at = ?
+            WHERE path = ?
+            """,
+            (recent, recent, recent, PATH_B),
+        )
+        conn.commit()
+        graph.invalidate_cache()
+        full = graph.build_graph(conn)
+        narrow = graph.build_graph(conn, hours=24)
+        wide = graph.build_graph(conn, hours=24 * 365)
+
+    assert full["meta"]["max_days"] >= 1
+    assert full["meta"]["hours"] is None
+    assert narrow["meta"]["hours"] == 24
+    assert wide["meta"]["hours"] == 24 * 365
+
+    full_docs = {n["id"] for n in full["nodes"] if n["type"] == "document"}
+    narrow_docs = {n["id"] for n in narrow["nodes"] if n["type"] == "document"}
+    wide_docs = {n["id"] for n in wide["nodes"] if n["type"] == "document"}
+    assert PATH_A in full_docs
+    assert PATH_A not in narrow_docs
+    assert PATH_B in narrow_docs
+    assert full_docs == wide_docs
+
+
 def test_project_scope_includes_cross_project_neighbors(workspace: Path) -> None:
     with db.connect() as conn:
         db.init_db(conn)
@@ -246,11 +316,16 @@ def test_graph_static_assets_wired() -> None:
     assert 'id="home-graph-btn"' in index
     assert 'id="scoped-graph-btn"' in index
     assert 'id="graph-filter-kinds"' in index
+    assert 'id="graph-filter-authors"' in index
+    assert 'id="graph-timeframe"' in index
     assert 'id="graph-threshold"' in index
     assert 'id="graph-highlight"' in index
 
-    assert "function openGraphView(project)" in app_js
+    assert "async function openGraphView(project)" in app_js
     assert "async function loadGraphData()" in app_js
+    assert "graphAuthorsFilter" in app_js
+    assert "applyGraphTimeframeMeta" in app_js
+    assert "authors" in app_js
     assert "/api/graph" in app_js
     assert "onNodeClick" in app_js
     assert "openDoc(node.id)" in app_js
@@ -258,3 +333,4 @@ def test_graph_static_assets_wired() -> None:
     assert "#view-graph" in style
     assert ".graph-canvas" in style
     assert ".graph-legend" in style
+    assert ".graph-author-dropdown" in style

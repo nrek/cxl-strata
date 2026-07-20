@@ -302,7 +302,7 @@ Cursor:
 - Install the CLI.
 - Run `python -m cxl_strata.cli --init` (or `strata init`) from the workspace root. This installs:
   - `.cursor/skills/strata/SKILL.md` (`/strata` commands)
-  - `.cursor/rules/strata-memory-capture.mdc` plus seven orchestration rules for handoffs, blueprints, reports, and agent context
+  - `.cursor/rules/strata-memory-capture.mdc` plus eight orchestration rules for handoffs, blueprints, reports, agent context, and work lifecycle
   - `.cursor/hooks.json` and hook scripts (session digest + reindex on edit)
 - Use `/strata` from Cursor once the skill is installed.
 - Configure both MCP servers if you want central API retrieval and local index tools.

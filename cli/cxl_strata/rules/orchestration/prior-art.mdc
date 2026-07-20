@@ -34,4 +34,4 @@ Use **free-text query mode** with a one-line task description (not a doc path �
 
 ## Relationship to other gates
 
-Full ordered bootstrap: [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc). Complements the blueprint gate in [blueprints.mdc](blueprints.mdc) and the 48-hour handoff window in [handoff-logging.mdc](handoff-logging.mdc). Order: blueprint → recent handoffs → prior-art graph query → FTS fallback → deep read → plan/build.
+Full ordered bootstrap: [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc). Complements the blueprint gate in [blueprints.mdc](blueprints.mdc) and the 48-hour handoff window in [handoff-logging.mdc](handoff-logging.mdc). Order: blueprint → recent handoffs → prior-art graph query → FTS fallback → deep read → **[agent-work-lifecycle.mdc](agent-work-lifecycle.mdc) Plan gate** → approve → build.

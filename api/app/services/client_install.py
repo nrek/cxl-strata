@@ -497,6 +497,7 @@ def client_manifest() -> dict:
             "cursor_rule": ".cursor/rules/strata-memory-capture.mdc",
             "cursor_orchestration_rules": [
                 ".cursor/rules/agent-context-bootstrap.mdc",
+                ".cursor/rules/agent-work-lifecycle.mdc",
                 ".cursor/rules/blueprints.mdc",
                 ".cursor/rules/handoff-logging.mdc",
                 ".cursor/rules/prior-art.mdc",

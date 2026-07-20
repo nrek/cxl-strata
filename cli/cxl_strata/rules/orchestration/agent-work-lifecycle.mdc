@@ -1,0 +1,82 @@
+---
+description: HARD-GATE work lifecycle — classify, Plan for non-simple work, approve, build, verify, deploy notes, handoff, iterate without rediscovery.
+alwaysApply: true
+---
+
+# Agent work lifecycle
+
+Managed path from prompt to durable handoff. Purpose: **stop human-drift and edit spirals** — discovery once, Plan before Build, close with a handoff that the next session can resume.
+
+```text
+Prompt → Classify → [Simple: edit+verify] | [Planned: Bootstrap → Plan → Approve → Build → Verify → Deploy notes → Handoff] → Iterate
+```
+
+## 1) Classify
+
+| Kind | Criteria | Plan required? |
+|------|----------|----------------|
+| **Simple** | Copy/typo; roughly one file; no schema/API contract change; no deploy/runbook; no cross-repo; answer already visible in open code or a tiny config toggle with no behavior risk | No |
+| **Planned** | Needs local knowledge lookup (blueprint / handoffs / prior art / index), **or** more than a simple edit, **or** write-path / migration / multi-file behavior change, **or** unclear architecture | **Yes — always** |
+
+When unsure, treat as **Planned**.
+
+## 2) Planned work — HARD-GATE
+
+<HARD-GATE>
+For **Planned** work: run [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc) → **create a Plan** → **no Build file edits** until approved (or the user already said build/approve/go *and* the Plan was still produced first in this turn / Plan mode).
+</HARD-GATE>
+
+### Plan must include
+
+- **Scope** — repo(s) / paths in play
+- **Bootstrap citations** — blueprint path; key handoff(s); prior-art hits reused or “none”
+- **Approach** — what changes and why (not a novel)
+- **Verify** — exact test command and/or one manual smoke
+- **Deploy truth** — pointer to blueprint Deployment section (or n/a)
+- **Follow-up / resume** — what the next session should pick up
+
+Write-path / save-load / schema work: also complete the vertical-slice checklist when that workspace rule exists, **inside the Plan** before edits.
+
+### Approval
+
+Do not start Build until one of:
+
+- User says build / approve / go / implement the plan
+- Saved plan status moves to `in_queue` or `in_progress` ([plans-management.mdc](plans-management.mdc) when present)
+- Prompt already ordered implement-now **and** the agent still created the Plan before editing
+
+If approval is unclear → stay in Plan mode / ask; do not silently code.
+
+## 3) Execute (Build)
+
+- Stay inside [workspace-repo-scope.mdc](workspace-repo-scope.mdc)
+- Run the **Verify** steps from the Plan before treating work as done
+- Do not expand scope without updating the Plan (re-approve if material)
+
+## 4) Close
+
+1. **`handoff_write`** — full artifact (decisions, files, verify results, Follow-up). Never edit handoff files directly.
+2. **Chat** — short summary + markdown link to the handoff path ([handoff-logging.mdc](handoff-logging.mdc))
+3. **`## Deployment`** — copy-paste host CLI when deployable or host commands were given; else `## Deployment (n/a)`
+4. Saved plan used → set status `done` when complete
+
+## 5) Iterate (no rediscovery)
+
+| Situation | Action |
+|-----------|--------|
+| Same Agent tab | Append handoff `## iN`; continue from prior decisions |
+| New tab / later day | `knowledge_recent` + read last **Follow-up** / latest `## iN` **before** re-walking the codebase; cite that handoff in the new Plan |
+| First failure after a change | **Stop coding.** Re-check request contract / DB / assumptions; update Plan or handoff with assumption vs reality; then edit. No tip-of-iceberg patches. |
+
+## Relationship to other gates
+
+| Gate | Role |
+|------|------|
+| [agent-context-bootstrap.mdc](agent-context-bootstrap.mdc) | DB-first discovery before Plan/Build |
+| [prior-art.mdc](prior-art.mdc) | Graph/FTS before designing |
+| [blueprints.mdc](blueprints.mdc) | Architecture + deploy map |
+| [handoff-logging.mdc](handoff-logging.mdc) | Close + resume payload |
+| [plans-management.mdc](plans-management.mdc) | Saved plan folders/status (when present) |
+| Vertical-slice / Linear / commit rules | Workspace overlays when present — run **inside** this lifecycle, not instead of it |
+
+Order for Planned work: **bootstrap → (vertical-slice if write-path) → Plan → approve → Build → verify → deploy notes → handoff → iterate**.

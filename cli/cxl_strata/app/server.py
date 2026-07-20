@@ -301,20 +301,19 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             remote: dict[str, object] = {
                 "available": False,
                 "count": None,
-                "conflicts": None,
+                "conflicts": 0,
             }
             try:
                 from ..pull import count_remote_pending
 
                 remote_pending = count_remote_pending(project=project)
-                conflict_paths = set(remote_pending.get("conflict_paths") or [])
-                if conflict_paths:
-                    sync_paths = [p for p in sync_paths if p not in conflict_paths]
+                # Divergent local/remote revisions are auto-catalogued on pull
+                # (stem_N siblings); outbound sync is no longer blocked.
                 remote = {
                     "available": True,
                     "count": remote_pending["pending"],
-                    "conflicts": remote_pending.get("conflicts", 0),
-                    "conflict_paths": sorted(conflict_paths),
+                    "conflicts": 0,
+                    "conflict_paths": [],
                     "total_remote": remote_pending["total_remote"],
                 }
             except Exception as exc:  # noqa: BLE001

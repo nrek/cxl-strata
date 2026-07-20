@@ -311,7 +311,7 @@ Expected output includes actor, organization, scopes, and API.
 
 ## Cursor
 
-`strata init`, `python -m cxl_strata.cli --init`, and installer `-Init` automatically write the project Cursor skill to `.cursor/skills/strata/SKILL.md`, the STRATA rule `.cursor/rules/strata-memory-capture.mdc`, the seven orchestration rules (`agent-context-bootstrap`, `blueprints`, `handoff-logging`, `prior-art`, `reports-organization`, `workspace-knowledge`, `workspace-repo-scope`), and Cursor hooks (`.cursor/hooks.json` plus `.cursor/hooks/strata-session-digest.py` and `.cursor/hooks/reindex-workspace.py`). The `.cursor/` folder is created if missing. Existing files are never overwritten.
+`strata init`, `python -m cxl_strata.cli --init`, and installer `-Init` automatically write the project Cursor skill to `.cursor/skills/strata/SKILL.md`, the STRATA rule `.cursor/rules/strata-memory-capture.mdc`, the eight orchestration rules (`agent-context-bootstrap`, `agent-work-lifecycle`, `blueprints`, `handoff-logging`, `prior-art`, `reports-organization`, `workspace-knowledge`, `workspace-repo-scope`), and Cursor hooks (`.cursor/hooks.json` plus `.cursor/hooks/strata-session-digest.py` and `.cursor/hooks/reindex-workspace.py`). The `.cursor/` folder is created if missing. Existing files are never overwritten.
 
 Shared rule updates continue to flow after init: `strata pull` writes pulled `kind: rule` documents to `.cursor/rules/` on disk so Cursor `alwaysApply` picks them up.
 

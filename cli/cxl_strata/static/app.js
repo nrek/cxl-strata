@@ -533,22 +533,8 @@ async function refreshToolCounts() {
     setToolCount("#count-index-pending", indexCount);
     setToolCount("#count-sync-pending", syncCount);
     setToolCount("#count-pull-pending", pullCount);
-    const conflicts = Number(status.pull?.conflicts) || 0;
-    if (conflicts > 0) {
-      const pullBadge = $("#count-pull-pending");
-      if (pullBadge) {
-        pullBadge.textContent = `(${Number(pullCount) || 0} · ${conflicts} conflict${
-          conflicts === 1 ? "" : "s"
-        })`;
-        pullBadge.hidden = false;
-      }
-    }
     setToolActionDot(
-      Number(indexCount || 0) +
-        Number(syncCount || 0) +
-        Number(pullCount || 0) +
-        conflicts >
-        0
+      Number(indexCount || 0) + Number(syncCount || 0) + Number(pullCount || 0) > 0
     );
   } catch (_) {
     state.transferStatus = null;
@@ -581,9 +567,12 @@ async function runToolCommand(command) {
       });
       await refreshDashboard();
       if (scopedProject) await refreshActiveProjectResults();
+      const catalogued = Number(result.catalogued) || 0;
       setToolStatus(
         `Pulled ${result.pulled || 0} remote artifact${result.pulled === 1 ? "" : "s"}${
-          result.conflicts ? `; ${result.conflicts} conflict${result.conflicts === 1 ? "" : "s"} require review` : ""
+          catalogued
+            ? ` (${catalogued} catalogued as _N sibling${catalogued === 1 ? "" : "s"})`
+            : ""
         }${scopedProject ? ` for ${scopedProject}` : ""}.`
       );
       return;

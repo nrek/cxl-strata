@@ -16,6 +16,7 @@ RULES_DIR_DEST = Path(".cursor") / "rules"
 ORCHESTRATION_RESOURCE_DIR = "orchestration"
 ORCHESTRATION_RULES = (
     "agent-context-bootstrap.mdc",
+    "agent-work-lifecycle.mdc",
     "blueprints.mdc",
     "handoff-logging.mdc",
     "prior-art.mdc",

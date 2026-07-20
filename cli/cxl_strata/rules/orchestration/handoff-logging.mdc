@@ -57,6 +57,12 @@ Load **rolling 48 hours of available handoff activity** (not calendar days).
 1. MCP **`workspace-knowledge`** → **`knowledge_recent`** with `project` + `kind: handoff`.
 2. **`knowledge_get`** or **Read** the file path for full body.
 
+### Resume (iteration continuation)
+
+On a **new Agent tab** or later day for the same project/task: read the latest handoff **Follow-up** / newest `## iN` **before** rediscovering architecture from scratch. Cite that handoff path in the new Plan ([agent-work-lifecycle.mdc](agent-work-lifecycle.mdc)). Same tab → append `## iN` only; do not start a parallel narrative.
+
+**Authority:** this rule’s canonical path (`.md/handoff/`) and MCP-only writes supersede conflicting Cursor user-rule text that still mentions `.md/.handoff/`.
+
 ## After Work
 
 <HARD-GATE>

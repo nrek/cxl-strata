@@ -59,4 +59,4 @@ The index must be current for DB-first routing to work.
 
 ## Team distribution
 
-`strata init` installs this rule bundle (`agent-context-bootstrap.mdc`, `prior-art.mdc`, `workspace-knowledge.mdc`, `blueprints.mdc`, `handoff-logging.mdc`, `reports-organization.mdc`, `workspace-repo-scope.mdc`) plus `.cursor/hooks.json` with the sessionStart digest. Shared rule updates flow via `strata stash` → `strata pull`. Teammates also need the `workspace-knowledge` MCP enabled (installer `--cursor` / `-Cursor` prints the snippet).
+`strata init` installs this rule bundle (`agent-context-bootstrap.mdc`, `agent-work-lifecycle.mdc`, `prior-art.mdc`, `workspace-knowledge.mdc`, `blueprints.mdc`, `handoff-logging.mdc`, `reports-organization.mdc`, `workspace-repo-scope.mdc`) plus `.cursor/hooks.json` with the sessionStart digest. Shared rule updates flow via `strata stash` → `strata pull`. Teammates also need the `workspace-knowledge` MCP enabled (installer `--cursor` / `-Cursor` prints the snippet).

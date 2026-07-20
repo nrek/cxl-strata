@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,7 @@ from .workspace_index import db, storage
 from .workspace_index.parsers import doc_id_for_path
 
 _PAGE_SIZE = 200
+_CATALOG_N_RE = re.compile(r"_(\d+)$")
 
 
 def _doc_path(row: dict[str, Any]) -> str:
@@ -58,8 +60,101 @@ def _should_materialize_rule(rel: str, kind: str | None) -> bool:
     return (kind or "") == "rule" and rel.startswith(".cursor/rules/") and rel.endswith(".mdc")
 
 
+def _split_path_name(rel: str) -> tuple[str, str, str]:
+    """Return (parent_with_slash_or_empty, stem, ext_with_dot_or_empty)."""
+    normalized = rel.replace("\\", "/")
+    parent, _, name = normalized.rpartition("/")
+    if "." in name and not name.startswith("."):
+        stem, _, ext = name.rpartition(".")
+        return (f"{parent}/" if parent else ""), stem, f".{ext}"
+    # Dotfiles / no extension: treat whole name as stem.
+    return (f"{parent}/" if parent else ""), name, ""
+
+
+def catalog_sibling_path(rel: str, *, taken: set[str] | None = None) -> str:
+    """Next free sibling path: ``stem_1.ext``, ``stem_2.ext``, …"""
+    parent, stem, ext = _split_path_name(rel)
+    occupied = taken or set()
+    n = 1
+    while True:
+        candidate = f"{parent}{stem}_{n}{ext}"
+        if candidate not in occupied:
+            return candidate
+        n += 1
+
+
+def _occupied_paths(conn: Any, rel: str) -> set[str]:
+    """Paths that already exist for this document family (canonical + ``_N``)."""
+    parent, stem, ext = _split_path_name(rel)
+    prefix = f"{parent}{stem}"
+    rows = conn.execute(
+        "SELECT path FROM documents WHERE path = ? OR path GLOB ?",
+        (rel.replace("\\", "/"), f"{prefix}_[0-9]*{ext}"),
+    ).fetchall()
+    occupied = {str(r["path"]) for r in rows}
+    occupied.add(rel.replace("\\", "/"))
+    return occupied
+
+
+def _existing_catalog_for_hash(conn: Any, rel: str, body_hash: str | None) -> str | None:
+    """Return an existing ``_N`` sibling that already holds this remote body."""
+    if not body_hash:
+        return None
+    parent, stem, ext = _split_path_name(rel)
+    prefix = f"{parent}{stem}"
+    rows = conn.execute(
+        "SELECT path, body_hash FROM documents WHERE path GLOB ?",
+        (f"{prefix}_[0-9]*{ext}",),
+    ).fetchall()
+    for row in rows:
+        path = str(row["path"])
+        # Only numeric suffixes: stem_1, stem_12 — not stem_backup.
+        name = path.rsplit("/", 1)[-1]
+        name_stem = name[: -len(ext)] if ext and name.endswith(ext) else name
+        if not _CATALOG_N_RE.search(name_stem):
+            continue
+        if row["body_hash"] == body_hash:
+            return path
+    return None
+
+
+def _catalog_title(row: dict[str, Any], catalog_path: str) -> str:
+    base = (row.get("title") or catalog_path.rsplit("/", 1)[-1]).strip()
+    author = (row.get("author_name") or row.get("author_email") or "").strip()
+    suffix = catalog_path.rsplit("/", 1)[-1]
+    marker = _CATALOG_N_RE.search(suffix.rsplit(".", 1)[0])
+    n = marker.group(1) if marker else "?"
+    if author:
+        return f"{base} · {author} _{n}"
+    return f"{base} · remote _{n}"
+
+
+def _ack_remote_revision(
+    conn: Any,
+    rel: str,
+    *,
+    remote_hash: str | None,
+    remote_updated: str | None,
+) -> None:
+    """Record that the remote tip was seen without overwriting the local body."""
+    conn.execute(
+        """
+        UPDATE documents
+        SET remote_body_hash = COALESCE(?, remote_body_hash),
+            remote_updated_at = COALESCE(?, remote_updated_at)
+        WHERE path = ?
+        """,
+        (remote_hash or None, remote_updated, rel),
+    )
+
+
 def remote_transfer_state(row: dict[str, Any], existing: Any) -> str:
-    """Classify a remote row as pull, conflict, unchanged, or ignored."""
+    """Classify a remote row as pull, catalog, unchanged, or ignored.
+
+    Simultaneous local + remote divergence used to be a blocking conflict.
+    Strata now auto-catalogs the remote revision under ``stem_N.ext`` and
+    keeps the dirty local revision at the canonical path.
+    """
     if existing is None:
         return "pull"
     if _is_ignored(existing):
@@ -98,12 +193,12 @@ def remote_transfer_state(row: dict[str, Any], existing: Any) -> str:
         or last_pushed is None
         or local_hash != last_pushed
     )
-    return "conflict" if local_dirty else "pull"
+    return "catalog" if local_dirty else "pull"
 
 
 def needs_pull(row: dict[str, Any], existing: Any) -> bool:
-    """True only for a safe unseen remote revision."""
-    return remote_transfer_state(row, existing) == "pull"
+    """True when a remote revision should be transferred (pull or catalog)."""
+    return remote_transfer_state(row, existing) in {"pull", "catalog"}
 
 
 def fetch_all_remote_documents(
@@ -149,9 +244,7 @@ def count_remote_pending(
         project=project, kind=kind, since=since, include_body=False
     )
     pending = 0
-    conflicts = 0
     pending_paths: list[str] = []
-    conflict_paths: list[str] = []
     with db.connect() as conn:
         db.init_db(conn)
         for row in remote_rows:
@@ -165,17 +258,15 @@ def count_remote_pending(
                 (rel,),
             ).fetchone()
             state = remote_transfer_state(row, existing)
-            if state == "pull":
+            if state in {"pull", "catalog"}:
                 pending += 1
                 pending_paths.append(rel)
-            elif state == "conflict":
-                conflicts += 1
-                conflict_paths.append(rel)
     return {
         "pending": pending,
-        "conflicts": conflicts,
+        # Retained for older UI clients; divergence is auto-catalogued now.
+        "conflicts": 0,
         "pending_paths": pending_paths,
-        "conflict_paths": conflict_paths,
+        "conflict_paths": [],
         "total_remote": len(remote_rows),
     }
 
@@ -198,12 +289,12 @@ def pull_documents(
         max_rows=limit,
     )
     pulled = 0
+    catalogued = 0
     skipped = 0
     ignored = 0
     blocked = 0
     comments_pulled = 0
     materialized = 0
-    conflicts = 0
 
     with db.connect() as conn:
         db.init_db(conn)
@@ -224,42 +315,29 @@ def pull_documents(
             remote_updated = _normalize_iso(_remote_updated(row))
             comments_pulled += _pull_comments(conn, rel, row.get("comments"))
             state = remote_transfer_state(row, existing)
-            if state == "conflict":
-                conflicts += 1
+            if state == "catalog":
+                if _catalog_remote_revision(
+                    conn,
+                    row,
+                    rel=rel,
+                    remote_updated=remote_updated,
+                ):
+                    catalogued += 1
+                    pulled += 1
+                else:
+                    skipped += 1
                 continue
             if state != "pull":
                 skipped += 1
                 continue
 
-            payload = {
-                "id": doc_id_for_path(rel),
-                "kind": row.get("kind") or "handoff",
-                "project": row.get("project_slug") or row.get("project"),
-                "path": rel,
-                "title": row.get("title"),
-                "created_at": row.get("created_at"),
-                "updated_at": row.get("updated_at") or remote_updated,
-                "published_at": row.get("published_at") or row.get("created_at"),
-                "body": row.get("body") or "",
-                "body_hash": row.get("body_hash") or "",
-                "plan_status": row.get("plan_status"),
-                "linear_task_id": row.get("linear_task_id"),
-                "files_changed": None,
-                "deploy_commands": None,
-                "tags": None,
-                "folder_status": None,
-                "status_mismatch": 0,
-                "storage": row.get("storage_state") or "db_only",
-                "origin": "shared",
-                "remote_id": row.get("id"),
-                "author_name": row.get("author_name"),
-                "author_email": row.get("author_email"),
-                "shared_at": row.get("shared_at") or row.get("created_at"),
-                "synced_at": db.utc_now(),
-                "remote_updated_at": remote_updated,
-                "last_pushed_body_hash": row.get("body_hash") or "",
-                "remote_body_hash": row.get("body_hash") or "",
-            }
+            payload = _shared_payload(
+                row,
+                rel=rel,
+                remote_updated=remote_updated,
+                remote_id=row.get("id"),
+                last_pushed_body_hash=row.get("body_hash") or "",
+            )
             if _should_materialize_rule(rel, row.get("kind")):
                 storage.write_markdown_file(rel, row.get("body") or "")
                 payload["storage"] = "file"
@@ -270,14 +348,95 @@ def pull_documents(
 
     return {
         "pulled": pulled,
+        "catalogued": catalogued,
         "skipped": skipped,
         "ignored": ignored,
         "blocked": blocked,
         "comments_pulled": comments_pulled,
         "materialized": materialized,
-        "conflicts": conflicts,
+        "conflicts": 0,
         "total_remote": len(remote_rows),
     }
+
+
+def _shared_payload(
+    row: dict[str, Any],
+    *,
+    rel: str,
+    remote_updated: str | None,
+    remote_id: Any,
+    last_pushed_body_hash: str,
+    title: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": doc_id_for_path(rel),
+        "kind": row.get("kind") or "handoff",
+        "project": row.get("project_slug") or row.get("project"),
+        "path": rel,
+        "title": title if title is not None else row.get("title"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at") or remote_updated,
+        "published_at": row.get("published_at") or row.get("created_at"),
+        "body": row.get("body") or "",
+        "body_hash": row.get("body_hash") or "",
+        "plan_status": row.get("plan_status"),
+        "linear_task_id": row.get("linear_task_id"),
+        "files_changed": None,
+        "deploy_commands": None,
+        "tags": None,
+        "folder_status": None,
+        "status_mismatch": 0,
+        "storage": row.get("storage_state") or "db_only",
+        "origin": "shared",
+        "remote_id": remote_id,
+        "author_name": row.get("author_name"),
+        "author_email": row.get("author_email"),
+        "shared_at": row.get("shared_at") or row.get("created_at"),
+        "synced_at": db.utc_now(),
+        "remote_updated_at": remote_updated,
+        "last_pushed_body_hash": last_pushed_body_hash,
+        "remote_body_hash": row.get("body_hash") or "",
+    }
+
+
+def _catalog_remote_revision(
+    conn: Any,
+    row: dict[str, Any],
+    *,
+    rel: str,
+    remote_updated: str | None,
+) -> bool:
+    """Keep local dirty path; store remote tip as ``stem_N`` sibling (db_only).
+
+    Returns True when a new catalog row was written (or an existing twin was
+    refreshed). Always acknowledges the remote tip on the canonical path so
+    the same revision is not catalogued again.
+    """
+    remote_hash = row.get("body_hash") or ""
+    existing_catalog = _existing_catalog_for_hash(conn, rel, remote_hash or None)
+    if existing_catalog:
+        _ack_remote_revision(
+            conn, rel, remote_hash=remote_hash or None, remote_updated=remote_updated
+        )
+        return False
+
+    catalog_rel = catalog_sibling_path(rel, taken=_occupied_paths(conn, rel))
+    payload = _shared_payload(
+        row,
+        rel=catalog_rel,
+        remote_updated=remote_updated,
+        # No remote_id: deleting a catalog twin must not delete the canonical
+        # remote document. Twin can sync later as its own shared path.
+        remote_id=None,
+        last_pushed_body_hash="",
+        title=_catalog_title(row, catalog_rel),
+    )
+    payload["storage"] = "db_only"
+    db.upsert_document(conn, payload)
+    _ack_remote_revision(
+        conn, rel, remote_hash=remote_hash or None, remote_updated=remote_updated
+    )
+    return True
 
 
 def _pull_comments(conn: Any, rel: str, comments: Any) -> int:

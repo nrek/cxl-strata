@@ -72,8 +72,9 @@ def test_client_manifest(client: TestClient) -> None:
     assert body["workspace_knowledge"]["cursor_skill"] == ".cursor/skills/strata/SKILL.md"
     assert body["workspace_knowledge"]["cursor_rule"] == ".cursor/rules/strata-memory-capture.mdc"
     orchestration = body["workspace_knowledge"]["cursor_orchestration_rules"]
-    assert len(orchestration) == 7
+    assert len(orchestration) == 8
     assert ".cursor/rules/handoff-logging.mdc" in orchestration
+    assert ".cursor/rules/agent-work-lifecycle.mdc" in orchestration
     assert ".cursor/rules/blueprints.mdc" in orchestration
     assert ".cursor/rules/reports-organization.mdc" in orchestration
     assert ".cursor/hooks.json" in body["workspace_knowledge"]["cursor_hooks"]

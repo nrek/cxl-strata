@@ -49,7 +49,7 @@ def test_needs_pull_skips_locally_archived_tombstone() -> None:
     assert needs_pull(row, existing) is False
 
 
-def test_remote_change_conflicts_with_unpushed_local_revision() -> None:
+def test_remote_divergence_catalogues_instead_of_conflict() -> None:
     row = {
         "path": ".md/handoff/x/a.md",
         "body_hash": "remote-new",
@@ -64,8 +64,121 @@ def test_remote_change_conflicts_with_unpushed_local_revision() -> None:
         "sync_ignored_at": None,
     }
 
-    assert remote_transfer_state(row, existing) == "conflict"
-    assert needs_pull(row, existing) is False
+    assert remote_transfer_state(row, existing) == "catalog"
+    assert needs_pull(row, existing) is True
+
+
+def test_catalog_sibling_path_increments() -> None:
+    assert (
+        pull_mod.catalog_sibling_path(".md/handoff/x/a.md")
+        == ".md/handoff/x/a_1.md"
+    )
+    assert (
+        pull_mod.catalog_sibling_path(
+            ".md/handoff/x/a.md", taken={".md/handoff/x/a_1.md"}
+        )
+        == ".md/handoff/x/a_2.md"
+    )
+    assert (
+        pull_mod.catalog_sibling_path(".cursor/rules/blueprints.mdc")
+        == ".cursor/rules/blueprints_1.mdc"
+    )
+
+
+def test_pull_catalogues_divergent_remote_as_sibling(
+    tmp_path: Path, monkeypatch
+) -> None:
+    set_workspace_root(tmp_path)
+    path = ".md/handoff/x/2026-01-01T00-00-00Z.md"
+    with db.connect() as conn:
+        db.init_db(conn)
+        db.upsert_document(
+            conn,
+            {
+                "id": "local-doc",
+                "kind": "handoff",
+                "project": "x",
+                "path": path,
+                "title": "Local edit",
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-02T00:00:00Z",
+                "body": "# local\n",
+                "body_hash": "local-new",
+                "plan_status": None,
+                "linear_task_id": None,
+                "files_changed": None,
+                "deploy_commands": None,
+                "tags": None,
+                "folder_status": None,
+                "status_mismatch": 0,
+                "storage": "db_only",
+                "origin": "local",
+                "remote_id": "remote-1",
+                "author_name": "Local Author",
+                "author_email": "local@example.com",
+                "shared_at": "2026-01-01T00:00:00Z",
+                "synced_at": "2026-01-01T00:00:00Z",
+                "remote_updated_at": "2026-01-01T00:00:00Z",
+                "last_pushed_body_hash": "shared-base",
+                "remote_body_hash": "shared-base",
+            },
+        )
+
+    rows = [
+        {
+            "id": "remote-1",
+            "kind": "handoff",
+            "project_slug": "x",
+            "path": path,
+            "title": "Remote edit",
+            "body": "# remote\n",
+            "body_hash": "remote-new",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T12:00:00Z",
+            "author_name": "Remote Author",
+            "author_email": "remote@example.com",
+            "comments": [],
+        }
+    ]
+    monkeypatch.setattr(pull_mod.api_client, "list_documents", lambda **kwargs: rows)
+
+    result = pull_mod.pull_documents()
+
+    assert result["conflicts"] == 0
+    assert result["catalogued"] == 1
+    assert result["pulled"] == 1
+    catalog = ".md/handoff/x/2026-01-01T00-00-00Z_1.md"
+    with db.connect() as conn:
+        local = conn.execute(
+            "SELECT body, body_hash, remote_body_hash, last_pushed_body_hash"
+            " FROM documents WHERE path = ?",
+            (path,),
+        ).fetchone()
+        twin = conn.execute(
+            "SELECT body, body_hash, title, author_name, remote_id, storage"
+            " FROM documents WHERE path = ?",
+            (catalog,),
+        ).fetchone()
+    assert local["body"] == "# local\n"
+    assert local["body_hash"] == "local-new"
+    assert local["remote_body_hash"] == "remote-new"
+    assert local["last_pushed_body_hash"] == "shared-base"
+    assert twin["body"] == "# remote\n"
+    assert twin["body_hash"] == "remote-new"
+    assert twin["author_name"] == "Remote Author"
+    assert twin["remote_id"] is None
+    assert twin["storage"] == "db_only"
+    assert "Remote Author" in twin["title"]
+
+    # Same remote tip must not create another sibling.
+    result2 = pull_mod.pull_documents()
+    assert result2["catalogued"] == 0
+    with db.connect() as conn:
+        twins = conn.execute(
+            "SELECT path FROM documents WHERE path GLOB ?",
+            (".md/handoff/x/2026-01-01T00-00-00Z_[0-9]*.md",),
+        ).fetchall()
+    assert [r["path"] for r in twins] == [catalog]
 
 
 def test_fetch_all_remote_documents_has_no_legacy_2000_row_cap(monkeypatch) -> None:

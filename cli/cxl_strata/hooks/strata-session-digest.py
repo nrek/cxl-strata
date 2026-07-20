@@ -24,9 +24,10 @@ MAX_ROWS = 10
 
 CARD = (
     "[STRATA knowledge graph] DB routes discovery; markdown is payload. Before "
-    "Plan/Build on non-trivial work, run the bootstrap sequence in "
-    ".cursor/rules/agent-context-bootstrap.mdc (blueprint -> recent -> graph -> "
-    "FTS fallback -> deep read). MCP workspace-knowledge or `strata app --open`."
+    "Plan/Build on non-trivial work, run bootstrap in "
+    ".cursor/rules/agent-context-bootstrap.mdc then the Plan gate in "
+    "agent-work-lifecycle.mdc (simple edits exempt). MCP workspace-knowledge "
+    "or `strata app --open`."
 )
 
 

@@ -63,8 +63,13 @@ The `afterFileEdit` hook reindexes handoffs, blueprints, plans, and rules on sav
 
 When the prompt starts with `[repo-a, repo-b]`, run steps 1–2 **per scoped repo**, then step 3 once with the combined task description (graph links across projects).
 
+## After bootstrap
+
+For **Planned** work (anything that needed this sequence, or more than a simple edit), follow [agent-work-lifecycle.mdc](agent-work-lifecycle.mdc): **create a Plan before Build**; do not start file edits until approved.
+
 ## Related rules
 
+- Work lifecycle (Plan gate → Build → handoff): [agent-work-lifecycle.mdc](agent-work-lifecycle.mdc)
 - Blueprint gate: [blueprints.mdc](blueprints.mdc)
 - Handoff write/read lifecycle: [handoff-logging.mdc](handoff-logging.mdc)
 - Graph prior-art detail: [prior-art.mdc](prior-art.mdc)

@@ -61,6 +61,8 @@ const state = {
   allProjects: [],
   latestProjects: [],
   apiOnline: false,
+  apiStatusCfg: null,
+  backgroundLoads: 0,
   syncItems: [],
   syncPage: 0,
   secretItems: [],
@@ -2288,11 +2290,55 @@ async function indexPaths(paths) {
   await refreshToolCounts();
 }
 
+function beginBackgroundLoad() {
+  state.backgroundLoads += 1;
+  renderApiStatus();
+}
+
+function endBackgroundLoad() {
+  state.backgroundLoads = Math.max(0, state.backgroundLoads - 1);
+  renderApiStatus();
+}
+
+async function withBackgroundLoad(work) {
+  beginBackgroundLoad();
+  try {
+    return await work();
+  } finally {
+    endBackgroundLoad();
+  }
+}
+
 function renderApiStatus(cfg) {
   const el = $("#api-status");
   if (!el) return;
-  if (cfg.online) {
-    el.textContent = `Online · ${cfg.actor || "authenticated"} @ ${cfg.organization || ""}`;
+  if (cfg) state.apiStatusCfg = cfg;
+
+  if (state.backgroundLoads > 0) {
+    el.classList.remove("hidden", "offline");
+    el.classList.add("loading-status");
+    el.setAttribute("aria-busy", "true");
+    el.setAttribute("aria-label", "Loading");
+    el.title = "Loading…";
+    el.innerHTML =
+      '<i class="fa-solid fa-circle-notch fa-spin api-status-spinner" aria-hidden="true"></i>';
+    return;
+  }
+
+  el.classList.remove("loading-status");
+  el.removeAttribute("aria-busy");
+  el.removeAttribute("aria-label");
+  el.removeAttribute("title");
+
+  const status = state.apiStatusCfg;
+  if (!status) {
+    el.classList.add("hidden");
+    el.textContent = "";
+    return;
+  }
+
+  if (status.online) {
+    el.textContent = `Online · ${status.actor || "authenticated"} @ ${status.organization || ""}`;
     el.classList.remove("hidden", "offline");
     state.apiOnline = true;
   } else {
@@ -2493,24 +2539,26 @@ async function refreshRemotePending() {
 }
 
 async function refreshDashboard() {
-  const [stats, summary, remotePending] = await Promise.all([
-    api("/api/stats"),
-    api("/api/projects/summary"),
-    state.apiOnline
-      ? api("/api/sync/remote-pending").catch(() => ({ online: false, pending: 0 }))
-      : Promise.resolve({ online: false, pending: 0 }),
-  ]);
-  state.remotePending = remotePending.pending || 0;
-  renderStatsLine(stats);
-  renderProjectPanels(summary);
-  await loadAuthors();
-  await Promise.allSettled([
-    loadRecentLocal(),
-    loadSyncLocal(),
-    loadSharedFromTeam(),
-    loadPotentialSecrets(),
-  ]);
-  await refreshToolCounts();
+  return withBackgroundLoad(async () => {
+    const [stats, summary, remotePending] = await Promise.all([
+      api("/api/stats"),
+      api("/api/projects/summary"),
+      state.apiOnline
+        ? api("/api/sync/remote-pending").catch(() => ({ online: false, pending: 0 }))
+        : Promise.resolve({ online: false, pending: 0 }),
+    ]);
+    state.remotePending = remotePending.pending || 0;
+    renderStatsLine(stats);
+    renderProjectPanels(summary);
+    await loadAuthors();
+    await Promise.allSettled([
+      loadRecentLocal(),
+      loadSyncLocal(),
+      loadSharedFromTeam(),
+      loadPotentialSecrets(),
+    ]);
+    await refreshToolCounts();
+  });
 }
 
 function handleHomeSearch(rawQ) {
@@ -2614,50 +2662,59 @@ function bindHomeTabControls() {
 bindHomeTabControls.bound = false;
 
 async function loadRemoteConfig(stats) {
-  const cfg = await api("/api/config").catch(() => ({ online: false }));
-  if (cfg.actor_name) state.localActorName = String(cfg.actor_name).trim();
-  else if (cfg.actor) state.localActorName = String(cfg.actor).trim();
-  else if (state.authors.length === 1) state.localActorName = state.authors[0].trim();
-  renderApiStatus(cfg);
-  if (state.apiOnline) {
-    const remotePending = await api("/api/sync/remote-pending").catch(() => ({
-      online: false,
-      pending: 0,
-    }));
-    state.remotePending = remotePending.pending || 0;
-  }
-  if (stats) renderStatsLine(stats);
-  await refreshToolCounts();
-  await refreshUpdateStatus();
+  return withBackgroundLoad(async () => {
+    const cfg = await api("/api/config").catch(() => ({ online: false }));
+    if (cfg.actor_name) state.localActorName = String(cfg.actor_name).trim();
+    else if (cfg.actor) state.localActorName = String(cfg.actor).trim();
+    else if (state.authors.length === 1) state.localActorName = state.authors[0].trim();
+    state.apiOnline = Boolean(cfg.online);
+    state.apiStatusCfg = cfg;
+    if (state.apiOnline) {
+      const remotePending = await api("/api/sync/remote-pending").catch(() => ({
+        online: false,
+        pending: 0,
+      }));
+      state.remotePending = remotePending.pending || 0;
+    }
+    if (stats) renderStatsLine(stats);
+    await refreshToolCounts();
+    await refreshUpdateStatus();
+  });
 }
 
 async function init() {
   initAccentThemePicker();
   bindHomeTabControls();
   switchHomeTab("recent");
+  beginBackgroundLoad();
 
-  const [stats, summary, projects] = await Promise.all([
-    api("/api/stats"),
-    api("/api/projects/summary"),
-    api("/api/projects"),
-  ]);
+  let stats;
+  try {
+    const [statsResult, summary, projects] = await Promise.all([
+      api("/api/stats"),
+      api("/api/projects/summary"),
+      api("/api/projects"),
+    ]);
+    stats = statsResult;
 
-  state.allProjects = projects;
-  state.remotePending = 0;
-  renderStatsLine(stats);
-  renderProjectPanels(summary);
-  renderSidebar();
-  renderHomeSidebar();
-  await loadAuthors();
-  await Promise.allSettled([
-    loadRecentLocal(),
-    loadSyncLocal(),
-    loadSharedFromTeam(),
-    loadPotentialSecrets(),
-  ]);
-  await refreshToolCounts();
-
-  void loadRemoteConfig(stats);
+    state.allProjects = projects;
+    state.remotePending = 0;
+    renderStatsLine(stats);
+    renderProjectPanels(summary);
+    renderSidebar();
+    renderHomeSidebar();
+    await loadAuthors();
+    await Promise.allSettled([
+      loadRecentLocal(),
+      loadSyncLocal(),
+      loadSharedFromTeam(),
+      loadPotentialSecrets(),
+    ]);
+    await refreshToolCounts();
+    void loadRemoteConfig(stats);
+  } finally {
+    endBackgroundLoad();
+  }
 
   const rerunScoped = () => {
     if (state.view !== "app") return;

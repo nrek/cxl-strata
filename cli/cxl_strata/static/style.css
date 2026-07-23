@@ -1314,6 +1314,18 @@ dialog h2 {
   color: #fbbf24;
 }
 
+.api-status.loading-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.1rem;
+}
+
+.api-status-spinner {
+  font-size: 0.85rem;
+  color: var(--accent-text, var(--accent));
+  line-height: 1;
+}
+
 .sync-section {
   width: 100%;
 }

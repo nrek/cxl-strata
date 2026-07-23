@@ -335,6 +335,162 @@ $env:STRATA_WORKSPACE_ROOT = "C:\path\to\workspace"
 strata index
 ```
 
+## Local File Index Lost, Empty, Or Indexing Fails
+
+Markdown under `.md/` and `.cursor/` is the source of truth. `.md/workspace_index.sqlite` is a rebuildable local cache for the localhost app, MCP `workspace-knowledge` tools, and search. If the UI looks empty, search misses known files, or `strata index` / `strata app` crashes while indexing, work through this ladder.
+
+### 1. Confirm the workspace root
+
+Run commands from the orchestration workspace root (the directory that contains `.md/handoff/` and usually `.cursor/`), not from a nested repo checkout.
+
+```bash
+pwd
+ls .md/handoff .md/blueprints
+```
+
+PowerShell:
+
+```powershell
+Get-Location
+Test-Path .md\handoff
+Test-Path .md\blueprints
+```
+
+If detection is wrong, set the root explicitly:
+
+```bash
+export STRATA_WORKSPACE_ROOT=/path/to/workspace
+strata index
+```
+
+```powershell
+$env:STRATA_WORKSPACE_ROOT = "C:\path\to\workspace"
+strata index
+```
+
+A wrong working directory can create a second, empty database at `~/.md/workspace_index.sqlite` (your user home). That path is **not** AppData and is **not** the real workspace index. Prefer the SQLite file next to your real `.md/handoff/` tree.
+
+### 2. Confirm the database file
+
+Expect:
+
+```text
+<workspace>/.md/workspace_index.sqlite
+```
+
+Optional SQLite sidecars (safe to remove with the main file during a hard rebuild):
+
+```text
+<workspace>/.md/workspace_index.sqlite-wal
+<workspace>/.md/workspace_index.sqlite-shm
+```
+
+```bash
+ls -lh .md/workspace_index.sqlite
+```
+
+```powershell
+Get-Item .md\workspace_index.sqlite | Select-Object FullName, Length, LastWriteTime
+```
+
+### 3. Soft refresh
+
+From the workspace root:
+
+```bash
+strata index
+strata app --open
+```
+
+```powershell
+strata index
+strata app --open
+```
+
+In the localhost UI, use **Files to Strata** when the pending badge is non-zero. Restart the MCP client after a large reindex if agents still see stale results.
+
+### 4. Prune rows for deleted files
+
+`strata index --full` re-walks the workspace and **prunes** index rows whose files no longer exist on disk. It does **not** force-rewrite every unchanged document (content hashes still skip unchanged files).
+
+```bash
+strata index --full
+```
+
+```powershell
+strata index --full
+```
+
+### 5. `IntegrityError: FOREIGN KEY constraint failed`
+
+If `strata index` or `strata app` aborts while indexing a handoff with:
+
+```text
+IntegrityError: FOREIGN KEY constraint failed
+```
+
+the local cache may have a corrupt `documents` row (historically a null `id`). Newer CLI builds self-heal null ids on upsert; if you are still on a broken build, either upgrade the CLI or remove the bad row / rebuild the cache (next step).
+
+Quick repair without wiping the whole DB (replace the path with the file named in the traceback when known):
+
+```bash
+sqlite3 .md/workspace_index.sqlite \
+  "DELETE FROM sections WHERE document_id IS NULL OR document_id NOT IN (SELECT id FROM documents WHERE id IS NOT NULL AND id != '');
+   DELETE FROM documents WHERE id IS NULL OR id = '';"
+strata index
+```
+
+PowerShell:
+
+```powershell
+sqlite3 .md\workspace_index.sqlite "DELETE FROM sections WHERE document_id IS NULL OR document_id NOT IN (SELECT id FROM documents WHERE id IS NOT NULL AND id != ''); DELETE FROM documents WHERE id IS NULL OR id = '';"
+strata index
+```
+
+If `sqlite3` is not installed, use the hard rebuild below.
+
+### 6. Hard rebuild (safe for markdown)
+
+Stop the localhost app if it is running, delete only the SQLite cache (not handoffs or blueprints), then reindex. Optionally pull shared docs from the central API afterward.
+
+```bash
+# stop strata app / daemon first if it holds the DB open
+rm -f .md/workspace_index.sqlite \
+      .md/workspace_index.sqlite-wal \
+      .md/workspace_index.sqlite-shm
+strata index
+strata pull
+strata app --open
+```
+
+```powershell
+# stop strata app / daemon first if it holds the DB open
+Remove-Item -Force .md\workspace_index.sqlite,
+  .md\workspace_index.sqlite-wal,
+  .md\workspace_index.sqlite-shm -ErrorAction SilentlyContinue
+strata index
+strata pull
+strata app --open
+```
+
+This does **not** delete `.md/handoff/`, `.md/blueprints/`, `.md/reports/`, or `.cursor/` files.
+
+### 7. Verify
+
+```bash
+strata index
+strata search "a word from a known handoff title"
+curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8765/
+```
+
+```powershell
+strata index
+strata search "a word from a known handoff title"
+try { (Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing).StatusCode } catch { $_.Exception.Message }
+```
+
+Expect HTTP `200` from the app root and search hits for files that exist on disk. If the app still looks empty after a successful index, also run `strata pull` for shared remote documents (see [Localhost App Opens But Looks Empty](#localhost-app-opens-but-looks-empty)).
+
 ## Missing `.md/handoff`, Blueprints, Or Reports
 
 Init and refresh create the standard knowledge folders. From the workspace root:

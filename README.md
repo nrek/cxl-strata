@@ -396,6 +396,7 @@ Common issues:
 - Sync failures
 - Secret detection `422`
 - Local SQLite database missing
+- Local file index lost / empty / corrupt (`FOREIGN KEY` on index)
 - Missing `.md/handoff` / blueprints / reports folders
 - Localhost app opens but looks empty
 - MCP tools do not appear

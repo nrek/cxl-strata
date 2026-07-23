@@ -155,6 +155,7 @@ def upsert_document(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             COALESCE(:sync_locked, 0)
         )
         ON CONFLICT(path) DO UPDATE SET
+            id = COALESCE(documents.id, excluded.id),
             kind = excluded.kind,
             project = excluded.project,
             title = excluded.title,

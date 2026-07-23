@@ -119,6 +119,22 @@ def load_global_config() -> dict[str, Any]:
     return {}
 
 
+def update_global_config(updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge keys into ~/.strata/global.json (nested dicts shallow-merged)."""
+    USER_STRATA_DIR.mkdir(parents=True, exist_ok=True)
+    data = load_global_config()
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
+    USER_GLOBAL_FILE.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return data
+
+
 def load_config() -> dict[str, Any]:
     alias = get_active_org()
     if alias:

@@ -581,6 +581,10 @@ async function runToolCommand(command) {
     }
 
     if (command === "sync-local") {
+      if (!state.apiOnline) {
+        setToolStatus("Remote API is offline or not configured. Local index remains available.");
+        return;
+      }
       await refreshToolCounts();
       const paths = state.transferStatus?.sync?.paths || [];
       if (!paths.length) {
@@ -628,6 +632,76 @@ async function runToolCommand(command) {
   }
 }
 
+function formatAutoSyncStatus(status) {
+  if (!status) return "";
+  const parts = [];
+  if (status.running) {
+    parts.push("Auto sync running…");
+  } else if (status.last_result) {
+    const last = status.last_result;
+    if (last.skipped === "already_running") {
+      parts.push("Auto sync already running");
+    } else if (!last.ok && last.error) {
+      parts.push(`Auto sync error: ${last.error}`);
+    } else if (last.remote?.skipped === "not_configured") {
+      parts.push("Auto: indexed (remote not configured — stash/pull skipped)");
+    } else if (last.remote?.skipped === "offline") {
+      parts.push("Auto: indexed (remote offline — stash/pull skipped)");
+    } else {
+      const synced = last.stash?.synced?.length ?? last.stash?.count ?? 0;
+      const pulled = last.pull?.pulled ?? 0;
+      parts.push(`Auto: indexed · shared ${synced} · pulled ${pulled}`);
+    }
+  }
+  if (status.enabled && status.next_run_in_seconds != null && !status.running) {
+    const mins = Math.max(1, Math.ceil(status.next_run_in_seconds / 60));
+    parts.push(`next ~${mins}m`);
+  }
+  return parts.join(" · ");
+}
+
+function renderAutoSyncControls(status) {
+  const input = $("#auto-sync-enabled");
+  const stateEl = $("#auto-sync-state");
+  if (input && document.activeElement !== input) {
+    input.checked = Boolean(status?.enabled);
+  }
+  if (stateEl) stateEl.textContent = status?.enabled ? "on" : "off";
+
+  const remoteOk = Boolean(status?.remote_configured) && state.apiOnline;
+  $("#tool-sync-local")?.toggleAttribute("disabled", !remoteOk);
+  $("#tool-sync-remote")?.toggleAttribute("disabled", !state.apiOnline);
+
+  const msg = formatAutoSyncStatus(status);
+  if (msg) setToolStatus(msg);
+}
+
+async function loadAutoSyncStatus() {
+  try {
+    const status = await api("/api/auto-sync");
+    renderAutoSyncControls(status);
+    return status;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function setAutoSyncEnabled(enabled) {
+  const status = await api("/api/auto-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: Boolean(enabled), run_now: Boolean(enabled) }),
+  });
+  renderAutoSyncControls(status);
+  if (enabled) {
+    setTimeout(() => {
+      loadAutoSyncStatus();
+      refreshToolCounts();
+    }, 1500);
+  }
+  return status;
+}
+
 function initToolDrawer() {
   const toggle = $("#tool-drawer-toggle");
   const drawer = $("#tool-drawer");
@@ -639,10 +713,21 @@ function initToolDrawer() {
     if (open) {
       loadSetupStatus();
       refreshToolCounts();
+      loadAutoSyncStatus();
     }
   });
 
   $("#setup-status-refresh")?.addEventListener("click", () => loadSetupStatus());
+
+  $("#auto-sync-enabled")?.addEventListener("change", (event) => {
+    const enabled = Boolean(event.target.checked);
+    const stateEl = $("#auto-sync-state");
+    if (stateEl) stateEl.textContent = enabled ? "on" : "off";
+    setAutoSyncEnabled(enabled).catch((err) => {
+      setToolStatus(`Auto sync failed: ${err.message}`);
+      loadAutoSyncStatus();
+    });
+  });
 
   drawer.querySelectorAll("[data-tool-command]").forEach((btn) => {
     btn.addEventListener("click", () => runToolCommand(btn.dataset.toolCommand));
@@ -657,6 +742,8 @@ function initToolDrawer() {
       setToolDrawerOpen(false);
     }
   });
+
+  void loadAutoSyncStatus();
 }
 
 function detectProjectFromQuery(q) {

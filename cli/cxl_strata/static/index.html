@@ -419,17 +419,24 @@
       </section>
 
       <section class="tool-section" aria-labelledby="tool-quick-title">
-        <h3 id="tool-quick-title">Quick Commands</h3>
+        <div class="tool-section-head">
+          <h3 id="tool-quick-title">Manage Sync</h3>
+          <label class="auto-sync-toggle" title="Automatically index, stash, and pull every 15 minutes while the STRATA app is running">
+            <span class="auto-sync-label">Auto</span>
+            <input type="checkbox" id="auto-sync-enabled" checked />
+            <span id="auto-sync-state" class="auto-sync-state" aria-live="polite">on</span>
+          </label>
+        </div>
         <div class="tool-command-list">
           <button type="button" class="tool-command" data-tool-command="index-local">
             <span>Files to Strata <em id="count-index-pending" class="tool-count" hidden></em></span>
             <code>strata index</code>
           </button>
-          <button type="button" class="tool-command" data-tool-command="sync-local">
+          <button type="button" class="tool-command" data-tool-command="sync-local" id="tool-sync-local">
             <span>Sync to Remote <em id="count-sync-pending" class="tool-count" hidden></em></span>
             <code>strata stash</code>
           </button>
-          <button type="button" class="tool-command" data-tool-command="sync-remote">
+          <button type="button" class="tool-command" data-tool-command="sync-remote" id="tool-sync-remote">
             <span>Pull from Remote <em id="count-pull-pending" class="tool-count" hidden></em></span>
             <code>strata pull</code>
           </button>

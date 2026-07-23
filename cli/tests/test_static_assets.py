@@ -172,13 +172,17 @@ def test_tool_drawer_static_wiring() -> None:
     assert 'id="tool-drawer"' in index
     assert 'id="tool-drawer-toggle"' in index
     assert "fa-wrench" in index
-    assert "Quick Commands" in index
+    assert "Manage Sync" in index
+    assert 'id="auto-sync-enabled"' in index
     assert "SETUP STATUS" in index
     assert 'id="setup-status-list"' in index
     assert 'id="setup-status-refresh"' in index
     assert "Files to Strata" in index
     assert "Sync to Remote" in index
     assert "Pull from Remote" in index
+    assert "function renderAutoSyncControls(status)" in app_js
+    assert 'api("/api/auto-sync"' in app_js
+    assert ".auto-sync-toggle" in style
     # Files to Strata (index) must be the first quick command
     assert index.find('data-tool-command="index-local"') < index.find(
         'data-tool-command="sync-local"'

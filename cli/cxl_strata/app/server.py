@@ -18,6 +18,7 @@ from ..local_store import load_config
 from ..version import client_version
 from ..workspace_index import db, graph, indexer, nl_query, paths, queries, sync_review
 from ..workspace_index.text_cleanup import fix_mojibake
+from . import auto_sync
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 DEFAULT_PORT = 8765
@@ -234,6 +235,10 @@ class StrataAppHandler(BaseHTTPRequestHandler):
 
         if path == "/api/setup/status":
             _json_response(self, setup_status())
+            return
+
+        if path == "/api/auto-sync":
+            _json_response(self, auto_sync.get_controller().status())
             return
 
         if path == "/api/authors":
@@ -567,6 +572,25 @@ class StrataAppHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
 
+        if parsed.path == "/api/auto-sync":
+            try:
+                body = _read_json(self)
+            except json.JSONDecodeError:
+                _json_response(self, {"error": "invalid json"}, HTTPStatus.BAD_REQUEST)
+                return
+            enabled = body.get("enabled")
+            if enabled is None:
+                _json_response(self, {"error": "enabled required"}, HTTPStatus.BAD_REQUEST)
+                return
+            run_now = body.get("run_now")
+            if run_now is None:
+                run_now = True
+            status = auto_sync.get_controller().set_enabled(
+                bool(enabled), run_now=bool(run_now)
+            )
+            _json_response(self, status)
+            return
+
         if parsed.path == "/api/query":
             try:
                 body = _read_json(self)
@@ -854,6 +878,8 @@ def run_app(
 
     bootstrap_workspace_index(project=project, pull_shared=pull_shared)
 
+    auto_sync.get_controller().start()
+
     server = ThreadingHTTPServer((host, port), StrataAppHandler)
     url = f"http://{host}:{port}"
     print(f"STRATA app listening on {url}", file=sys.stderr)
@@ -864,6 +890,7 @@ def run_app(
     except KeyboardInterrupt:
         print("\nShutting down.", file=sys.stderr)
     finally:
+        auto_sync.get_controller().stop()
         server.server_close()
 
 

@@ -1925,7 +1925,6 @@ async function runScopedSearch(q) {
   setAppSidebarVisible(true);
   setAppResultsVisible(true);
   $("#output").innerHTML = '<p class="empty loading">Searching…</p>';
-  const source = ($("#scoped-source") || {}).value || "local";
   const author = scopedAuthorFilter();
   const kinds = scopedKindsFilter();
   const data = await api("/api/query", {
@@ -1935,7 +1934,7 @@ async function runScopedSearch(q) {
       q: trimmed,
       limit: 80,
       project: state.activeProject,
-      source,
+      source: "local",
       author: author || undefined,
       kinds: kinds.length ? kinds.join(",") : undefined,
     }),
@@ -1949,7 +1948,6 @@ async function browseProject(project) {
   setAppSidebarVisible(true);
   setAppResultsVisible(true);
   $("#output").innerHTML = '<p class="empty loading">Loading project…</p>';
-  const source = ($("#scoped-source") || {}).value || "local";
   const author = scopedAuthorFilter();
   const kinds = scopedKindsFilter();
   const data = await api("/api/query", {
@@ -1960,7 +1958,7 @@ async function browseProject(project) {
       limit: 500,
       project,
       all_time: true,
-      source,
+      source: "local",
       author: author || undefined,
       kinds: kinds.length ? kinds.join(",") : undefined,
     }),
@@ -2653,9 +2651,6 @@ function handleHomeSearch(rawQ) {
   if (!q) return;
 
   syncHomeAuthorToScoped();
-  const source = ($("#home-source") || {}).value || "local";
-  const scopedSource = $("#scoped-source");
-  if (scopedSource) scopedSource.value = source;
 
   const detected = detectProjectFromQuery(q);
   if (detected) {

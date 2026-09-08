@@ -65,6 +65,28 @@ http://127.0.0.1:8765
 
 The central API stores shared team memory in PostgreSQL. The local SQLite database powers fast local browsing for Cursor, Claude, Codex, and terminal workflows. Init and refresh keep a uniform `.md/` layout so the index, handoffs, blueprints, and reports always live in the same place.
 
+### Native bridge (stdio JSON-lines)
+
+Native clients such as **Scylla Workbench** talk to STRATA through a long-lived local bridge instead of opening `.md/workspace_index.sqlite` directly:
+
+```bash
+strata bridge
+# or
+python -m cxl_strata.bridge
+```
+
+Protocol v1 — one JSON object per line:
+
+```text
+→ {"id":1,"method":"capabilities","params":{}}
+← {"id":1,"ok":true,"result":{"bridge_version":1,"methods":["capabilities","status","search","recent","get"],...}}
+
+→ {"id":2,"method":"search","params":{"query":"handoff","project":"cxl-scylla","limit":10}}
+← {"id":2,"ok":true,"result":{"hits":[...],"count":N}}
+```
+
+Methods: `capabilities`, `status`, `search`, `recent`, `get`. Optional `params.workspace_root` scopes the index. Central API remains optional for shared memory; the bridge is local-first.
+
 ## Repository Layout
 
 ```text

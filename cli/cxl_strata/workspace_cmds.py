@@ -199,4 +199,23 @@ def register(app: typer.Typer) -> None:
         result = pull.pull_documents(project=project, kind=kind, since=since, limit=limit)
         rprint(json.dumps(result, indent=2))
 
+    @app.command("bridge")
+    def bridge_cmd(
+        root: Optional[Path] = typer.Option(
+            None, "--root", help="Workspace root override for index access"
+        ),
+    ) -> None:
+        """Native stdio JSON-lines bridge for Scylla and other local clients.
+
+        Protocol v1: one JSON request per line on stdin, one JSON response per line
+        on stdout. Methods: capabilities, status, search, recent, get.
+
+        Also invokable as: python -m cxl_strata.bridge
+        """
+        from .bridge import run_bridge
+
+        if root:
+            set_workspace_root(root)
+        run_bridge()
+
     app.add_typer(app_typer, name="app")

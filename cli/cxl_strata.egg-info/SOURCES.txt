@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 cxl_strata/__init__.py
 cxl_strata/api_client.py
+cxl_strata/bridge.py
 cxl_strata/cli.py
 cxl_strata/client_update.py
 cxl_strata/content_safety.py
@@ -20,6 +21,7 @@ cxl_strata.egg-info/entry_points.txt
 cxl_strata.egg-info/requires.txt
 cxl_strata.egg-info/top_level.txt
 cxl_strata/app/__init__.py
+cxl_strata/app/auto_sync.py
 cxl_strata/app/autostart.py
 cxl_strata/app/server.py
 cxl_strata/hooks/hooks.json
@@ -60,6 +62,7 @@ cxl_strata/workspace_index/storage.py
 cxl_strata/workspace_index/sync_review.py
 cxl_strata/workspace_index/text_cleanup.py
 tests/test_app_health.py
+tests/test_auto_sync.py
 tests/test_cli_bootstrap.py
 tests/test_client_update.py
 tests/test_graph.py

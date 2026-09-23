@@ -10,6 +10,7 @@ os.environ["BOOTSTRAP_ORG_SLUG"] = "bootstrap-org"
 os.environ["BOOTSTRAP_ORG_NAME"] = "Bootstrap Organization"
 os.environ["API_KEY_PEPPER"] = "test-pepper"
 os.environ["STRATA_ENV"] = "test"
+os.environ["STRATA_PROVISION_TOKEN"] = "provision-test-token"
 
 import pytest
 from fastapi.testclient import TestClient

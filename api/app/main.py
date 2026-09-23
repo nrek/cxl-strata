@@ -5,16 +5,21 @@ from __future__ import annotations
 import mimetypes
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+import re
+
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_auth, require_scopes
+from app.core.config import settings
 from app.core.db import get_db
 from app.core.types import AuthContext
 from app.schemas.key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
 from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatchIn, SyncBatchOut
+from app.schemas.provision import TeamProvisionIn, TeamProvisionOut
 from app.schemas.shared_document import (
     DocumentCommentCreate,
     DocumentCommentOut,
@@ -25,8 +30,11 @@ from app.schemas.shared_document import (
 )
 from app.services.client_install import client_manifest, render_install_ps1, render_install_sh
 from app.services.document_service import DocumentService, comment_to_dict, document_to_dict
-from app.services.key_service import KeyService
+from app.services.key_service import DEFAULT_SCOPES, KeyService
 from app.services.memory_service import MemoryService, event_to_dict
+
+_provision_bearer = HTTPBearer(auto_error=False)
+_SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 
 app = FastAPI(title="STRATA", version="0.3.3", description="Shared project memory API")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -138,6 +146,66 @@ def whoami(auth: AuthContext = Depends(require_auth)) -> dict:
         "api": "strata",
         "bootstrap": auth.bootstrap,
     }
+
+
+def require_provision_token(
+    creds: HTTPAuthorizationCredentials | None = Depends(_provision_bearer),
+) -> None:
+    expected = (settings.strata_provision_token or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Team provision is not configured",
+        )
+    if creds is None or not creds.credentials or creds.credentials.strip() != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid provision token",
+        )
+
+
+@app.post("/v1/provision/team", response_model=TeamProvisionOut)
+def provision_team(
+    body: TeamProvisionIn,
+    _: None = Depends(require_provision_token),
+    db: Session = Depends(get_db),
+) -> TeamProvisionOut:
+    """Machine-auth Team org provision for Scylla Workbench (idempotent on slug)."""
+    slug = body.slug.strip().lower()
+    if not _SLUG_RE.fullmatch(slug):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="slug must be lowercase letters, digits, and single hyphens",
+        )
+    keys = KeyService(db)
+    org = keys.ensure_organization(slug, body.name.strip())
+    actor = keys.ensure_actor(
+        organization_id=org.id,
+        name=body.actor_name.strip(),
+        email=(body.actor_email or "").strip() or None,
+    )
+    # Retries rotate the same logical Workbench credential instead of leaving
+    # multiple active keys after a lost response.
+    key_name = body.key_name.strip()
+    for existing in keys.list_keys(organization_id=org.id):
+        if (
+            existing.is_active
+            and existing.actor_id == actor.id
+            and existing.name == key_name
+        ):
+            keys.revoke(key_id=existing.id, organization_id=org.id)
+    _row, raw_key = keys.create_key(
+        organization_id=org.id,
+        actor_id=actor.id,
+        name=key_name,
+        scopes=list(DEFAULT_SCOPES),
+        prefix=body.prefix,
+    )
+    return TeamProvisionOut(
+        organization={"id": org.id, "slug": org.slug, "name": org.name},
+        actor={"id": actor.id, "name": actor.name, "email": actor.email},
+        api_key=raw_key,
+    )
 
 
 @app.post("/v1/memory-events", response_model=MemoryEventOut)

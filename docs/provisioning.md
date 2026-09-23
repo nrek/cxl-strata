@@ -14,6 +14,12 @@ Provisioning is the owner/admin path for creating access tokens and onboarding t
 
 Never put tokens in Git, URLs, shell history screenshots, or installer links.
 
+## Scylla Memory Team Provisioning
+
+Scylla Workbench may provision a Team organization through `POST /v1/provision/team` using the machine-only `STRATA_PROVISION_TOKEN`. The operation is idempotent on organization slug and returns a newly minted actor API key once. Keep the machine token and returned key server-side; neither belongs in browser or desktop configuration.
+
+This integration brands the capability as **Scylla Memory** in Scylla. It does not rename STRATA or change standalone STRATA installation and provisioning flows.
+
 ## Bootstrap The First Admin
 
 On the API host:

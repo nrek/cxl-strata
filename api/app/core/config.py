@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     # Advertised client package version — bump when shipping a client release.
     # Local apps compare this to their installed version and show [ update ].
     strata_client_version: str = "0.3.3"
+    # Shared secret for Scylla Workbench Team → STRATA org provisioning (machine auth).
+    # Blank disables POST /v1/provision/team.
+    strata_provision_token: str = ""
 
     def allowed_api_keys(self) -> list[str]:
         return [key.strip() for key in self.strata_api_keys.split(",") if key.strip()]

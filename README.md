@@ -195,6 +195,8 @@ Apache or Nginx on 443
   -> PostgreSQL
 ```
 
+Production updates use `deploy.sh` in the existing `/var/www/cxl-strata` checkout (`git pull`, `api/.venv`, `api/.env`, Alembic, restart `cxl-strata-api`). See [Server setup — Deploy Updates](docs/server-setup.md#deploy-updates).
+
 Local development:
 
 ```bash

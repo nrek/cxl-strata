@@ -80,14 +80,8 @@ Recommended path:
 
 ```text
 /var/www/cxl-strata
-```
-
-Create the app user and directory:
-
-```bash
-sudo useradd --system --home /var/www/cxl-strata --shell /usr/sbin/nologin strata || true
-sudo mkdir -p /var/www/cxl-strata
-sudo chown strata:strata /var/www/cxl-strata
+  api/.env
+  api/.venv
 ```
 
 Install server packages:
@@ -97,14 +91,16 @@ sudo apt update
 sudo apt install -y git python3-venv python3-pip postgresql apache2
 ```
 
-Clone and install:
+Create the app directory. The API process runs as `ubuntu`.
 
 ```bash
-sudo -u strata git clone https://github.com/YOUR_ORG/cxl-strata.git /var/www/cxl-strata
+sudo mkdir -p /var/www/cxl-strata
+sudo chown ubuntu:ubuntu /var/www/cxl-strata
+sudo -u ubuntu git clone https://github.com/nrek/cxl-strata.git /var/www/cxl-strata
 cd /var/www/cxl-strata/api
-sudo -u strata python3 -m venv .venv
-sudo -u strata .venv/bin/pip install -r requirements.txt
-sudo -u strata cp .env.example .env
+sudo -u ubuntu python3 -m venv .venv
+sudo -u ubuntu .venv/bin/pip install -r requirements.txt
+sudo -u ubuntu cp .env.example .env
 ```
 
 Edit `/var/www/cxl-strata/api/.env`:
@@ -158,19 +154,21 @@ python -m pytest tests -q
 Do not export `STRATA_API_KEYS=strata_dev_example` on the production host to make
 tests pass.
 
-Create the database and apply migrations:
+Create the database before the first deploy. `deploy.sh` runs `alembic upgrade head`.
 
 ```bash
 sudo -u postgres createuser strata
 sudo -u postgres createdb -O strata strata
-cd /var/www/cxl-strata/api
-sudo -u strata .venv/bin/alembic upgrade head
-sudo -u strata .venv/bin/python scripts/seed_key.py --org-slug example-org --prefix strata_live_
+cd /var/www/cxl-strata
+sudo ./deploy.sh deploy
+sudo -u ubuntu /var/www/cxl-strata/api/.venv/bin/python /var/www/cxl-strata/api/scripts/seed_key.py --org-slug example-org --prefix strata_live_
 ```
 
-Save the raw key printed by `seed_key.py`. It is shown once.
+Save the raw key printed by `seed_key.py`. It is shown once. `seed_key.py` is not part of later deploys.
 
 ## systemd
+
+`deploy.sh` restarts this unit. It does not rewrite it.
 
 Create `/etc/systemd/system/cxl-strata-api.service`:
 
@@ -180,8 +178,8 @@ Description=STRATA central memory API
 After=network.target postgresql.service
 
 [Service]
-User=strata
-Group=strata
+User=ubuntu
+Group=ubuntu
 WorkingDirectory=/var/www/cxl-strata/api
 EnvironmentFile=/var/www/cxl-strata/api/.env
 ExecStart=/var/www/cxl-strata/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8015
@@ -335,12 +333,25 @@ See [client installation](client-installation.md#mcp-for-ai-context-retrieval).
 
 ## Deploy Updates
 
+Updates run inside the existing checkout. `deploy.sh` saves a dirty working tree under `backups/`, moves aside only untracked files that `origin/main` already contains, then checks out `origin/main`. `api/.env` and `api/.venv` stay. The systemd unit is restarted and left as installed.
+
 ```bash
 cd /var/www/cxl-strata
-sudo -u strata git pull
+./deploy.sh deploy
+curl -fsS http://127.0.0.1:8015/health
+```
+
+Same steps the host has used since the July 2026 deploys, from `.md/handoff/cxl-strata/2026-07-14T17-37-52Z.md`:
+
+```bash
+cd /var/www/cxl-strata
+git pull
 cd api
-sudo -u strata .venv/bin/pip install -r requirements.txt
-sudo -u strata .venv/bin/alembic upgrade head
+source .venv/bin/activate
+set -a && source .env && set +a
+pip install -r requirements.txt
+alembic upgrade head
+python -m pytest tests -q
 sudo systemctl restart cxl-strata-api
 sudo apache2ctl configtest
 sudo systemctl reload apache2 || sudo systemctl restart apache2

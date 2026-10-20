@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -96,3 +97,80 @@ def test_auto_sync_api_get_and_post(tmp_path: Path, monkeypatch) -> None:
         auto_sync._controller = None  # noqa: SLF001
         server.shutdown()
         server.server_close()
+
+
+def test_sync_now_indexes_and_records_success(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    monkeypatch.setattr(local_store, "USER_STRATA_DIR", tmp_path)
+    auto_sync._controller = None  # noqa: SLF001
+
+    def fake_reconcile() -> dict:
+        return {
+            "ok": True,
+            "started_at": "2026-09-30T20:00:00Z",
+            "finished_at": "2026-09-30T20:00:02Z",
+            "index": {"indexed": 1},
+            "stash": None,
+            "pull": None,
+            "remote": {"configured": False, "online": False, "skipped": "not_configured"},
+            "error": None,
+        }
+
+    monkeypatch.setattr(auto_sync, "reconcile", fake_reconcile)
+    server, port = _serve_once(StrataAppHandler)
+    try:
+        import urllib.request
+
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/sync/now",
+            data=b"{}",
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=3) as response:  # noqa: S310
+            started = json.loads(response.read().decode("utf-8"))
+        assert started["started"] is True
+
+        status = started
+        for _ in range(40):
+            if not status.get("running") and status.get("last_success_at"):
+                break
+            time.sleep(0.05)
+            with urllib.request.urlopen(  # noqa: S310
+                f"http://127.0.0.1:{port}/api/auto-sync", timeout=3
+            ) as response:
+                status = json.loads(response.read().decode("utf-8"))
+        assert status["running"] is False
+        assert status["last_success_at"] == "2026-09-30T20:00:02Z"
+        assert status["last_error"] is None
+    finally:
+        auto_sync.get_controller().stop()
+        auto_sync._controller = None  # noqa: SLF001
+        server.shutdown()
+        server.server_close()
+
+
+def test_remember_outcome_keeps_success_when_remote_is_offline(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(local_store, "USER_GLOBAL_FILE", tmp_path / "global.json")
+    monkeypatch.setattr(local_store, "USER_STRATA_DIR", tmp_path)
+    auto_sync.remember_outcome(
+        {
+            "ok": True,
+            "finished_at": "2026-09-30T18:00:00Z",
+            "remote": {"configured": False, "online": False, "skipped": "not_configured"},
+            "stash": None,
+            "pull": None,
+        }
+    )
+    auto_sync.remember_outcome(
+        {
+            "ok": True,
+            "finished_at": "2026-09-30T19:00:00Z",
+            "remote": {"configured": True, "online": False, "error": "connection refused"},
+            "stash": None,
+            "pull": None,
+        }
+    )
+    fields = auto_sync.persisted_sync_fields()
+    assert fields["last_success_at"] == "2026-09-30T18:00:00Z"
+    assert fields["last_error"] == "connection refused"

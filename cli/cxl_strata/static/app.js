@@ -84,6 +84,7 @@ const state = {
   accentTheme: "blue",
   graphProject: null,
   graphReturnView: "home",
+  embed: false,
 };
 
 const ACCENT_STORAGE_KEY = "strata:accent-theme";
@@ -1573,6 +1574,10 @@ async function openGraphView(project) {
 }
 
 function closeGraphView() {
+  if (state.embed && window.chrome && window.chrome.webview) {
+    window.chrome.webview.postMessage("memory-graph-closed");
+    return;
+  }
   const target = state.graphReturnView === "app" && state.activeProject ? "app" : "home";
   showView(target);
   if (target === "home") $("#home-q")?.focus();
@@ -2888,7 +2893,10 @@ async function init() {
 
   initToolDrawer();
   initDeleteStrataModal();
-  showView("home");
+  const params = new URLSearchParams(window.location.search);
+  state.embed = params.get("embed") === "1";
+  if (params.get("view") === "graph") openGraphView(params.get("project") || null);
+  else showView("home");
 }
 
 init().catch((err) => {

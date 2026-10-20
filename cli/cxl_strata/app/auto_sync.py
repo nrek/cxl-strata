@@ -77,6 +77,49 @@ def save_preferences(*, enabled: bool | None = None, interval_seconds: int | Non
     return load_preferences()
 
 
+def persisted_sync_fields() -> dict[str, str | None]:
+    """Last full sync outcome stored in ~/.strata/global.json."""
+    raw = local_store.load_global_config().get(AUTO_SYNC_KEY) or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    success = raw.get("last_success_at")
+    error = raw.get("last_error")
+    return {
+        "last_success_at": success if isinstance(success, str) and success.strip() else None,
+        "last_error": error if isinstance(error, str) and error.strip() else None,
+    }
+
+
+def remember_outcome(result: dict[str, Any]) -> None:
+    """Record a finished reconcile. A full success clears the previous error."""
+    finished = result.get("finished_at")
+    remote = result.get("remote") if isinstance(result.get("remote"), dict) else {}
+    configured = bool(remote.get("configured"))
+    online = bool(remote.get("online"))
+    stash = result.get("stash") if isinstance(result.get("stash"), dict) else {}
+    pull = result.get("pull") if isinstance(result.get("pull"), dict) else {}
+    stash_failed = stash.get("failed") or []
+    pull_error = pull.get("error")
+    if result.get("ok") and (not configured or online) and not stash_failed and not pull_error:
+        patch: dict[str, Any] = {
+            "last_success_at": finished,
+            "last_error": None,
+            "last_error_at": None,
+        }
+    elif result.get("ok") and configured and not online:
+        patch = {
+            "last_error": str(remote.get("error") or "Remote STRATA is offline"),
+            "last_error_at": finished,
+        }
+    else:
+        detail = result.get("error") or pull_error or "Sync failed"
+        patch = {"last_error": str(detail), "last_error_at": finished}
+    try:
+        local_store.update_global_config({AUTO_SYNC_KEY: patch})
+    except Exception:  # noqa: BLE001 - status display must not fail the sync
+        return
+
+
 def reconcile() -> dict[str, Any]:
     """Index local files; stash + pull only when remote is configured and online."""
     result: dict[str, Any] = {
@@ -154,6 +197,7 @@ class AutoSyncController:
             next_in = None
             if self._next_run_at is not None and prefs["enabled"]:
                 next_in = max(0, int(self._next_run_at - time.time()))
+            persisted = persisted_sync_fields()
             return {
                 "enabled": prefs["enabled"],
                 "interval_seconds": prefs["interval_seconds"],
@@ -161,6 +205,8 @@ class AutoSyncController:
                 "thread_alive": bool(self._thread and self._thread.is_alive()),
                 "remote_configured": remote_configured(),
                 "last_started_at": self._last_started_at,
+                "last_success_at": persisted["last_success_at"],
+                "last_error": persisted["last_error"],
                 "last_result": self._last_result,
                 "next_run_in_seconds": next_in,
             }
@@ -191,6 +237,28 @@ class AutoSyncController:
             self._wake.set()
         return self.status()
 
+    def request_run(self) -> bool:
+        """Start index + remote sync without blocking the caller. False if one is already running."""
+        if not self._run_lock.acquire(blocking=False):
+            return False
+        with self._lock:
+            self._running = True
+            self._last_started_at = _now_iso()
+        threading.Thread(target=self._run_locked, name="strata-sync-now", daemon=True).start()
+        return True
+
+    def _run_locked(self) -> None:
+        """Caller holds ``_run_lock`` and has already marked ``_running``."""
+        try:
+            result = reconcile()
+            remember_outcome(result)
+            with self._lock:
+                self._last_result = result
+        finally:
+            with self._lock:
+                self._running = False
+            self._run_lock.release()
+
     def run_once(self) -> dict[str, Any]:
         if not self._run_lock.acquire(blocking=False):
             with self._lock:
@@ -204,11 +272,13 @@ class AutoSyncController:
                 self._running = True
                 self._last_started_at = _now_iso()
             result = reconcile()
+            remember_outcome(result)
             with self._lock:
                 self._last_result = result
-                self._running = False
             return result
         finally:
+            with self._lock:
+                self._running = False
             self._run_lock.release()
 
     def _loop(self) -> None:

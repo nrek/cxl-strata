@@ -591,6 +591,14 @@ class StrataAppHandler(BaseHTTPRequestHandler):
             _json_response(self, status)
             return
 
+        if parsed.path == "/api/sync/now":
+            controller = auto_sync.get_controller()
+            started = controller.request_run()
+            payload = controller.status()
+            payload["started"] = started
+            _json_response(self, payload)
+            return
+
         if parsed.path == "/api/query":
             try:
                 body = _read_json(self)

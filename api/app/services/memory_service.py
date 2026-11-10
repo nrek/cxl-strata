@@ -7,8 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.content_safety import find_secret_markers
-from app.core.types import AuthContext, dump_json, load_json_list, utcnow
+from app.core.types import AuthContext, load_json_list, utcnow
 from app.models import Actor, MemoryEvent, Organization, Project, Repo
 from app.schemas.memory_event import MemoryEventCreate
 
@@ -19,8 +18,8 @@ class MemoryService:
         self.auth = auth
 
     def create(self, body: MemoryEventCreate, *, local_id: str | None = None) -> MemoryEvent:
-        if find_secret_markers(body.model_dump()):
-            raise ValueError("Payload appears to contain secrets. Redact credentials before saving memory.")
+        if not body.content_ciphertext or not body.content_nonce:
+            raise ValueError("Memory content must be sealed")
 
         org = self._get_org()
         project = self._get_or_create_project(org, body.project_slug)
@@ -34,18 +33,22 @@ class MemoryService:
             project_slug=body.project_slug,
             repo_name=body.repo_name,
             event_type=body.event_type,
-            title=body.title,
-            summary=body.summary,
-            details=body.details,
+            title="",
+            summary="",
+            details=None,
             environment=body.environment,
             visibility=body.visibility,
             source=body.source,
-            source_ref=body.source_ref,
+            source_ref=None,
             confidence=body.confidence,
-            tags_json=dump_json(body.tags),
-            related_files_json=dump_json(body.related_files),
+            tags_json="[]",
+            related_files_json="[]",
             local_id=local_id,
             occurred_at=body.occurred_at,
+            content_ciphertext=body.content_ciphertext,
+            content_nonce=body.content_nonce,
+            dek_version=body.dek_version or 1,
+            content_state="sealed",
         )
         self.db.add(event)
         self.db.commit()
@@ -75,7 +78,10 @@ class MemoryService:
 
     def search(self, *, q: str, project: str | None = None, limit: int = 50) -> list[MemoryEvent]:
         needle = q.lower()
-        stmt = select(MemoryEvent).where(MemoryEvent.organization_id == self.auth.organization_id)
+        stmt = select(MemoryEvent).where(
+            MemoryEvent.organization_id == self.auth.organization_id,
+            MemoryEvent.content_state != "sealed",
+        )
         if project:
             stmt = stmt.where(MemoryEvent.project_slug == project)
         rows = list(self.db.scalars(stmt.order_by(MemoryEvent.created_at.desc()).limit(limit * 5)))
@@ -152,4 +158,8 @@ def event_to_dict(row: MemoryEvent) -> dict:
         "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "content_ciphertext": row.content_ciphertext,
+        "content_nonce": row.content_nonce,
+        "dek_version": row.dek_version,
+        "content_state": row.content_state,
     }

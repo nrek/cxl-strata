@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.db import get_db
 from app.core.types import AuthContext
 from app.schemas.key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut
-from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SyncBatchIn, SyncBatchOut
+from app.schemas.memory_event import MemoryEventCreate, MemoryEventOut, SealIn, SyncBatchIn, SyncBatchOut
 from app.schemas.provision import TeamProvisionIn, TeamProvisionOut
 from app.schemas.shared_document import (
     DocumentCommentCreate,
@@ -32,6 +32,7 @@ from app.services.client_install import client_manifest, render_install_ps1, ren
 from app.services.document_service import DocumentService, comment_to_dict, document_to_dict
 from app.services.key_service import DEFAULT_SCOPES, KeyService
 from app.services.memory_service import MemoryService, event_to_dict
+from app.services.seal_service import SealService
 
 _provision_bearer = HTTPBearer(auto_error=False)
 _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -281,6 +282,38 @@ def project_context(
     return service.project_context(project=project_slug, limit=limit)
 
 
+@app.get("/v1/org/seal-status")
+def seal_status(
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    return SealService(db, auth).status()
+
+
+@app.get("/v1/org/plaintext-backlog")
+def plaintext_backlog(
+    limit: int = Query(25, ge=1, le=100),
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:read")
+    return {"results": SealService(db, auth).backlog(limit=limit)}
+
+
+@app.post("/v1/org/seal")
+def seal_row(
+    body: SealIn,
+    auth: AuthContext = Depends(require_auth),
+    db: Session = Depends(get_db),
+) -> dict:
+    require_scopes(auth, "memory:write")
+    try:
+        return SealService(db, auth).seal(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.post("/v1/sync/batch", response_model=SyncBatchOut)
 def sync_batch(
     body: SyncBatchIn,
@@ -446,7 +479,10 @@ def create_document_comment(
 ) -> DocumentCommentOut:
     require_scopes(auth, "memory:write")
     service = DocumentService(db, auth)
-    comment = service.add_comment(document_id, body)
+    try:
+        comment = service.add_comment(document_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if comment is None:
         raise HTTPException(status_code=404, detail="not found")
     return DocumentCommentOut(**comment_to_dict(comment))

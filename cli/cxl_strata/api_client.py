@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from .local_store import load_api_key, load_config
+from .memory_seal import seal_comment_body, seal_document, seal_memory_event
 
 
 def _client(*, timeout: float = 30.0) -> httpx.Client:
@@ -28,12 +29,19 @@ def whoami(*, timeout: float = 30.0) -> dict[str, Any]:
 
 def sync_batch(events: list[dict[str, Any]], workspace_id: str | None = None) -> dict[str, Any]:
     cfg = load_config()
+    sealed_events = []
+    for event in events:
+        local_id = event.get("local_id")
+        sealed = seal_memory_event(event)
+        if local_id:
+            sealed["local_id"] = local_id
+        sealed_events.append(sealed)
     with _client() as client:
         r = client.post(
             "/v1/sync/batch",
             json={
                 "workspace_id": workspace_id or cfg.get("workspace_id"),
-                "events": events,
+                "events": sealed_events,
             },
         )
         r.raise_for_status()
@@ -113,7 +121,13 @@ def create_document_comment(
     author_email: str | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
-    payload: dict[str, Any] = {"body": body}
+    sealed = seal_comment_body(body)
+    payload: dict[str, Any] = {
+        "body": sealed["body"],
+        "content_ciphertext": sealed["content_ciphertext"],
+        "content_nonce": sealed["content_nonce"],
+        "dek_version": sealed["dek_version"],
+    }
     if author_name:
         payload["author_name"] = author_name
     if author_email:
@@ -134,8 +148,9 @@ def list_document_comments(document_id: str) -> list[dict[str, Any]]:
 
 
 def documents_import_batch(documents: list[dict[str, Any]]) -> dict[str, Any]:
+    sealed = [seal_document(document) for document in documents]
     with _client() as client:
-        r = client.post("/v1/documents/import-batch", json={"documents": documents})
+        r = client.post("/v1/documents/import-batch", json={"documents": sealed})
         r.raise_for_status()
         return r.json()
 

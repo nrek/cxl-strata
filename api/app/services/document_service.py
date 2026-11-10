@@ -9,7 +9,6 @@ from typing import Any
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.content_safety import redact_secret_markers
 from app.core.path_guard import is_scratch_path
 from app.core.types import AuthContext, utcnow
 from app.models import Project, SharedDocument, SharedDocumentComment, SharedDocumentSection
@@ -26,8 +25,12 @@ def comment_to_dict(row: SharedDocumentComment) -> dict[str, Any]:
         "document_id": row.document_id,
         "author_name": row.author_name,
         "author_email": row.author_email,
-        "body": row.body,
+        "body": "" if row.content_state == "sealed" else row.body,
         "created_at": row.created_at.isoformat() if row.created_at else None,
+        "content_ciphertext": row.content_ciphertext,
+        "content_nonce": row.content_nonce,
+        "dek_version": row.dek_version,
+        "content_state": row.content_state,
     }
 
 
@@ -58,9 +61,15 @@ def document_to_dict(
         "shared_at": row.shared_at.isoformat() if row.shared_at else None,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+        "path_hash": row.path_hash,
+        "content_state": row.content_state,
+        "dek_version": row.dek_version,
     }
+    if include_body or row.content_state == "sealed":
+        payload["content_ciphertext"] = row.content_ciphertext
+        payload["content_nonce"] = row.content_nonce
     if include_body:
-        payload["body"] = row.body
+        payload["body"] = "" if row.content_state == "sealed" else row.body
     if include_comments:
         payload["comments"] = [comment_to_dict(c) for c in row.comments]
     return payload
@@ -102,14 +111,19 @@ class DocumentService:
         return project.id
 
     def upsert(self, body: SharedDocumentCreate) -> SharedDocument:
-        redacted_body = redact_secret_markers(body.body)
+        if not body.content_ciphertext or not body.content_nonce or not body.path_hash:
+            raise ValueError("Document content must be sealed")
+        for section in body.sections or []:
+            if not section.get("content_ciphertext") or not section.get("content_nonce"):
+                raise ValueError("Section content must be sealed")
         author_name, author_email = self._author()
-        digest = _body_hash(redacted_body)
+        digest = body.body_hash or _body_hash("")
         project_id = self._ensure_project(body.project_slug)
+        stored_path = "sealed:" + body.path_hash
 
         stmt = select(SharedDocument).where(
             SharedDocument.organization_id == self.auth.organization_id,
-            SharedDocument.path == body.path,
+            SharedDocument.path_hash == body.path_hash,
         )
         row = self.db.scalars(stmt).first()
         now = utcnow()
@@ -130,10 +144,15 @@ class DocumentService:
                 project_slug=body.project_slug,
                 repo_name=body.repo_name,
                 kind=body.kind,
-                title=body.title,
-                path=body.path,
-                body=redacted_body,
+                title=None,
+                path=stored_path,
+                body="",
                 body_hash=digest,
+                path_hash=body.path_hash,
+                content_ciphertext=body.content_ciphertext,
+                content_nonce=body.content_nonce,
+                dek_version=body.dek_version or 1,
+                content_state="sealed",
                 source=body.source,
                 storage_state=body.storage_state,
                 visibility=body.visibility,
@@ -150,9 +169,15 @@ class DocumentService:
             row.project_slug = body.project_slug
             row.repo_name = body.repo_name
             row.kind = body.kind
-            row.title = body.title
-            row.body = redacted_body
+            row.title = None
+            row.path = stored_path
+            row.body = ""
             row.body_hash = digest
+            row.path_hash = body.path_hash
+            row.content_ciphertext = body.content_ciphertext
+            row.content_nonce = body.content_nonce
+            row.dek_version = body.dek_version or 1
+            row.content_state = "sealed"
             row.storage_state = body.storage_state
             row.visibility = body.visibility
             row.plan_status = body.plan_status
@@ -173,10 +198,14 @@ class DocumentService:
                     SharedDocumentSection(
                         id=str(uuid.uuid4()),
                         document_id=row.id,
-                        heading=section.get("heading"),
+                        heading=None,
                         section_at=section.get("section_at"),
-                        body=section.get("body") or "",
+                        body="",
                         ordinal=section.get("ordinal", idx),
+                        content_ciphertext=section.get("content_ciphertext"),
+                        content_nonce=section.get("content_nonce"),
+                        dek_version=section.get("dek_version") or 1,
+                        content_state="sealed",
                     )
                 )
         self.db.commit()
@@ -244,6 +273,7 @@ class DocumentService:
         pattern = f"%{q}%"
         stmt = select(SharedDocument).where(
             SharedDocument.organization_id == self.auth.organization_id,
+            SharedDocument.content_state != "sealed",
             or_(
                 SharedDocument.title.ilike(pattern),
                 SharedDocument.body.ilike(pattern),
@@ -265,6 +295,8 @@ class DocumentService:
         row = self.get(document_id)
         if row is None:
             return None
+        if not body.content_ciphertext or not body.content_nonce:
+            raise ValueError("Comment content must be sealed")
         author_name, author_email = self._author()
         comment = SharedDocumentComment(
             id=str(uuid.uuid4()),
@@ -272,8 +304,12 @@ class DocumentService:
             actor_id=self.auth.actor_id,
             author_name=body.author_name or author_name,
             author_email=body.author_email or author_email,
-            body=body.body,
+            body="",
             created_at=body.created_at or utcnow(),
+            content_ciphertext=body.content_ciphertext,
+            content_nonce=body.content_nonce,
+            dek_version=body.dek_version or 1,
+            content_state="sealed",
         )
         self.db.add(comment)
         self.db.commit()

@@ -21,6 +21,11 @@ class SharedDocumentCreate(BaseModel):
     linear_task_id: str | None = None
     published_at: datetime | None = None
     sections: list[dict[str, Any]] | None = None
+    path_hash: str | None = None
+    content_ciphertext: str | None = None
+    content_nonce: str | None = None
+    dek_version: int | None = None
+    content_state: str = "plaintext"
 
 
 class SharedDocumentOut(BaseModel):
@@ -45,13 +50,22 @@ class SharedDocumentOut(BaseModel):
     shared_at: datetime | None
     created_at: datetime
     updated_at: datetime
+    path_hash: str | None = None
+    content_ciphertext: str | None = None
+    content_nonce: str | None = None
+    dek_version: int | None = None
+    content_state: str = "plaintext"
 
 
 class DocumentCommentCreate(BaseModel):
-    body: str
+    body: str = ""
     author_name: str | None = None
     author_email: str | None = None
     created_at: datetime | None = None
+    content_ciphertext: str | None = None
+    content_nonce: str | None = None
+    dek_version: int | None = None
+    content_state: str = "plaintext"
 
 
 class DocumentCommentOut(BaseModel):
@@ -61,6 +75,10 @@ class DocumentCommentOut(BaseModel):
     author_email: str | None
     body: str
     created_at: datetime
+    content_ciphertext: str | None = None
+    content_nonce: str | None = None
+    dek_version: int | None = None
+    content_state: str = "plaintext"
 
 
 class SharedDocumentImportBatchIn(BaseModel):

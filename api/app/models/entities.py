@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -104,6 +104,10 @@ class MemoryEvent(Base):
     tags_json: Mapped[str] = mapped_column(Text, default="[]")
     related_files_json: Mapped[str] = mapped_column(Text, default="[]")
     local_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    content_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dek_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_state: Mapped[str] = mapped_column(String(16), default="plaintext", server_default="plaintext")
 
     occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -139,6 +143,11 @@ class SharedDocument(Base):
     path: Mapped[str] = mapped_column(Text, index=True)
     body: Mapped[str] = mapped_column(Text)
     body_hash: Mapped[str] = mapped_column(String(64), index=True)
+    path_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    content_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dek_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_state: Mapped[str] = mapped_column(String(16), default="plaintext", server_default="plaintext")
     source: Mapped[str] = mapped_column(String(64), default="workspace_index")
     storage_state: Mapped[str] = mapped_column(String(32), default="file")
     visibility: Mapped[str] = mapped_column(String(32), default="internal")
@@ -177,6 +186,10 @@ class SharedDocumentSection(Base):
     section_at: Mapped[str | None] = mapped_column(String(64), nullable=True)
     body: Mapped[str] = mapped_column(Text)
     ordinal: Mapped[int] = mapped_column(default=0)
+    content_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dek_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_state: Mapped[str] = mapped_column(String(16), default="plaintext", server_default="plaintext")
 
     document: Mapped["SharedDocument"] = relationship(back_populates="sections")
 
@@ -190,6 +203,10 @@ class SharedDocumentComment(Base):
     author_name: Mapped[str] = mapped_column(String(255))
     author_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     body: Mapped[str] = mapped_column(Text)
+    content_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    dek_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_state: Mapped[str] = mapped_column(String(16), default="plaintext", server_default="plaintext")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     document: Mapped["SharedDocument"] = relationship(back_populates="comments")

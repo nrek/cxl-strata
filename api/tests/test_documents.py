@@ -29,6 +29,47 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {BOOTSTRAP_KEY}"}
 
 
+def _encrypt(payload: dict) -> tuple[str, str]:
+    import base64
+    import json
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    plain = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode()
+    nonce = b"\x02" * 12
+    ciphertext = AESGCM(bytes(range(32))).encrypt(nonce, plain, None)
+    return base64.b64encode(nonce).decode(), base64.b64encode(ciphertext).decode()
+
+
+def seal_document(payload: dict) -> dict:
+    import hashlib
+
+    sealed = dict(payload)
+    path = sealed["path"]
+    body = sealed.get("body") or ""
+    title = sealed.get("title") or ""
+    nonce, ciphertext = _encrypt({"body": body, "path": path, "title": title, "v": 1})
+    sealed["body"] = ""
+    sealed["title"] = ""
+    sealed["path_hash"] = hashlib.sha256(path.encode()).hexdigest()
+    sealed["body_hash"] = hashlib.sha256(body.encode()).hexdigest()
+    sealed["content_nonce"] = nonce
+    sealed["content_ciphertext"] = ciphertext
+    sealed["dek_version"] = 1
+    sealed["content_state"] = "sealed"
+    return sealed
+
+
+def seal_comment(body: str) -> dict:
+    nonce, ciphertext = _encrypt({"body": body, "v": 1})
+    return {
+        "body": "",
+        "content_nonce": nonce,
+        "content_ciphertext": ciphertext,
+        "dek_version": 1,
+    }
+
+
 def test_create_and_search_shared_document(client: TestClient) -> None:
     payload = {
         "path": ".md/handoff/cxl-strata/2026-06-30T12-00-00Z.md",
@@ -37,10 +78,13 @@ def test_create_and_search_shared_document(client: TestClient) -> None:
         "title": "Workspace knowledge rollout",
         "body": "# Handoff\n\nIndexed STRATA workspace knowledge hybrid flow.",
     }
+    payload = seal_document(payload)
     create = client.post("/v1/documents", json=payload, headers=_auth_headers())
     assert create.status_code == 200
     body = create.json()
     assert body["author_name"]
+    assert body["body"] == ""
+    assert body["content_state"] == "sealed"
     doc_id = body["id"]
 
     search = client.get(
@@ -50,11 +94,12 @@ def test_create_and_search_shared_document(client: TestClient) -> None:
     )
     assert search.status_code == 200
     ids = [row["id"] for row in search.json()["results"]]
-    assert doc_id in ids
+    assert doc_id not in ids
 
     get_one = client.get(f"/v1/documents/{doc_id}", headers=_auth_headers())
     assert get_one.status_code == 200
-    assert "hybrid flow" in get_one.json()["body"]
+    assert get_one.json()["body"] == ""
+    assert "hybrid flow" not in get_one.json()["body"]
 
 
 def test_metadata_only_document_responses_omit_body(client: TestClient) -> None:
@@ -65,6 +110,7 @@ def test_metadata_only_document_responses_omit_body(client: TestClient) -> None:
         "title": "Metadata-only response",
         "body": "This body must not appear in metadata responses.",
     }
+    payload = seal_document(payload)
     create = client.post("/v1/documents", json=payload, headers=_auth_headers())
     assert create.status_code == 200
 
@@ -74,43 +120,28 @@ def test_metadata_only_document_responses_omit_body(client: TestClient) -> None:
         headers=_auth_headers(),
     )
     assert listing.status_code == 200
-    listed = next(row for row in listing.json()["results"] if row["path"] == payload["path"])
+    listed = next(row for row in listing.json()["results"] if row["path_hash"] == payload["path_hash"])
     assert "body" not in listed
-
-    search = client.get(
-        "/v1/documents/search",
-        params={"q": "metadata-only response"},
-        headers=_auth_headers(),
-    )
-    assert search.status_code == 200
-    searched = next(row for row in search.json()["results"] if row["path"] == payload["path"])
-    assert "body" not in searched
 
 
 def test_upsert_reuses_unique_organization_path(client: TestClient) -> None:
     path = ".md/blueprints/unique-upsert.md"
-    first = client.post(
-        "/v1/documents",
-        json={"path": path, "kind": "blueprint", "body": "first body"},
-        headers=_auth_headers(),
-    )
-    second = client.post(
-        "/v1/documents",
-        json={"path": path, "kind": "blueprint", "body": "second body"},
-        headers=_auth_headers(),
-    )
+    first_payload = seal_document({"path": path, "kind": "blueprint", "body": "first body"})
+    second_payload = seal_document({"path": path, "kind": "blueprint", "body": "second body"})
+    first = client.post("/v1/documents", json=first_payload, headers=_auth_headers())
+    second = client.post("/v1/documents", json=second_payload, headers=_auth_headers())
 
     assert first.status_code == 200
     assert second.status_code == 200
     assert second.json()["id"] == first.json()["id"]
-    assert second.json()["body"] == "second body"
+    assert second.json()["body"] == ""
 
     listing = client.get(
         "/v1/documents",
         params={"include_body": True},
         headers=_auth_headers(),
     )
-    matches = [row for row in listing.json()["results"] if row["path"] == path]
+    matches = [row for row in listing.json()["results"] if row["path_hash"] == first_payload["path_hash"]]
     assert len(matches) == 1
 
 
@@ -122,6 +153,7 @@ def test_delete_shared_document_removes_it_from_remote_search(client: TestClient
         "title": "Remote delete target",
         "body": "# Handoff\n\nThis shared document should be deleted remotely.",
     }
+    payload = seal_document(payload)
     create = client.post("/v1/documents", json=payload, headers=_auth_headers())
     assert create.status_code == 200
     doc_id = create.json()["id"]
@@ -155,6 +187,7 @@ def test_import_batch_shared_documents(client: TestClient) -> None:
             }
         ]
     }
+    batch["documents"] = [seal_document(batch["documents"][0])]
     response = client.post(
         "/v1/documents/import-batch", json=batch, headers=_auth_headers()
     )
@@ -187,6 +220,7 @@ def test_import_batch_rejects_scratch_paths(client: TestClient) -> None:
             },
         ]
     }
+    batch["documents"][1] = seal_document(batch["documents"][1])
     response = client.post(
         "/v1/documents/import-batch", json=batch, headers=_auth_headers()
     )
@@ -222,6 +256,8 @@ def test_published_at_round_trip_and_ordering(client: TestClient) -> None:
     }
     # Create the newer one first so ordering must come from published_at,
     # not insertion/created_at order.
+    newer = seal_document(newer)
+    older = seal_document(older)
     created_newer = client.post("/v1/documents", json=newer, headers=_auth_headers())
     created_older = client.post("/v1/documents", json=older, headers=_auth_headers())
     assert created_newer.status_code == 200
@@ -235,8 +271,8 @@ def test_published_at_round_trip_and_ordering(client: TestClient) -> None:
     )
     assert listing.status_code == 200
     results = listing.json()["results"]
-    paths = [row["path"] for row in results]
-    assert paths.index(newer["path"]) < paths.index(older["path"])
+    hashes = [row["path_hash"] for row in results]
+    assert hashes.index(newer["path_hash"]) < hashes.index(older["path_hash"])
 
 
 def test_list_pagination_uses_id_to_break_published_at_ties(client: TestClient) -> None:
@@ -245,13 +281,13 @@ def test_list_pagination_uses_id_to_break_published_at_ties(client: TestClient) 
     for suffix in ("a", "b", "c"):
         response = client.post(
             "/v1/documents",
-            json={
+            json=seal_document({
                 "path": f".md/handoff/cxl-strata/tied-{suffix}.md",
                 "kind": "handoff",
                 "project_slug": "pagination-ties",
                 "body": f"tied document {suffix}",
                 "published_at": published_at,
-            },
+            }),
             headers=_auth_headers(),
         )
         assert response.status_code == 200
@@ -283,18 +319,20 @@ def test_document_comments_create_and_list(client: TestClient) -> None:
         "title": "Commented handoff",
         "body": "# Handoff\n\nDocument that receives comments.",
     }
+    payload = seal_document(payload)
     create = client.post("/v1/documents", json=payload, headers=_auth_headers())
     assert create.status_code == 200
     doc_id = create.json()["id"]
 
     comment = client.post(
         f"/v1/documents/{doc_id}/comments",
-        json={"body": "Reviewed — deploy steps confirmed."},
+        json=seal_comment("Reviewed — deploy steps confirmed."),
         headers=_auth_headers(),
     )
     assert comment.status_code == 200
     comment_body = comment.json()
-    assert comment_body["body"] == "Reviewed — deploy steps confirmed."
+    assert comment_body["body"] == ""
+    assert comment_body["content_state"] == "sealed"
     assert comment_body["author_name"]
 
     listing = client.get(f"/v1/documents/{doc_id}/comments", headers=_auth_headers())
@@ -305,7 +343,8 @@ def test_document_comments_create_and_list(client: TestClient) -> None:
 
     get_one = client.get(f"/v1/documents/{doc_id}", headers=_auth_headers())
     assert get_one.status_code == 200
-    assert get_one.json()["comments"][0]["body"] == "Reviewed — deploy steps confirmed."
+    assert get_one.json()["comments"][0]["body"] == ""
+    assert get_one.json()["comments"][0]["content_state"] == "sealed"
 
     missing = client.post(
         "/v1/documents/does-not-exist/comments",
@@ -333,15 +372,10 @@ def test_import_batch_redacts_secret_markers(client: TestClient) -> None:
 
     assert response.status_code == 200
     data = response.json()
-    assert len(data["synced"]) == 1
-    assert not data["failed"]
-
-    doc_id = data["synced"][0]["remote_id"]
-    get_one = client.get(f"/v1/documents/{doc_id}", headers=_auth_headers())
-    assert get_one.status_code == 200
-    body = get_one.json()["body"]
-    assert "supersecret123" not in body
-    assert "password=[REDACTED_SECRET]" in body
+    assert data["synced"] == []
+    assert data["failed"]
+    assert "sealed" in data["failed"][0]["error"]
+    assert "supersecret123" not in response.text
 
 
 def test_migration_004_deduplicates_reparents_and_enforces_uniqueness() -> None:

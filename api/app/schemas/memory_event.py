@@ -38,11 +38,29 @@ class MemoryEventCreate(BaseModel):
     source: str = "local_capture"
     source_ref: str | None = None
     occurred_at: datetime | None = None
+    content_ciphertext: str | None = None
+    content_nonce: str | None = None
+    dek_version: int | None = None
+    content_state: str = "plaintext"
 
 
 class MemoryEventOut(MemoryEventCreate):
     id: str
     created_at: datetime
+
+
+class SealIn(BaseModel):
+    table: Literal[
+        "memory_events",
+        "shared_documents",
+        "shared_document_sections",
+        "shared_document_comments",
+    ]
+    id: str
+    content_ciphertext: str
+    content_nonce: str
+    dek_version: int = 1
+    path_hash: str | None = None
 
 
 class SyncBatchIn(BaseModel):

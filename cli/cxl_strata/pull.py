@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from . import api_client
+from .memory_seal import reveal_remote_document
 from .path_guard import is_scratch_path
 from .workspace_index import db, storage
 from .workspace_index.parsers import doc_id_for_path
@@ -248,6 +249,8 @@ def count_remote_pending(
     with db.connect() as conn:
         db.init_db(conn)
         for row in remote_rows:
+            if row.get("content_state") == "sealed":
+                row = reveal_remote_document(row)
             rel = _doc_path(row)
             if is_scratch_path(rel):
                 continue
@@ -299,6 +302,8 @@ def pull_documents(
     with db.connect() as conn:
         db.init_db(conn)
         for row in remote_rows:
+            if row.get("content_state") == "sealed":
+                row = reveal_remote_document(row)
             rel = _doc_path(row)
             if is_scratch_path(rel):
                 blocked += 1

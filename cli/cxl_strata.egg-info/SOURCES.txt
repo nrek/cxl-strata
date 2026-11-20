@@ -9,6 +9,7 @@ cxl_strata/content_safety.py
 cxl_strata/cursor_rule.py
 cxl_strata/documents.py
 cxl_strata/local_store.py
+cxl_strata/memory_seal.py
 cxl_strata/path_guard.py
 cxl_strata/pull.py
 cxl_strata/version.py
@@ -66,6 +67,7 @@ tests/test_auto_sync.py
 tests/test_cli_bootstrap.py
 tests/test_client_update.py
 tests/test_graph.py
+tests/test_memory_seal.py
 tests/test_org_profiles.py
 tests/test_pull.py
 tests/test_static_assets.py
